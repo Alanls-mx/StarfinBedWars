@@ -89,7 +89,8 @@ public final class ShopSettings {
         if (defaultItems == null || savedItems == null) return;
         boolean changed = false;
         for (String id : new String[] {"tnt", "ladder", "obsidian", "ender-pearl",
-                "speed-potion", "water-bucket"}) {
+                "speed-potion", "water-bucket", "fireball", "bridge-egg",
+                "bedbug", "dream-defender", "magic-milk"}) {
             if (savedItems.contains(id)) continue;
             int slot = defaultItems.getInt(id + ".slot", -1);
             boolean occupied = false;
