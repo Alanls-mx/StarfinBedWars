@@ -605,3 +605,9 @@ e executar em PaperSpigot 1.8.8. Iniciar Match Point via
 pequenas e lentas apenas perto do dragao, bossbar ao olhar para outro
 lado / em partes distantes da arena, respawn e troca de mundo. Confirmar
 retorno ao lobby e instancia nova intacta. Nenhum JAR compilado nesta sessao.
+
+- O trajeto em X alterna entre uma passagem ampla sobre os cantos
+  definidos por pos1/pos2 e uma passagem cruzada mais estreita sobre
+  os spawns quando as duas ilhas estao alinhadas nos eixos X ou Z.
+  Assim o voo ainda explora o mapa inteiro, mas tambem atinge as ilhas
+  reais; nao tenta forcar a destruicao de toda a area ao mesmo tempo.
