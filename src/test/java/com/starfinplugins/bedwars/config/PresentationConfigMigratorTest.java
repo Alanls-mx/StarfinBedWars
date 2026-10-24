@@ -84,23 +84,23 @@ public class PresentationConfigMigratorTest {
     }
 
     @Test
-    public void preservesCustomGlobalErosionAndVictoryTime() throws Exception {
-        File config = folder.newFile("custom-erosion.yml");
+    public void preservesCustomDragonBlastsAndVictoryTime() throws Exception {
+        File config = folder.newFile("custom-dragon-blasts.yml");
         Files.write(config.toPath(), ("match:\n"
             + "  victory-celebration-seconds: 12\n"
             + "match-point:\n"
-            + "  global-erosion:\n"
-            + "    max-blocks-per-tick: 15\n")
+            + "  dragon-blast-blocks: 6\n"
+            + "  dragon-blast-interval-ticks: 60\n")
             .getBytes(StandardCharsets.UTF_8));
         YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
             getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
         assertTrue(PresentationConfigMigrator.mergeFile(config, defaults));
         YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
         assertEquals(12, updated.getInt("match.victory-celebration-seconds"));
-        assertEquals(15, updated.getInt(
-            "match-point.global-erosion.max-blocks-per-tick"));
-        assertEquals(3000, updated.getInt(
-            "match-point.global-erosion.scan-positions-per-tick"));
+        assertEquals(6, updated.getInt("match-point.dragon-blast-blocks"));
+        assertEquals(60, updated.getInt("match-point.dragon-blast-interval-ticks"));
+        assertEquals(3, updated.getInt("match-point.dragon-blast-radius"));
+        assertTrue(updated.getBoolean("match-point.bossbar-enabled"));
         assertFalse(PresentationConfigMigrator.mergeFile(config, defaults));
     }
 
