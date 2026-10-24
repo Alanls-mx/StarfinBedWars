@@ -390,6 +390,15 @@ public final class MatchPointService implements ManagedService, Listener {
             checks++;
             if (eraseBlock(active, block)) changed++;
         }
+        active.globalDestroyed += changed;
+        // Give admins real evidence of block removal even before the first
+        // 25% of a large selected region has been scanned.
+        if (ticks % 200L == 0L) {
+            plugin.getLogger().info("Match Point [" + active.match.getArena().getId()
+                + "]: " + active.globalDestroyed + " blocos removidos na varredura"
+                + ", " + active.localDestroyed + " na passagem do dragao"
+                + "; area pos1/pos2 verificada: " + cursor.getProgressPercent() + "%.");
+        }
         int progress = cursor.getProgressPercent();
         if (progress >= active.lastErosionReport + 25 || !cursor.hasNext()) {
             active.lastErosionReport = progress;
@@ -481,6 +490,7 @@ public final class MatchPointService implements ManagedService, Listener {
         private MatchPointErosionCursor erosion;
         private int lastErosionReport;
         private long localDestroyed;
+        private long globalDestroyed;
         private long snapshotChunk = Long.MIN_VALUE;
         private ChunkSnapshot snapshot;
         private final Set<Long> unavailableChunks = new HashSet<Long>();
