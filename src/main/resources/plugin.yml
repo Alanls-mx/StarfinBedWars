@@ -9,7 +9,7 @@ softdepend:
 commands:
   starfinbedwars:
     description: StarfinBedWars administration and status
-    usage: /starfinbedwars <help|version|status|menu|arena|world|join|spectate|leave|chat>
+    usage: /starfinbedwars <help|version|status|menu|arena|world|join|spectate|leave|chat|matchpoint>
     aliases:
       - sbw
   reconnect:
@@ -23,6 +23,7 @@ permissions:
       starfinbedwars.command.status: true
       starfinbedwars.command.arena: true
       starfinbedwars.command.world: true
+      starfinbedwars.command.matchpoint: true
   starfinbedwars.command.status:
     description: View StarfinBedWars status
     default: op
@@ -31,6 +32,9 @@ permissions:
     default: op
   starfinbedwars.command.world:
     description: Manage StarfinBedWars worlds
+    default: op
+  starfinbedwars.command.matchpoint:
+    description: Permite forcar o Match Point de uma partida ativa para testes
     default: op
   starfinbedwars.command.reconnect.admin:
     description: Inspect and invalidate reconnect sessions
