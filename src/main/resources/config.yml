@@ -44,7 +44,10 @@ match-point:
   after-minutes: 30
   message: '&5&lMATCH POINT! &cTodas as camas foram destruídas! &dO dragão chegou!'
   dragon-height-offset: 3
+  # Tamanho do proximo trecho de voo na rota natural do dragao (0.03 a 0.20).
   dragon-angular-speed: 0.065
+  # Distancia do ponto de destino para escolher o proximo ponto (10 a 20 blocos).
+  dragon-waypoint-reach: 14.0
   blocks-per-sweep: 18
   dragon-damage-radius: 5.0
   dragon-damage: 5.0
