@@ -1103,6 +1103,13 @@ public final class MatchEngineService implements ManagedService, Listener {
         return block.getX() + ":" + block.getY() + ":" + block.getZ();
     }
 
+    /** Release a TNT placement after the block has become a primed entity. */
+    void forgetPlacedBlock(GameMatch match, Block block) {
+        if (match == null || block == null) return;
+        Set<String> placed = playerPlacedBlocks.get(match.getId());
+        if (placed != null) placed.remove(blockKey(block));
+    }
+
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onInteract(PlayerInteractEvent event) {
         GameMatch match = matchInWorld(event.getPlayer().getWorld());
