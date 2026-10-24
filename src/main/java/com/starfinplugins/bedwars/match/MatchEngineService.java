@@ -82,6 +82,8 @@ public final class MatchEngineService implements ManagedService, Listener {
     private final Map<String, Boolean> loading = new HashMap<String, Boolean>();
     private final Map<UUID, BukkitTask> respawnTasks = new HashMap<UUID, BukkitTask>();
     private final Map<UUID, Long> fallProtectionUntil = new HashMap<UUID, Long>();
+    /** setHealth(0) does not reliably report DamageCause.VOID on Spigot 1.8.8. */
+    private final Map<UUID, UUID> forcedVoidDeaths = new HashMap<UUID, UUID>();
     private boolean started;
     private ReconnectService reconnect;
     private MatchEquipmentService equipment;
@@ -126,6 +128,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         spawnOpeningValues.clear();
         respawnTasks.clear();
         fallProtectionUntil.clear();
+        forcedVoidDeaths.clear();
         for (GameMatch match : byArena.values()) {
             World world = matchWorlds.get(match.getId());
             if (world != null) {
@@ -664,7 +667,8 @@ public final class MatchEngineService implements ManagedService, Listener {
     private void announcePlayerDeath(GameMatch match, Player victim, GameParticipant participant) {
         DamageCause cause = victim.getLastDamageCause() == null ? null
             : victim.getLastDamageCause().getCause();
-        String reason = deathReason(cause);
+        UUID markedVoidMatch = forcedVoidDeaths.remove(victim.getUniqueId());
+        String reason = match.getId().equals(markedVoidMatch) ? "void" : deathReason(cause);
         Player killer = deathKiller(victim, match, participant);
         boolean finalKill = !match.getTeam(participant.getTeamId()).isBedAlive();
         String key = MatchMessageTemplates.deathKey(reason, killer != null, finalKill);
@@ -965,6 +969,7 @@ public final class MatchEngineService implements ManagedService, Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onRespawn(PlayerRespawnEvent event) {
         final Player player = event.getPlayer();
+        forcedVoidDeaths.remove(player.getUniqueId());
         final GameMatch match = byPlayer.get(player.getUniqueId());
         if (match == null) return;
         final GameParticipant participant = match.getParticipant(player.getUniqueId());
@@ -1368,7 +1373,8 @@ public final class MatchEngineService implements ManagedService, Listener {
         }
         ArenaDefinition arena = match.getArena();
         if (event.getTo().getY() < arena.getVoidHeight()) {
-            player.setHealth(0.0D);
+            forcedVoidDeaths.put(player.getUniqueId(), match.getId());
+            if (!player.isDead() && player.getHealth() > 0.0D) player.setHealth(0.0D);
             return;
         }
         if (event.getTo().getY() >= arena.getCeilingHeight()) {
