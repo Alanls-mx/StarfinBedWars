@@ -29,7 +29,7 @@ public class PresentationConfigMigratorTest {
         assertTrue(updated.getStringList("scoreboard.layouts.in-game").contains("{teams}"));
         assertEquals("OWN_TEAM", updated.getString("bed-hologram.visibility"));
         assertEquals(4, updated.getInt("generator-holograms.orbit.icon-count"));
-        assertEquals("&cVoce nao pode destruir sua propria cama!",
+        assertEquals("&cVocê não pode destruir sua própria cama!",
             updated.getString("messages.own-bed"));
         assertEquals("&e&lINICIANDO", updated.getString("visuals.lobby-countdown.title"));
         assertEquals(original, new String(Files.readAllBytes(
