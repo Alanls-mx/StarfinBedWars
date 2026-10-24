@@ -9,6 +9,12 @@ match:
   tnt-auto-prime: true # Colocar TNT durante a partida acende automaticamente o pavio.
   tnt-fuse-ticks: 40 # 2 segundos; entre 1 e 200 ticks.
 
+# Itens especiais do BedWars classico (compra configurada em shop.yml).
+special-items:
+  enabled: true
+  defender-lifetime-seconds: 30
+  magic-milk-seconds: 30
+
 arena-bounds:
   default-width: 280
   default-depth: 280
