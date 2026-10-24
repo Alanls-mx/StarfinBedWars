@@ -104,6 +104,16 @@ public final class MatchVisualService implements ManagedService, Listener {
                         text("bed-alert.subtitle", "&eVoce nao podera mais renascer!"), 3, 80);
                 }
                 break;
+            case PLAYER_DIED:
+                if (event.getParticipant() != null) {
+                    Player player = Bukkit.getPlayer(event.getParticipant().getPlayerId());
+                    if (player != null && player.isOnline()) show(player,
+                        text("visuals.death.title", "&c&lVOCE MORREU!"),
+                        text("visuals.death.subtitle", "&eRenascendo em &c{time} &esegundos.")
+                            .replace("{time}", Integer.toString(
+                                plugin.getConfig().getInt("match.respawn-seconds", 3))), 2, 45);
+                }
+                break;
             case PLAYER_ELIMINATED:
                 if (event.getParticipant() != null) {
                     Player player = Bukkit.getPlayer(event.getParticipant().getPlayerId());
