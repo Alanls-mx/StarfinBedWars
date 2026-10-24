@@ -90,6 +90,42 @@ public final class MatchPointService implements ManagedService, Listener {
         }
     }
 
+    public enum ForceResult {
+        ACTIVATED, ALREADY_ACTIVE, NOT_RUNNING, INVALID_ARENA, NO_WORLD, FAILED
+    }
+
+    /**
+     * Trigger the same Match Point sequence as the 30-minute timer, instantly.
+     * Only the admin command should call this, after permission checks.
+     * Does not modify the timer or any other match.
+     */
+    public ForceResult forceMatchPoint(GameMatch match) {
+        if (timer == null || match == null || match.getState() != MatchState.IN_GAME) {
+            return ForceResult.NOT_RUNNING;
+        }
+        World world = matches.getWorld(match.getId());
+        if (world == null || matches.getMatchForArena(match.getArena().getId()) != match) {
+            return ForceResult.NO_WORLD;
+        }
+        ArenaRegion bounds = match.getArena().getBounds();
+        if (bounds == null) bounds = match.getArena().getRegion(ArenaRegionType.MAIN);
+        if (bounds == null) return ForceResult.INVALID_ARENA;
+
+        Active active = sessions.get(match.getId());
+        if (active != null && active.triggered) return ForceResult.ALREADY_ACTIVE;
+        if (active == null) {
+            active = new Active(match);
+            sessions.put(match.getId(), active);
+        }
+        active.triggered = true;
+        activate(active, world);
+        if (active.dragon == null || !active.dragon.isValid()) {
+            active.triggered = false;
+            return ForceResult.FAILED;
+        }
+        return ForceResult.ACTIVATED;
+    }
+
     private void tick() {
         ticks += 10L;
         for (Iterator<Map.Entry<UUID, Active>> it = sessions.entrySet().iterator(); it.hasNext();) {
@@ -108,8 +144,11 @@ public final class MatchPointService implements ManagedService, Listener {
                     plugin.getConfig().getLong("match-point.after-minutes", 30L))) * 60000L;
                 if (match.getStartedAt() == null || System.currentTimeMillis()
                         - match.getStartedAt().toEpochMilli() < threshold) continue;
-                active.triggered = true;
-                activate(active, world);
+                ForceResult result = forceMatchPoint(match);
+                if (result == ForceResult.FAILED || result == ForceResult.INVALID_ARENA) {
+                    plugin.getLogger().warning("Match Point nao ativado em "
+                        + match.getArena().getId() + ": " + result);
+                }
             } else {
                 advance(active, world);
             }
