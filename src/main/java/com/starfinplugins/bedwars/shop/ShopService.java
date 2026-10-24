@@ -440,7 +440,8 @@ public final class ShopService implements ManagedService, Listener {
         if (++maintenanceTicks >= 10) {
             maintenanceTicks = 0;
             for (UUID matchId : new ArrayList<UUID>(shopEntities.keySet())) {
-                GameMatch live = matches.getMatch(matchId);
+                World world = matches.getWorld(matchId);
+                GameMatch live = world == null ? null : matches.getMatchInWorld(world);
                 if (live != null && live.getState() == MatchState.IN_GAME) spawnShops(live);
             }
         }
