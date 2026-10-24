@@ -73,6 +73,9 @@ public final class MatchPointBossBarV1_8_R3 {
         }
     }
 
+    /** Called for disconnected players whose client session no longer exists. */
+    public void forget(UUID playerId) { viewers.remove(playerId); }
+
     public void clear() {
         // Active players receive destroy packets; offline viewers are simply
         // discarded because their client already destroyed its world state.
