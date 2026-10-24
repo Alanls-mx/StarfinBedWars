@@ -1445,6 +1445,15 @@ public final class MatchEngineService implements ManagedService, Listener {
         return world.getSpawnLocation();
     }
 
+    /** Live match occupying a managed instance world, if any. */
+    public GameMatch getMatchInWorld(World world) {
+        return world == null ? null : matchInWorld(world);
+    }
+
+    public boolean isSpectating(UUID playerId) {
+        return spectators.containsKey(playerId);
+    }
+
     private GameMatch matchInWorld(World world) {
         for (Map.Entry<UUID, World> entry : matchWorlds.entrySet()) {
             if (entry.getValue().equals(world)) {
