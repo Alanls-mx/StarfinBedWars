@@ -399,9 +399,11 @@ public final class MatchPointService implements ManagedService, Listener {
             }
         }
 
-        // Never reset the timer/movement on a failed attempt: the next tick
-        // should retry when an island's chunk becomes accessible.
+        // Rate-limit failed attempts too. Otherwise a dragon over empty
+        // void would scan dozens of entire Y-columns EVERY server tick.
+        // Do not change lastBlastPosition until real terrain is destroyed.
         if (removed == 0) {
+            active.lastBlastTick = ticks;
             active.missedBlasts++;
             if (active.missedBlasts % 10 == 0) {
                 plugin.getLogger().info("Match Point [" + active.match.getArena().getId()
