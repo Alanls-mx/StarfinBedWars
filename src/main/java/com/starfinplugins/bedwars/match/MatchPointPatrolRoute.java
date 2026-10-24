@@ -1,6 +1,7 @@
 package com.starfinplugins.bedwars.match;
 
 import com.starfinplugins.bedwars.domain.arena.ArenaRegion;
+import com.starfinplugins.bedwars.domain.arena.Position;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -18,6 +19,13 @@ public final class MatchPointPatrolRoute {
 
     public MatchPointPatrolRoute(ArenaRegion region, int ceilingHeight,
                                  double preferredY, int requestedSpacing) {
+        this(region, ceilingHeight, preferredY, requestedSpacing,
+            Collections.<Position>emptyList());
+    }
+
+    public MatchPointPatrolRoute(ArenaRegion region, int ceilingHeight,
+                                 double preferredY, int requestedSpacing,
+                                 List<Position> islandSpawns) {
         if (region == null) throw new IllegalArgumentException("Regiao MAIN ausente.");
         int spacing = Math.max(20, Math.min(64, requestedSpacing));
         double minX = region.getMinimumX() + 0.5D;
@@ -36,6 +44,25 @@ public final class MatchPointPatrolRoute {
         double y = topY < bottomY ? Math.max(3.0D, Math.min(245.0D, topY))
             : Math.max(bottomY, Math.min(topY, preferredY));
 
+        // The outer X reaches the full pos1/pos2 area. The second X can
+        // narrow along the minor axis of two aligned teams, so at least one
+        // crossing also passes through their islands instead of only void.
+        double minSpawnX = Double.POSITIVE_INFINITY, maxSpawnX = Double.NEGATIVE_INFINITY;
+        double minSpawnZ = Double.POSITIVE_INFINITY, maxSpawnZ = Double.NEGATIVE_INFINITY;
+        if (islandSpawns != null) {
+            for (Position spawn : islandSpawns) {
+                if (spawn == null) continue;
+                minSpawnX = Math.min(minSpawnX, spawn.getX());
+                maxSpawnX = Math.max(maxSpawnX, spawn.getX());
+                minSpawnZ = Math.min(minSpawnZ, spawn.getZ());
+                maxSpawnZ = Math.max(maxSpawnZ, spawn.getZ());
+            }
+        }
+        double spreadX = maxSpawnX - minSpawnX;
+        double spreadZ = maxSpawnZ - minSpawnZ;
+        boolean horizontalBases = spreadX > spreadZ * 1.8D && spreadX > 12.0D;
+        boolean verticalBases = spreadZ > spreadX * 1.8D && spreadZ > 12.0D;
+
         List<double[]> flight = new ArrayList<double[]>();
         double[] insets = new double[] {0.0D, 0.12D, 0.06D};
         for (int phase = 0; phase < insets.length; phase++) {
@@ -44,6 +71,15 @@ public final class MatchPointPatrolRoute {
             double right = lerp(x0, x1, 1.0D - inset);
             double north = lerp(z0, z1, inset);
             double south = lerp(z0, z1, 1.0D - inset);
+            if (phase == 1 && horizontalBases) {
+                double centerZ = Math.max(z0, Math.min(z1, (minSpawnZ + maxSpawnZ) / 2.0D));
+                north = Math.max(z0, centerZ - 5.0D);
+                south = Math.min(z1, centerZ + 5.0D);
+            } else if (phase == 1 && verticalBases) {
+                double centerX = Math.max(x0, Math.min(x1, (minSpawnX + maxSpawnX) / 2.0D));
+                left = Math.max(x0, centerX - 5.0D);
+                right = Math.min(x1, centerX + 5.0D);
+            }
             double[] nw = new double[] {left, y, north};
             double[] ne = new double[] {right, y, north};
             double[] sw = new double[] {left, y, south};
