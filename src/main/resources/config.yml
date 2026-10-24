@@ -6,6 +6,8 @@ general:
 match:
   respawn-seconds: 3
   spawn-opening-seconds: 10
+  tnt-auto-prime: true # Colocar TNT durante a partida acende automaticamente o pavio.
+  tnt-fuse-ticks: 40 # 2 segundos; entre 1 e 200 ticks.
 
 arena-bounds:
   default-width: 280
