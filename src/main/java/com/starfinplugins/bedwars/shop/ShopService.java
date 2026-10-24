@@ -269,10 +269,16 @@ public final class ShopService implements ManagedService, Listener {
         String expectedOwnership = null;
         for (Entity entity : group) {
             if (entity == null || !entity.isValid() || entity.isDead()) return false;
-            String owner = ownedMetadata(entity);
-            if (owner == null) return false; // alive but unregistered entities are unclickable
-            if (expectedOwnership == null) expectedOwnership = owner;
-            else if (!expectedOwnership.equals(owner)) return false;
+            // Text-only holograms are intentionally untagged: only clickable
+            // Villagers and equipped ArmorStand bodies need shop ownership.
+            boolean clickable = entity instanceof Villager
+                || entity instanceof ArmorStand && !((ArmorStand) entity).isMarker();
+            if (clickable) {
+                String owner = ownedMetadata(entity);
+                if (owner == null) return false;
+                if (expectedOwnership == null) expectedOwnership = owner;
+                else if (!expectedOwnership.equals(owner)) return false;
+            }
             if (entity instanceof Villager) foundVillager = true;
             if (entity instanceof ArmorStand && !((ArmorStand) entity).isMarker()) {
                 ArmorStand body = (ArmorStand) entity;
