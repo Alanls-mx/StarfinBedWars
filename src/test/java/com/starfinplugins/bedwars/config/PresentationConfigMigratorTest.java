@@ -29,10 +29,30 @@ public class PresentationConfigMigratorTest {
         assertTrue(updated.getStringList("scoreboard.layouts.in-game").contains("{teams}"));
         assertEquals("OWN_TEAM", updated.getString("bed-hologram.visibility"));
         assertEquals(4, updated.getInt("generator-holograms.orbit.icon-count"));
+        assertEquals("&cVoce nao pode destruir sua propria cama!",
+            updated.getString("messages.own-bed"));
+        assertEquals("&e&lINICIANDO", updated.getString("visuals.lobby-countdown.title"));
         assertEquals(original, new String(Files.readAllBytes(
             new File(folder.getRoot(), "config.yml.pre-presentation.bak").toPath()),
             StandardCharsets.UTF_8));
         assertFalse(PresentationConfigMigrator.mergeFile(config, defaults));
+    }
+
+    @Test
+    public void preservesCustomMatchMessagesWhenMigrating() throws Exception {
+        File config = folder.newFile("custom-messages.yml");
+        Files.write(config.toPath(), ("messages:\n"
+            + "  own-bed: '&4Minha mensagem personalizada'\n"
+            + "  death:\n    void: '&7{player} sumiu.'\n")
+            .getBytes(StandardCharsets.UTF_8));
+        YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
+            getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
+        assertTrue(PresentationConfigMigrator.mergeFile(config, defaults));
+        YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
+        assertEquals("&4Minha mensagem personalizada", updated.getString("messages.own-bed"));
+        assertEquals("&7{player} sumiu.", updated.getString("messages.death.void"));
+        assertEquals("&eA partida comeca em &6{time} &esegundos!",
+            updated.getString("messages.lobby-countdown"));
     }
 
     @Test
