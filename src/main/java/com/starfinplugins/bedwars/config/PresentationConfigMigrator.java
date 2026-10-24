@@ -70,7 +70,16 @@ public final class PresentationConfigMigrator {
         "special-items.bridge-egg.decay-delay-seconds",
         "special-items.bridge-egg.decay-interval-ticks",
         "special-items.defender-knockback.horizontal",
-        "special-items.defender-knockback.vertical"
+        "special-items.defender-knockback.vertical",
+        "special-items.defender-lifetime-seconds",
+        "match-point.enabled", "match-point.after-minutes",
+        "match-point.message", "match-point.dragon-height-offset",
+        "match-point.dragon-angular-speed", "match-point.blocks-per-sweep",
+        "match-point.dragon-damage-radius", "match-point.dragon-damage",
+        "visuals.victory.celebration.enabled",
+        "visuals.victory.celebration.fireworks-per-burst",
+        "visuals.victory.celebration.interval-ticks",
+        "visuals.victory.celebration.radius"
     };
 
     private PresentationConfigMigrator() { }
