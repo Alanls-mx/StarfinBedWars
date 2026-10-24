@@ -1103,6 +1103,27 @@ public final class MatchEngineService implements ManagedService, Listener {
         return block.getX() + ":" + block.getY() + ":" + block.getZ();
     }
 
+    /** Register only new ability-generated blocks for normal break/explosion protection. */
+    public boolean placeSpecialBlock(GameMatch match, Block block, Material material, byte data) {
+        if (match == null || block == null || material != Material.WOOL
+                || block.getType() != Material.AIR || match.getState() != MatchState.IN_GAME
+                || matchWorlds.get(match.getId()) != block.getWorld()) return false;
+        ArenaRegion region = match.getArena().getRegion(ArenaRegionType.MAIN);
+        Location at = block.getLocation();
+        Position position = new Position(match.getArena().getSourceWorld(),
+            at.getX() + 0.5D, at.getY() + 0.5D, at.getZ() + 0.5D, 0.0F, 0.0F);
+        if (region == null || !region.contains(position)) return false;
+        block.setType(material);
+        block.setData(data);
+        Set<String> placed = playerPlacedBlocks.get(match.getId());
+        if (placed == null) {
+            placed = new HashSet<String>();
+            playerPlacedBlocks.put(match.getId(), placed);
+        }
+        placed.add(blockKey(block));
+        return true;
+    }
+
     /** Release a TNT placement after the block has become a primed entity. */
     void forgetPlacedBlock(GameMatch match, Block block) {
         if (match == null || block == null) return;
