@@ -174,16 +174,22 @@ public final class MatchPointService implements ManagedService, Listener {
                 + match.getArena().getId());
             return;
         }
-        int baseY = 80;
+        int sumY = 0;
         int count = 0;
+        java.util.List<Position> islands = new ArrayList<Position>();
         for (com.starfinplugins.bedwars.domain.arena.TeamDefinition team
                 : match.getArena().getTeamList()) {
             Position spawn = team.getSpawn();
-            if (spawn != null) { baseY += (int) spawn.getY(); count++; }
+            if (spawn != null) {
+                sumY += (int) spawn.getY();
+                count++;
+                islands.add(spawn);
+            }
         }
-        baseY = count == 0 ? 85 : (baseY - 80) / count
+        int baseY = (count == 0 ? 85 : sumY / count)
             + plugin.getConfig().getInt("match-point.dragon-height-offset", 3);
-        active.path = new MatchPointPath(bounds, match.getArena().getCeilingHeight(), baseY);
+        active.path = new MatchPointPath(bounds,
+            match.getArena().getCeilingHeight(), baseY, islands);
         try {
             double[] point = active.path.at(0.0D);
             Location location = new Location(world, point[0], point[1], point[2]);
