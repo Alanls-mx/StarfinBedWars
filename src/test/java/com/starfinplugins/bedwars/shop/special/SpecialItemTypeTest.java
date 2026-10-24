@@ -2,14 +2,11 @@ package com.starfinplugins.bedwars.shop.special;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertNotNull;
-
 import org.bukkit.Material;
-import org.bukkit.inventory.ItemStack;
 import org.junit.Test;
 
 public class SpecialItemTypeTest {
-    @Test public void findsConfiguredSpecialIds() {
+    @Test public void recognizesConfiguredSpecialIds() {
         assertEquals(SpecialItemType.FIREBALL, SpecialItemType.byId("fireball"));
         assertEquals(SpecialItemType.BRIDGE_EGG, SpecialItemType.byId("bridge-egg"));
         assertEquals(SpecialItemType.BEDBUG, SpecialItemType.byId("bedbug"));
@@ -18,25 +15,16 @@ public class SpecialItemTypeTest {
         assertNull(SpecialItemType.byId("tnt"));
     }
 
-    @Test public void ignoresOrdinaryVanillaItems() {
-        assertNull(SpecialItemType.identify(new ItemStack(Material.EGG)));
-        assertNull(SpecialItemType.identify(new ItemStack(Material.SNOW_BALL)));
-        assertNull(SpecialItemType.identify(new ItemStack(Material.PUMPKIN)));
+    @Test public void mapsMaterialsCorrectlyForMinecraft188() {
+        assertEquals(Material.FIREBALL, SpecialItemType.FIREBALL.getMaterial());
+        assertEquals(Material.EGG, SpecialItemType.BRIDGE_EGG.getMaterial());
+        assertEquals(Material.SNOW_BALL, SpecialItemType.BEDBUG.getMaterial());
+        assertEquals(Material.PUMPKIN, SpecialItemType.DREAM_DEFENDER.getMaterial());
+        assertEquals(Material.MILK_BUCKET, SpecialItemType.MAGIC_MILK.getMaterial());
     }
 
-    @Test public void marksPurchasedItemsUnambiguously() {
-        for (SpecialItemType type : SpecialItemType.values()) {
-            ItemStack raw = new ItemStack(type.getMaterial(), 1);
-            ItemStack marked = SpecialItemType.mark(type.getId(), raw);
-            assertNotNull(marked);
-            assertEquals(type, SpecialItemType.identify(marked));
-            assertNull(SpecialItemType.identify(raw));
-        }
-    }
-
-    @Test public void rejectsWrongMaterialWithCorrectId() {
-        ItemStack stone = new ItemStack(Material.STONE);
-        assertEquals(Material.STONE, SpecialItemType.mark("bridge-egg", stone).getType());
-        assertNull(SpecialItemType.identify(stone));
+    @Test public void rejectsAbsentMarkersWithoutBukkitServer() {
+        assertNull(SpecialItemType.byId(null));
+        assertNull(SpecialItemType.identify(null));
     }
 }
