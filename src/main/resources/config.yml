@@ -51,17 +51,17 @@ match-point:
   dragon-angular-speed: 0.065
   # Distancia do ponto de destino para escolher o proximo ponto (8 a 24 blocos).
   dragon-waypoint-reach: 14.0
-  # Distancia entre pontos da patrulha: percorre TODA a regiao MAIN (pos1/pos2).
+  # Voo em X sobre toda a area MAIN (pos1/pos2), alternando diagonais.
+  # Distancia entre waypoints. Nao ha varredura em grade.
   dragon-patrol-spacing: 40
-  # Explosoes pequenas em X (quatro diagonais) conforme o dragao passa.
-  # A destruicao global por varredura foi DESATIVADA/removida.
-  # Intervalo 30 ticks = 1,5 segundo em 20 TPS.
-  dragon-blast-interval-ticks: 30
+  # Explosoes pequenas e CIRCULARES (estilo TNT), nao em X.
+  # Intervalo 40 ticks = 2 segundos em 20 TPS.
+  dragon-blast-interval-ticks: 40
   dragon-blast-radius: 3
-  dragon-blast-depth: 2
-  dragon-blast-blocks: 12
-  # So explode apos avancar alguns blocos; evita furar o mesmo local parado.
-  dragon-blast-min-movement: 3.5
+  dragon-blast-depth: 1
+  dragon-blast-blocks: 8
+  # So explode depois de avancar alguns blocos.
+  dragon-blast-min-movement: 5.0
   # Barra MATCH POINT fixa perto da camera, mesmo olhando para longe do dragao.
   bossbar-enabled: true
   dragon-damage-radius: 5.0
