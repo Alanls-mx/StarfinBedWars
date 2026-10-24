@@ -12,7 +12,9 @@ match:
 # Itens especiais do BedWars classico (compra configurada em shop.yml).
 special-items:
   enabled: true
-  # 0 = Iron Golem permanece vivo ate morrer ou a partida terminar.
+  # Permanente por padrao, inclusive para configuracoes antigas com 30 segundos.
+  defender-persistent: true
+  # So utilizado se defender-persistent estiver false (0 significa ilimitado).
   defender-lifetime-seconds: 0
   magic-milk-seconds: 30
 
