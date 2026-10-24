@@ -49,10 +49,13 @@ match-point:
   dragon-height-offset: 3
   # Tamanho do proximo trecho de voo na rota natural do dragao (0.03 a 0.20).
   dragon-angular-speed: 0.065
-  # Distancia do ponto de destino para escolher o proximo ponto (10 a 20 blocos).
+  # Distancia do ponto de destino para escolher o proximo ponto (8 a 24 blocos).
   dragon-waypoint-reach: 14.0
-  # Destruicao local proxima ao dragao, a cada segundo.
-  blocks-per-sweep: 18
+  # Distancia entre pontos da patrulha: percorre TODA a regiao MAIN (pos1/pos2).
+  dragon-patrol-spacing: 40
+  # Destruicao visivel da superficie das ilhas no caminho do dragao.
+  dragon-erode-radius: 9
+  blocks-per-sweep: 28
   # Destruicao GLOBAL: percorre todos os chunks da arena progressivamente,
   # mesmo sem jogadores proximos ou quando o dragao voa longe das ilhas.
   # Nao altera o mundo original: so a instancia temporaria da partida.
