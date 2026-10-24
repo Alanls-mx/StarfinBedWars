@@ -71,6 +71,7 @@ public final class SpecialItemService implements ManagedService, Listener {
     private final Map<UUID, BukkitTask> pendingGolemKnockback =
         new HashMap<UUID, BukkitTask>();
     private BukkitTask expiry;
+    private BukkitTask defenderEdgeGuard;
     
     public SpecialItemService(Plugin plugin, MatchEngineService matches) {
         this.plugin = plugin;
@@ -85,6 +86,9 @@ public final class SpecialItemService implements ManagedService, Listener {
         expiry = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override public void run() { expireEffects(); }
         }, 20L, 20L);
+        defenderEdgeGuard = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
+            @Override public void run() { preventDefenderFalls(); }
+        }, 4L, 4L);
         bridgeTick = 0L;
         bridgeDecayTicker = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override public void run() { tickBridgeDecay(); }
@@ -95,6 +99,8 @@ public final class SpecialItemService implements ManagedService, Listener {
         HandlerList.unregisterAll(this);
         if (expiry != null) expiry.cancel();
         expiry = null;
+        if (defenderEdgeGuard != null) defenderEdgeGuard.cancel();
+        defenderEdgeGuard = null;
         if (bridgeDecayTicker != null) bridgeDecayTicker.cancel();
         bridgeDecayTicker = null;
         for (BukkitTask task : bridges.values()) task.cancel();
@@ -427,9 +433,10 @@ public final class SpecialItemService implements ManagedService, Listener {
     }
 
     private boolean spawnDefender(GameMatch match, String teamId, Location at) {
+        // 0 means the Defender remains until defeated or until its match ends.
         return spawnPet(match, teamId, at, EntityType.IRON_GOLEM,
-            Math.max(5, Math.min(120, plugin.getConfig().getInt(
-                "special-items.defender-lifetime-seconds", 30))));
+            Math.max(0, Math.min(3600, plugin.getConfig().getInt(
+                "special-items.defender-lifetime-seconds", 0))));
     }
 
     private boolean spawnPet(GameMatch match, String teamId, Location at,
@@ -445,7 +452,8 @@ public final class SpecialItemService implements ManagedService, Listener {
         creature.setMetadata(MOB_TAG, new FixedMetadataValue(plugin, match.getId() + "|" + teamId));
         if (creature instanceof IronGolem) creature.setCustomName(ChatColor.AQUA + "Defensor");
         mobs.put(creature.getUniqueId(), new SpecialMob(match.getId(), teamId, creature,
-            System.currentTimeMillis() + lifetimeSeconds * 1000L));
+            lifetimeSeconds <= 0 ? Long.MAX_VALUE :
+                System.currentTimeMillis() + lifetimeSeconds * 1000L));
         return true;
     }
 
@@ -600,6 +608,50 @@ public final class SpecialItemService implements ManagedService, Listener {
         }
     }
 
+    /**
+     * Vanilla navigation can path directly off floating BedWars islands.
+     * Scan the next step and the golem's feet every four ticks, remembering
+     * a valid last-safe platform position for emergencies.
+     */
+    private void preventDefenderFalls() {
+        for (SpecialMob mob : mobs.values()) {
+            if (!(mob.entity instanceof IronGolem) || !mob.entity.isValid()
+                    || mob.entity.isDead()) continue;
+            GameMatch match = matches.getMatchInWorld(mob.entity.getWorld());
+            if (match == null || !match.getId().equals(mob.matchId)
+                    || match.getState() != MatchState.IN_GAME) continue;
+            Location at = mob.entity.getLocation();
+            if (hasSolidFloor(at)) {
+                mob.lastSafe = at.clone();
+                org.bukkit.entity.LivingEntity enemy = mob.entity.getTarget();
+                if (enemy == null) continue;
+                Vector approach = enemy.getLocation().toVector().subtract(at.toVector());
+                approach.setY(0.0D);
+                if (approach.lengthSquared() < 0.01D) continue;
+                approach.normalize().multiply(1.5D);
+                Location ahead = at.clone().add(approach);
+                if (!hasSolidFloor(ahead)) {
+                    mob.entity.setTarget(null);
+                    Vector v = mob.entity.getVelocity();
+                    mob.entity.setVelocity(new Vector(0.0D, Math.max(0.0D, v.getY()), 0.0D));
+                }
+            } else if (mob.lastSafe != null) {
+                mob.entity.setTarget(null);
+                mob.entity.teleport(mob.lastSafe);
+                mob.entity.setVelocity(new Vector(0, 0, 0));
+            }
+        }
+    }
+
+    private boolean hasSolidFloor(Location at) {
+        if (at == null || at.getWorld() == null || at.getY() < 2) return false;
+        Location below = at.clone().subtract(0.0D, 1.0D, 0.0D);
+        // BedWars islands have gaps; never consider air, liquids or leaves safe.
+        org.bukkit.block.Block floor = below.getBlock();
+        return floor.getType().isSolid() && floor.getType() != Material.LEAVES
+            && floor.getType() != Material.LEAVES_2;
+    }
+
     /** Give defenders and bedbugs a target: vanilla IronGolems do not always chase players. */
     private void selectEnemyTarget(SpecialMob mob) {
         Creature creature = mob.entity;
@@ -619,7 +671,12 @@ public final class SpecialItemService implements ManagedService, Listener {
                     || matches.isSpectating(player.getUniqueId())
                     || mob.teamId.equals(participant.getTeamId())) continue;
             double distance = player.getLocation().distanceSquared(creature.getLocation());
-            if (distance < best) {
+            if (distance < best
+                    && (!(creature instanceof IronGolem)
+                        || hasSolidFloor(creature.getLocation().clone().add(
+                            player.getLocation().toVector()
+                                .subtract(creature.getLocation().toVector())
+                                .setY(0).normalize().multiply(1.5D))))) {
                 nearest = player;
                 best = distance;
             }
@@ -672,11 +729,15 @@ public final class SpecialItemService implements ManagedService, Listener {
         private final String teamId;
         private final Creature entity;
         private final long expiresAt;
+        private Location lastSafe;
         private SpecialMob(UUID matchId, String teamId, Creature entity, long expiresAt) {
             this.matchId = matchId;
             this.teamId = teamId;
             this.entity = entity;
             this.expiresAt = expiresAt;
+            if (entity instanceof IronGolem && entity.isValid()) {
+                this.lastSafe = entity.getLocation().clone();
+            }
         }
     }
 
