@@ -393,12 +393,61 @@ public final class SpecialItemService implements ManagedService, Listener {
         }
     }
 
+    /**
+     * Vanilla damage and velocity are processed by the server around the
+     * damage event. Scale the resulting velocity on the following tick,
+     * preserving golem movement and combat AI. Only our summoned defenders
+     * are affected; NPC Villagers and natural mobs remain unchanged.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onDefenderDamaged(EntityDamageEvent event) {
+        if (!(event.getEntity() instanceof IronGolem)) return;
+        switch (event.getCause()) {
+            case ENTITY_ATTACK:
+            case PROJECTILE:
+            case ENTITY_EXPLOSION:
+            case BLOCK_EXPLOSION:
+                break;
+            default:
+                return;
+        }
+        final IronGolem golem = (IronGolem) event.getEntity();
+        final UUID entityId = golem.getUniqueId();
+        final SpecialMob defender = mobs.get(entityId);
+        if (defender == null || pendingGolemKnockback.containsKey(entityId)) return;
+
+        BukkitTask task = Bukkit.getScheduler().runTask(plugin, new Runnable() {
+            @Override public void run() {
+                pendingGolemKnockback.remove(entityId);
+                if (!golem.isValid() || golem.isDead()
+                        || mobs.get(entityId) != defender) return;
+                GameMatch match = matches.getMatchInWorld(golem.getWorld());
+                if (match == null || !defender.matchId.equals(match.getId())
+                        || match.getState() != MatchState.IN_GAME) return;
+
+                double horizontal = SpecialItemBalance.knockbackMultiplier(
+                    plugin.getConfig().getDouble("special-items.defender-knockback.horizontal", 0.75D),
+                    0.75D);
+                double vertical = SpecialItemBalance.knockbackMultiplier(
+                    plugin.getConfig().getDouble("special-items.defender-knockback.vertical", 0.85D),
+                    0.85D);
+                if (horizontal == 1.0D && vertical == 1.0D) return;
+                Vector original = golem.getVelocity();
+                golem.setVelocity(new Vector(original.getX() * horizontal,
+                    original.getY() * vertical, original.getZ() * horizontal));
+            }
+        });
+        pendingGolemKnockback.put(entityId, task);
+    }
+
     @EventHandler
     public void onPetDeath(EntityDeathEvent event) {
         if (ownMetadata(event.getEntity()) == null) return;
         event.getDrops().clear();
         event.setDroppedExp(0);
         SpecialMob removed = mobs.remove(event.getEntity().getUniqueId());
+        BukkitTask velocityTask = pendingGolemKnockback.remove(event.getEntity().getUniqueId());
+        if (velocityTask != null) velocityTask.cancel();
         if (removed != null && guard != null) guard.forget(removed.entity);
     }
 
@@ -485,6 +534,8 @@ public final class SpecialItemService implements ManagedService, Listener {
     }
 
     private void removeMob(SpecialMob mob) {
+        BukkitTask velocityTask = pendingGolemKnockback.remove(mob.entity.getUniqueId());
+        if (velocityTask != null) velocityTask.cancel();
         if (guard != null) guard.forget(mob.entity);
         if (mob.entity.isValid()) mob.entity.remove();
     }
