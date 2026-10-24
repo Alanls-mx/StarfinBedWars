@@ -16,6 +16,7 @@ import com.starfinplugins.bedwars.economy.InventoryEconomy;
 import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
 import com.starfinplugins.bedwars.event.TeamUpgradePurchasedEvent;
 import com.starfinplugins.bedwars.event.TeamTrapTriggeredEvent;
+import com.starfinplugins.bedwars.shop.special.SpecialItemService;
 import com.starfinplugins.bedwars.match.MatchEngineService;
 import com.starfinplugins.bedwars.service.ManagedService;
 import java.util.ArrayList;
@@ -339,6 +340,9 @@ public final class TeamUpgradeService implements ManagedService, Listener {
         }
     }
 
+    private SpecialItemService specialItems;
+    public void setSpecialItems(SpecialItemService specialItems) { this.specialItems = specialItems; }
+
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
         if (event.getTo() == null || event.getFrom().getBlockX() == event.getTo().getBlockX()
@@ -367,6 +371,8 @@ public final class TeamUpgradeService implements ManagedService, Listener {
         }
         for (String teamId : current) {
             if (previous.contains(teamId)) continue;
+            // Magic Milk suppresses the trap without consuming it.
+            if (specialItems != null && specialItems.isTrapImmune(player, match)) continue;
             GameTeam team = match.getTeam(teamId);
             if (team.getTraps().isEmpty()) continue;
             TeamTrapType type = team.consumeTrap();
