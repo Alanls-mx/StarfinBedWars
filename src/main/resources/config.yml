@@ -228,7 +228,7 @@ messages:
   spawn-countdown: '&eAs barreiras abrem em &6{time} &esegundos!'
   countdown-cancelled: '&cContagem cancelada! Aguardando mais jogadores.'
   match-started: '&a&lA PARTIDA COMECOU! &7Proteja sua cama e elimine as equipes adversarias!'
-  own-bed: '&cVoce nao pode destruir sua propria cama!'
+  own-bed: '&cVocê não pode destruir sua própria cama!'
   respawn-countdown: '&eVoce renascera em &c{time} &esegundos.'
   respawned: '&aVoce renasceu!'
   you-eliminated: '&cVoce foi eliminado! Sua cama ja foi destruida.'
