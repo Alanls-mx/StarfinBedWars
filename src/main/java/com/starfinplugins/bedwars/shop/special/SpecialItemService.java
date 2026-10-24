@@ -102,8 +102,13 @@ public final class SpecialItemService implements ManagedService, Listener {
             && protection.untilMillis > System.currentTimeMillis();
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onUse(PlayerInteractEvent event) {
+        // On Spigot 1.8 a right-click-air event may arrive already cancelled
+        // because vanilla has no matching use action for some custom items.
+        // Respect cancellation of protected block interactions.
+        if (event.isCancelled()
+                && event.getAction() == org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK) return;
         if (event.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_AIR
                 && event.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK) return;
         final Player player = event.getPlayer();
