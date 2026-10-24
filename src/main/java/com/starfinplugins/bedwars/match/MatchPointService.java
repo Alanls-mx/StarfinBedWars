@@ -169,6 +169,10 @@ public final class MatchPointService implements ManagedService, Listener {
     /** Keep a fake, client-only Wither health bar near each 1.8.8 viewer. */
     private void syncBossBars() {
         java.util.Set<UUID> eligible = new java.util.HashSet<UUID>();
+        if (!plugin.getConfig().getBoolean("match-point.bossbar-enabled", true)) {
+            bossBars.clear();
+            return;
+        }
         for (Active active : sessions.values()) {
             if (!active.triggered || active.match.getState() != MatchState.IN_GAME
                     || active.dragon == null || !active.dragon.isValid()) continue;
@@ -261,6 +265,8 @@ public final class MatchPointService implements ManagedService, Listener {
         EnderDragon dragon = active.dragon;
         if (dragon == null || !dragon.isValid() || dragon.isDead() || active.route == null) return;
 
+        // Follow successive diagonal waypoints across MAIN, alternating the
+        // two arms of an X instead of sweeping the map as a grid.
         // Move toward a sequence of waypoints using the dragon's OWN 1.8.8
         // flight AI. No periodic teleport, no forced rotation, no broken
         // history of body/head/tail positions.
@@ -294,17 +300,17 @@ public final class MatchPointService implements ManagedService, Listener {
     }
 
     /**
-     * TNT-like bursts in four diagonal directions create a small X in the
-     * ground exactly where the dragon passes. Unlike the former global
-     * cursor, NO blocks are removed anywhere else in the arena.
+     * Small TNT-like CIRCULAR craters only where the dragon really flies.
+     * The alternating X is the DRAGON PATROL, not the blast footprint.
+     * No map-wide sweeping or edits at distant player positions.
      */
     private void destroyNearby(Active active, Location point) {
-        final int interval = Math.max(12, Math.min(80,
-            plugin.getConfig().getInt("match-point.dragon-blast-interval-ticks", 30)));
+        final int interval = Math.max(20, Math.min(100,
+            plugin.getConfig().getInt("match-point.dragon-blast-interval-ticks", 40)));
         if (ticks - active.lastBlastTick < interval) return;
         // Never tunnel out the same place because the dragon is stuck.
-        final double minMovement = Math.max(1.0D, Math.min(10.0D,
-            plugin.getConfig().getDouble("match-point.dragon-blast-min-movement", 3.5D)));
+        final double minMovement = Math.max(1.0D, Math.min(15.0D,
+            plugin.getConfig().getDouble("match-point.dragon-blast-min-movement", 5.0D)));
         if (active.lastBlastPosition != null
                 && active.lastBlastPosition.getWorld() == point.getWorld()
                 && active.lastBlastPosition.distanceSquared(point) < minMovement * minMovement) {
@@ -312,19 +318,19 @@ public final class MatchPointService implements ManagedService, Listener {
         }
         ArenaRegion bounds = MatchPointArea.resolve(active.match.getArena());
         if (bounds == null) return;
-        final int maxBlocks = Math.max(1, Math.min(40,
-            plugin.getConfig().getInt("match-point.dragon-blast-blocks", 12)));
+        final int maxBlocks = Math.max(1, Math.min(24,
+            plugin.getConfig().getInt("match-point.dragon-blast-blocks", 8)));
         final int radius = Math.max(1, Math.min(6,
             plugin.getConfig().getInt("match-point.dragon-blast-radius", 3)));
         final int depth = Math.max(1, Math.min(4,
-            plugin.getConfig().getInt("match-point.dragon-blast-depth", 2)));
+            plugin.getConfig().getInt("match-point.dragon-blast-depth", 1)));
 
         final World world = point.getWorld();
         int centerX = point.getBlockX();
         int centerZ = point.getBlockZ();
         int removed = 0;
         Location visibleImpact = null;
-        for (MatchPointXBlast.Offset offset : MatchPointXBlast.offsets(radius)) {
+        for (MatchPointBlastFootprint.Offset offset : MatchPointBlastFootprint.offsets(radius)) {
             if (removed >= maxBlocks) break;
             int x = centerX + offset.x, z = centerZ + offset.z;
             if (x < bounds.getMinimumX() || x > bounds.getMaximumX()
