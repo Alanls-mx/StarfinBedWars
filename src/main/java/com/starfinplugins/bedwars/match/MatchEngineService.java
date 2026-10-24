@@ -944,7 +944,13 @@ public final class MatchEngineService implements ManagedService, Listener {
             Player candidate = Bukkit.getPlayer(recent.attackerId);
             if (validKiller(candidate, match, participant)) killer = candidate;
         }
-        transferResources(player, killer);
+        GameTeam victimTeam = match.getTeam(participant.getTeamId());
+        boolean transfer = victimTeam != null && FinalKillResourcePolicy.shouldTransfer(
+            victimTeam.isBedAlive(), victimTeam.getActiveCount(match),
+            match.getEligibleTeams().size());
+        if (transfer) transferResources(player, killer);
+        // The winning final kill intentionally awards no materials because
+        // the game transitions to the victory screen and lobby restoration.
         if (equipment != null) equipment.onValidDeath(player, participant);
         player.getInventory().clear();
         player.getInventory().setArmorContents(new org.bukkit.inventory.ItemStack[4]);
