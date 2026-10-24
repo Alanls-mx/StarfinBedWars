@@ -112,7 +112,7 @@ public final class PresentationConfigMigrator {
         }
         if (mergeFile(new File(plugin.getDataFolder(), "config.yml"), defaults)) {
             plugin.reloadConfig();
-            plugin.getLogger().info("Opcoes de scoreboard/TAB adicionadas ao config.yml; backup preservado.");
+            plugin.getLogger().info("Novas opcoes adicionadas ao config.yml; valores existentes e backup preservados.");
         }
     }
 
@@ -123,50 +123,18 @@ public final class PresentationConfigMigrator {
         boolean changed = false;
         for (String path : PATHS) {
             if (current.contains(path)) continue;
+            // Never replace an administrator's scalar parent with a section.
+            int dot = path.indexOf('.');
+            while (dot >= 0) {
+                String parent = path.substring(0, dot);
+                if (current.contains(parent) && !current.isConfigurationSection(parent)) {
+                    throw new IOException("config.yml: '" + parent
+                        + "' deve ser uma secao YAML; arquivo preservado.");
+                }
+                dot = path.indexOf('.', dot + 1);
+            }
+            if (!defaults.contains(path)) continue;
             current.set(path, defaults.get(path));
-            changed = true;
-        }
-        if ("&eStarfinPlugins".equals(current.getString("tab.footer"))) {
-            current.set("tab.footer", "{footer}");
-            changed = true;
-        }
-        if ("&b&lSTARFIN BEDWARS\\n&fstarfinplugins.com.br"
-                .equals(current.getString("tab.header"))) {
-            current.set("tab.header", "&b&lSTARFIN BEDWARS\\n{footer}");
-            changed = true;
-        }
-        if ("{team_color}{team_initial} {team_name} {status}{own_marker}"
-                .equals(current.getString("scoreboard.team-line"))) {
-            current.set("scoreboard.team-line", defaults.getString("scoreboard.team-line"));
-            changed = true;
-        }
-        if ("&eLOJA DE ITENS".equals(current.getString("shop-hologram.items-title"))) {
-            current.set("shop-hologram.items-title", defaults.getString("shop-hologram.items-title"));
-            changed = true;
-        }
-        if ("&eMELHORIAS".equals(current.getString("shop-hologram.upgrades-title"))) {
-            current.set("shop-hologram.upgrades-title", defaults.getString("shop-hologram.upgrades-title"));
-            changed = true;
-        }
-        if ("&7Clique para melhorar sua equipe".equals(current.getString("shop-hologram.upgrades-subtitle"))) {
-            current.set("shop-hologram.upgrades-subtitle", defaults.getString("shop-hologram.upgrades-subtitle"));
-            changed = true;
-        }
-        if (current.getDouble("shop-hologram.height") == 2.6D) {
-            current.set("shop-hologram.height", defaults.getDouble("shop-hologram.height"));
-            changed = true;
-        }
-        if (current.getInt("match.respawn-seconds") == 5) {
-            current.set("match.respawn-seconds", 3);
-            changed = true;
-        }
-        if ("IRON_CHESTPLATE".equals(current.getString("shop.category-icons.ARMOR"))) {
-            current.set("shop.category-icons.ARMOR", "DIAMOND_CHESTPLATE");
-            changed = true;
-        }
-        String chatFormat = current.getString("match-chat.format");
-        if (chatFormat != null && (chatFormat.contains("Â»") || chatFormat.contains("»"))) {
-            current.set("match-chat.format", chatFormat.replace("Â»", ">").replace("»", ">"));
             changed = true;
         }
         if (!changed) return false;

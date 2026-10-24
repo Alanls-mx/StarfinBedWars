@@ -75,6 +75,38 @@ public class PresentationConfigMigratorTest {
         assertFalse(PresentationConfigMigrator.mergeFile(config, defaults));
     }
 
+    @Test public void keepsExplicitValuesEvenWhenTheyMatchOldDefaults() throws Exception {
+        File config = folder.newFile("old-defaults.yml");
+        Files.write(config.toPath(), ("match:\n  respawn-seconds: 5\n"
+            + "shop-hologram:\n  height: 2.6\n  items-title: '&eLOJA DE ITENS'\n"
+            + "shop:\n  category-icons:\n    ARMOR: IRON_CHESTPLATE\n")
+            .getBytes(StandardCharsets.UTF_8));
+        YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
+            getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
+        assertTrue(PresentationConfigMigrator.mergeFile(config, defaults));
+        YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
+        assertEquals(5, updated.getInt("match.respawn-seconds"));
+        assertEquals(2.6D, updated.getDouble("shop-hologram.height"), 0D);
+        assertEquals("&eLOJA DE ITENS", updated.getString("shop-hologram.items-title"));
+        assertEquals("IRON_CHESTPLATE", updated.getString("shop.category-icons.ARMOR"));
+        assertFalse(PresentationConfigMigrator.mergeFile(config, defaults));
+    }
+
+    @Test public void refusesScalarSectionsWithoutChangingFile() throws Exception {
+        File config = folder.newFile("malformed-section.yml");
+        byte[] original = "scoreboard: disabled\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(config.toPath(),original);
+        YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
+            getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
+        try {
+            PresentationConfigMigrator.mergeFile(config, defaults);
+            org.junit.Assert.fail("Invalid section must not be overwritten");
+        } catch (java.io.IOException expected) {
+            assertTrue(expected.getMessage().contains("scoreboard"));
+        }
+        org.junit.Assert.assertArrayEquals(original,Files.readAllBytes(config.toPath()));
+    }
+
     @Test
     public void preservesCustomMatchMessagesWhenMigrating() throws Exception {
         File config = folder.newFile("custom-messages.yml");
@@ -147,7 +179,7 @@ public class PresentationConfigMigratorTest {
     }
 
     @Test
-    public void replacesOnlyLegacyTabFooterWithSharedBrand() throws Exception {
+    public void preservesExplicitLegacyBrandingToo() throws Exception {
         File config = folder.newFile("legacy.yml");
         Files.write(config.toPath(), ("tab:\n  header: '&b&lSTARFIN BEDWARS\\n&fstarfinplugins.com.br'\n"
             + "  footer: '&eStarfinPlugins'\n"
@@ -157,8 +189,8 @@ public class PresentationConfigMigratorTest {
             getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
         assertTrue(PresentationConfigMigrator.mergeFile(config, defaults));
         YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
-        assertEquals("{footer}", updated.getString("tab.footer"));
-        assertEquals("&b&lSTARFIN BEDWARS\\n{footer}", updated.getString("tab.header"));
+        assertEquals("&eStarfinPlugins", updated.getString("tab.footer"));
+        assertEquals("&b&lSTARFIN BEDWARS\\n&fstarfinplugins.com.br", updated.getString("tab.header"));
         assertEquals("&ewww.meuserver.com.br", updated.getString("scoreboard.footer"));
     }
 
