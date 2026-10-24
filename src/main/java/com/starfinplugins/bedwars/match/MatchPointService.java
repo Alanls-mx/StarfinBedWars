@@ -222,9 +222,11 @@ public final class MatchPointService implements ManagedService, Listener {
         double[] p = active.path.at(active.angle);
         Location target = new Location(world, p[0], p[1], p[2]);
         target.setYaw((float) Math.toDegrees(-active.angle));
-        dragon.teleport(target);
-        destroyNearby(active, target);
-        damageNearby(active, target);
+        // Another plugin or the server may reject the teleport. Only erode
+        // the map and damage players where the dragon actually arrived.
+        if (!dragon.teleport(target)) return;
+        destroyNearby(active, dragon.getLocation());
+        damageNearby(active, dragon.getLocation());
     }
 
     /**
