@@ -17,6 +17,7 @@ import com.starfinplugins.bedwars.match.MatchChatService;
 import com.starfinplugins.bedwars.match.MatchChestService;
 import com.starfinplugins.bedwars.match.MatchEquipmentService;
 import com.starfinplugins.bedwars.match.MatchVisualService;
+import com.starfinplugins.bedwars.match.MatchPointService;
 import com.starfinplugins.bedwars.match.BedHologramService;
 import com.starfinplugins.bedwars.menu.BedWarsMenuService;
 import com.starfinplugins.bedwars.setup.ArenaSetupWizardService;
@@ -57,6 +58,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private MatchChestService chests;
     private MatchEquipmentService equipment;
     private MatchVisualService visuals;
+    private MatchPointService matchPoint;
     private BedHologramService bedHolograms;
     private boolean initialized;
 
@@ -107,6 +109,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             equipment = new MatchEquipmentService(this, teamUpgrades, matchEngine);
             matchEngine.setEquipment(equipment);
             visuals = new MatchVisualService(this, matchEngine);
+            matchPoint = new MatchPointService(this, matchEngine, mobGuard);
             bedHolograms = new BedHologramService(this, arenaService, matchEngine, mobGuard);
             shops = new ShopService(this, arenaService, matchEngine, teamUpgrades);
             shops.setMobGuard(mobGuard);
@@ -126,6 +129,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services.add(equipment);
             services.add(shops);
             services.add(specialItems);
+            services.add(matchPoint);
             services.add(matchChat);
             services.add(presentation);
             services.add(visuals);
