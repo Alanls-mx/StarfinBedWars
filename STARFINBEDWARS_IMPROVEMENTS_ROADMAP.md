@@ -676,3 +676,60 @@ Ainda executar `mvn -B verify` e um ciclo real de startup/partida/stop
 no PaperSpigot-445 com o JAR novo. Caso o problema continue com classe
 presente no JAR, recolher as PRIMEIRAS mensagens de erro durante
 a inicializacao e confirmar o checksum do JAR em `plugins/`.
+
+## Match Point: priorizar ilhas/centro + explosoes realmente quebrando blocos
+
+**Relato de teste no PaperSpigot 1.8.8:** dragao voa entre bordas e
+cantos de MAIN, mesmo com ilhas no meio, e os efeitos de explosao
+aparecem sem destruicao perceptivel de construcoes.
+
+### Diagnostico no codigo
+- `MatchPointPatrolRoute` gerava seus quatro vertices a partir de
+  `MAIN` (pos1/pos2), mesmo quando a maior parte do cuboide era Void.
+  Uma fase passava pelas bases, mas tres fases voltavam as bordas.
+- `dragon-waypoint-reach` tinha tolerancia de 14 blocos (ou mais que
+  raio 3 do blast), fazendo o dragao desistir da aproximacao antes de
+  chegar perto das plataformas.
+- A explosao usava `world.getHighestBlockYAt(x,z)` e descia no maximo
+  **12 blocos**: em ilhas flutuantes isso frequentemente nao alcança o
+  primeiro bloco real embaixo da altura do dragao.
+- Nao havia log discriminando explosoes reais de tentativas em colunas
+  vazias ou chunks descarregados.
+
+### Correcao implementada
+- `MatchPointPatrolRoute` calcula um **X centrado no conjunto dos
+  spawns das equipes**, com margem curta e cruzamento central em cada
+  diagonal. `MAIN` agora e usada para CLAMP/seguranca; sem coordenadas
+  de ilhas validas, ha fallback para o cuboide. A rota inclui waypoints
+  EXATOS de cada spawn por fase, alternando a ordem das visitas.
+- O alcance de waypoint passa a no maximo **5 blocos em runtime**,
+  inclusive para arquivos antigos com valor 14. Novo default: 4.
+  Timeout de waypoint aumentado a 700 ticks para evitar pular destinos
+  longos antes de o dragao alcança-los.
+- `MatchPointSurfaceSearch` examina todos os valores Y entre minimo de
+  MAIN e a altura REAL do dragao + 4; nao usa o heightmap do vanilla e
+  detecta vidro, la, terra e estruturas flutuantes em qualquer altura.
+  Ainda remove no maximo os 8 blocos por explosao e ate 1 por coluna
+  (defaults). Nao apaga o mundo template ou blocos BEDROCK.
+- Quando um impacto realmente remove blocos, o efeito visual e o som
+  ocorrem no local do BLOCO destruido. Ao nao encontrar terreno, nao
+  cria explosao fantasma; log periodico detalha coordenadas, limites de
+  altura e chunks nao disponiveis. Processamento das buscas vazias e
+  limitado a uma tentativa por intervalo de 40 ticks para evitar lag.
+- Logs tambem registram total de blocos efetivamente destruidos na
+  instancia a cada 32 blocos.
+
+### Testes adicionais
+- `MatchPointPatrolRouteTest`: quatro ilhas agrupadas em -40/+40 num
+  mapa de -200/+200; trajetoria deve passar pelo centro e priorizar
+  ilhas, nunca ir aos cantos vazios. Em mapa com duas equipes no eixo X,
+  nao usa extremos vazios do eixo Z e visita as duas bases.
+- `MatchPointSurfaceSearchTest`: acha blocos em Y=90 quando o teto e
+  Y=180, reconhece blocos transparentes, respeita limites e pisos
+  negativos/vazios.
+
+**Ainda pendente** `mvn -B verify` e validacao real no PaperSpigot-445:
+entrar numa partida, usar `/sbw matchpoint`, observar voo sobre as
+ilhas e centro; conferir crateras reais na ilha e log `blocos
+destruidos de verdade`. Testar todos os layouts existentes, inclusive
+mapas de 2 e 4 equipes, protecao do template e recompilacao limpa.
