@@ -473,3 +473,21 @@ grande volume de blocos, 1 e 2 jogadores ativos, jogadores longe do
 dragao e finalizacao durante a destruicao. Ao iniciar uma nova partida,
 confirmar mapa totalmente restaurado. Verificar celebracao com fireworks
 durante os novos 9 segundos de vitoria.
+
+## Hotfix de compilacao PaperSpigot 1.8.8 — EnderDragon.bA
+
+O usuario compilou com `mvn -B verify` e recebeu um unico erro do compilador
+em `MatchPointDragonFlightV1_8_R3.java:25`:
+`cannot find symbol: variable bA` no `EntityEnderDragon` de sua API.
+O campo `bA` existe em algumas fontes CraftBukkit publicas, mas nao esta
+disponivel na distribuicao `patched_1.8.8.jar:git-PaperSpigot-445`
+compilada pelo usuario.
+
+Hotfix: remover `handle.bA = null` e documentar essa variacao de NMS.
+Continuar direcionando waypoints com `a/b/c` e `bw`, campos que nao foram
+apontados como ausentes nessa compilacao. A prevençao de seleçao aleatoria
+de alvo permanece no listener de `MatchPointService`.
+
+**A compilacao ainda precisa ser repetida no PC do usuario.** O log de
+source/target 8 obsolete e apenas warning do JDK mais novo, nao o motivo
+do erro. Nao alegar sucesso do build ate `mvn -B verify` concluir.
