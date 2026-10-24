@@ -37,6 +37,9 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntityTargetEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -96,6 +99,25 @@ public final class MatchPointService implements ManagedService, Listener {
             if (active != null) removeDragon(active);
             syncBossBars();
         }
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        bossBars.hide(event.getPlayer());
+    }
+
+    @EventHandler
+    public void onPlayerChangeWorld(PlayerChangedWorldEvent event) {
+        // The client discards packet-only entities on world changes.
+        // The next bossbar tick will spawn a fresh one if still eligible.
+        bossBars.hide(event.getPlayer());
+    }
+
+    @EventHandler
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
+        // A respawn clears client-side entities even if it stays in the
+        // same world; force a fresh fake-boss spawn on the next update.
+        bossBars.hide(event.getPlayer());
     }
 
     public enum ForceResult {
