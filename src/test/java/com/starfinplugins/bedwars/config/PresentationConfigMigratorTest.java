@@ -29,6 +29,13 @@ public class PresentationConfigMigratorTest {
         assertTrue(updated.getStringList("scoreboard.layouts.in-game").contains("{teams}"));
         assertEquals("OWN_TEAM", updated.getString("bed-hologram.visibility"));
         assertEquals(4, updated.getInt("generator-holograms.orbit.icon-count"));
+        assertEquals(3, updated.getInt("special-items.bridge-egg.width"));
+        assertEquals(2, updated.getInt("special-items.bridge-egg.thickness"));
+        assertEquals(480, updated.getInt("special-items.bridge-egg.max-blocks"));
+        assertEquals(0.75D, updated.getDouble(
+            "special-items.defender-knockback.horizontal"), 0.0D);
+        assertEquals(0.85D, updated.getDouble(
+            "special-items.defender-knockback.vertical"), 0.0D);
         assertEquals("&cVocê não pode destruir sua própria cama!",
             updated.getString("messages.own-bed"));
         assertEquals("&e&lINICIANDO", updated.getString("visuals.lobby-countdown.title"));
@@ -69,6 +76,26 @@ public class PresentationConfigMigratorTest {
         assertEquals("{footer}", updated.getString("tab.footer"));
         assertEquals("&b&lSTARFIN BEDWARS\\n{footer}", updated.getString("tab.header"));
         assertEquals("&ewww.meuserver.com.br", updated.getString("scoreboard.footer"));
+    }
+
+    @Test
+    public void preservesCustomBridgeAndDefenderBalancing() throws Exception {
+        File config = folder.newFile("custom-specials.yml");
+        Files.write(config.toPath(), ("special-items:\n"
+            + "  bridge-egg:\n    width: 5\n    thickness: 1\n"
+            + "  defender-knockback:\n    horizontal: 0.90\n")
+            .getBytes(StandardCharsets.UTF_8));
+        YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
+            getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
+        assertTrue(PresentationConfigMigrator.mergeFile(config, defaults));
+        YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
+        assertEquals(5, updated.getInt("special-items.bridge-egg.width"));
+        assertEquals(1, updated.getInt("special-items.bridge-egg.thickness"));
+        assertEquals(0.90D, updated.getDouble(
+            "special-items.defender-knockback.horizontal"), 0.0D);
+        assertEquals(0.85D, updated.getDouble(
+            "special-items.defender-knockback.vertical"), 0.0D);
+        assertFalse(PresentationConfigMigrator.mergeFile(config, defaults));
     }
 
     @Test
