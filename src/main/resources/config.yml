@@ -12,7 +12,8 @@ match:
 # Itens especiais do BedWars classico (compra configurada em shop.yml).
 special-items:
   enabled: true
-  defender-lifetime-seconds: 30
+  # 0 = Iron Golem permanece vivo ate morrer ou a partida terminar.
+  defender-lifetime-seconds: 0
   magic-milk-seconds: 30
 
   # Ovo de Ponte: passagem reforcada na cor da equipe.
