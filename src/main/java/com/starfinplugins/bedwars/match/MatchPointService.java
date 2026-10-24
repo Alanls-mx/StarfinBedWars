@@ -204,6 +204,7 @@ public final class MatchPointService implements ManagedService, Listener {
                     Material material = block.getType();
                     if (material == Material.AIR || material == Material.BEDROCK
                             || material == Material.BED_BLOCK || !material.isSolid()) continue;
+                    matches.forgetMatchPointBlock(active.match, block);
                     block.setType(Material.AIR, false);
                     removed++;
                 }
