@@ -54,6 +54,7 @@ import org.bukkit.event.entity.EntityTargetEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
 import org.bukkit.event.EventPriority;
 import org.bukkit.inventory.Inventory;
@@ -208,6 +209,8 @@ public final class ShopService implements ManagedService, Listener {
             Map<String, List<Entity>> groups = shopGroups.get(match.getId());
             List<Entity> current = groups == null ? null : groups.get(kind);
             if (isShopGroupHealthy(current)) return;
+            plugin.getLogger().warning("Recriando NPC de loja inacessivel ou incompleto: partida="
+                + match.getId() + " tipo=" + kind + ".");
             removeShopGroup(match.getId(), kind, created, kinds);
         }
         if (position == null) {
@@ -273,8 +276,11 @@ public final class ShopService implements ManagedService, Listener {
             if (entity instanceof Villager) foundVillager = true;
             if (entity instanceof ArmorStand && !((ArmorStand) entity).isMarker()) {
                 ArmorStand body = (ArmorStand) entity;
-                if (body.getHelmet() == null || body.getChestplate() == null
-                        || body.getLeggings() == null) return false;
+                if (body.getHelmet() == null || body.getHelmet().getType() == Material.AIR
+                        || body.getChestplate() == null || body.getChestplate().getType() == Material.AIR
+                        || body.getLeggings() == null || body.getLeggings().getType() == Material.AIR) {
+                    return false;
+                }
                 foundBody = true;
             }
         }
@@ -499,6 +505,14 @@ public final class ShopService implements ManagedService, Listener {
      */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onShopArmorStandManipulate(PlayerArmorStandManipulateEvent event) {
+        String data = shopClickData(event.getRightClicked());
+        if (data == null) return;
+        event.setCancelled(true);
+        requestShopMenu(event.getPlayer(), event.getRightClicked(), data);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onShopClickAt(PlayerInteractAtEntityEvent event) {
         String data = shopClickData(event.getRightClicked());
         if (data == null) return;
         event.setCancelled(true);
