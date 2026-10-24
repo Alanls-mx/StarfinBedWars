@@ -24,3 +24,15 @@ Base: `main` @ `281d4479723ac5309593020c5199855cb9ce3ca3` (24/10/2026).
 8. Ranked, temporadas, campeonatos e rede.
 
 Nao afirmar que essas etapas estao prontas. Implementar em branches e PRs incrementais, preservar compatibilidade Java 8 / Spigot 1.8.8 e validar cada etapa.
+
+## Correcao de Shop / Upgrade com NPC visivel mas menu inacessivel
+
+- Tratar separadamente os eventos 1.8.8: `PlayerInteractEntityEvent`, `PlayerInteractAtEntityEvent` e `PlayerArmorStandManipulateEvent`.
+- Cancelar equipamento do ArmorStand e abrir a GUI no proximo tick, apos o processamento vanilla do clique, evitando abertura seguida de fechamento imediato.
+- Aplicar debounce por jogador para evitar duas aberturas quando mais de um evento for disparado no mesmo tick.
+- Resolver a loja apenas de NPCs registrados e do mundo da partida, inclusive quando metadados Bukkit sao perdidos durante descarregamento de chunk.
+- Validar vinculo partida/equipe, estado de jogador, distancia e mundo novamente antes de abrir o inventario.
+- Reparar grupos de NPCs se Villager, corpo equipado ou seus metadados essenciais estiverem invalidos. As linhas de texto nao possuem metadados intencionalmente e NAO devem provocar recriacao repetida.
+- Logar reparos de NPCs e falhas de abertura. Testes unitarios validam parsing e isolamento de rotas de Shop/Upgrade.
+
+**Validacao grafica ainda pendente:** dois jogadores de equipes diferentes devem testar varios cliques na cabeca, torso e Villager, com mao vazia e com itens equipados, alem de tentativas de retirar a cabeca/armadura do corpo do NPC. Repetir apos tempo ocioso, descarregar/carregar chunk e reiniciar partidas. Observar logs de reparacao e verificar que menus continuam acessiveis apos varios minutos.
