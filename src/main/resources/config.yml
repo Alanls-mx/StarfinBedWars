@@ -22,6 +22,11 @@ special-items:
     thickness: 2
     max-blocks: 480
     max-ticks: 70
+    # A ponte permanece por 5 segundos depois que o ovo termina de construir.
+    decay-delay-seconds: 5
+    # Cada secao construida desaparece em ordem, do inicio ate a ponta.
+    # 3 ticks = 0.15 segundo a 20 TPS.
+    decay-interval-ticks: 3
 
   # Defensor de Sonhos: 0.75 reduz 25% do recuo horizontal,
   # 0.85 reduz 15% do vertical. 1.0 = comportamento vanilla.
