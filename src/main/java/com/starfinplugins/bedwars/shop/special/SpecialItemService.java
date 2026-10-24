@@ -12,6 +12,7 @@ import com.starfinplugins.bedwars.match.MatchEngineService;
 import com.starfinplugins.bedwars.service.ManagedService;
 import com.starfinplugins.bedwars.world.ManagedMobGuard;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -62,6 +63,10 @@ public final class SpecialItemService implements ManagedService, Listener {
     private final Map<UUID, SpecialMob> mobs = new HashMap<UUID, SpecialMob>();
     private final Map<UUID, BukkitTask> bridges = new HashMap<UUID, BukkitTask>();
     private final Map<UUID, UUID> bridgeMatch = new HashMap<UUID, UUID>();
+    /** Both active construction and completed fading bridges live here. */
+    private final Map<UUID, BridgeTrail> bridgeTrails = new HashMap<UUID, BridgeTrail>();
+    private long bridgeTick;
+    private BukkitTask bridgeDecayTicker;
     private final Map<UUID, MilkProtection> milk = new HashMap<UUID, MilkProtection>();
     private final Map<UUID, BukkitTask> pendingGolemKnockback =
         new HashMap<UUID, BukkitTask>();
@@ -80,17 +85,24 @@ public final class SpecialItemService implements ManagedService, Listener {
         expiry = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override public void run() { expireEffects(); }
         }, 20L, 20L);
+        bridgeTick = 0L;
+        bridgeDecayTicker = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
+            @Override public void run() { tickBridgeDecay(); }
+        }, 1L, 1L);
     }
 
     @Override public void stop() {
         HandlerList.unregisterAll(this);
         if (expiry != null) expiry.cancel();
         expiry = null;
+        if (bridgeDecayTicker != null) bridgeDecayTicker.cancel();
+        bridgeDecayTicker = null;
         for (BukkitTask task : bridges.values()) task.cancel();
         for (BukkitTask task : pendingGolemKnockback.values()) task.cancel();
         pendingGolemKnockback.clear();
         bridges.clear();
         bridgeMatch.clear();
+        bridgeTrails.clear();
         for (SpecialMob mob : mobs.values()) removeMob(mob);
         mobs.clear();
         milk.clear();
@@ -234,7 +246,14 @@ public final class SpecialItemService implements ManagedService, Listener {
             plugin.getConfig().getInt("special-items.bridge-egg.max-blocks", 480)));
         final int maximumTicks = Math.max(5, Math.min(120,
             plugin.getConfig().getInt("special-items.bridge-egg.max-ticks", 70)));
+        final int delaySeconds = Math.max(0, Math.min(120,
+            plugin.getConfig().getInt("special-items.bridge-egg.decay-delay-seconds", 5)));
+        final int intervalTicks = Math.max(1, Math.min(20,
+            plugin.getConfig().getInt("special-items.bridge-egg.decay-interval-ticks", 3)));
+        final BridgeTrail trail = new BridgeTrail(matchId, world, color,
+            delaySeconds * 20L, intervalTicks);
 
+        bridgeTrails.put(projectileId, trail);
         bridgeMatch.put(projectileId, matchId);
         BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             private int ticks;
@@ -283,6 +302,7 @@ public final class SpecialItemService implements ManagedService, Listener {
                 int fromZ = lastZ == Integer.MIN_VALUE ? z : lastZ;
 
                 for (int step = 1; step <= steps && placedBlocks < maximumBlocks; step++) {
+                    List<BridgeCell> built = new ArrayList<BridgeCell>();
                     int centerX = (int) Math.round(fromX + (x - fromX) * (step / (double) steps));
                     int centerZ = (int) Math.round(fromZ + (z - fromZ) * (step / (double) steps));
                     for (BridgeEggShape.Offset offset : shape) {
@@ -294,10 +314,15 @@ public final class SpecialItemService implements ManagedService, Listener {
                         Block block = world.getBlockAt(bx, by, bz);
                         // The match engine guards the arena bounds and never
                         // replaces template or other players' existing blocks.
-                        if (matches.placeSpecialBlock(match, block, Material.WOOL, color)) {
+                        if (matches.placeSpecialBlock(match, block, Material.WOOL, color,
+                                projectileId)) {
+                            built.add(new BridgeCell(bx, by, bz));
                             placedBlocks++;
                         }
                     }
+                    // A slice is one consecutive cross-section of the pathway.
+                    // It is later removed as one step, beginning at the origin.
+                    trail.slices.addSlice(built);
                 }
                 lastX = x;
                 lastZ = z;
@@ -307,10 +332,58 @@ public final class SpecialItemService implements ManagedService, Listener {
         bridges.put(projectileId, task);
     }
 
+    /** Ends building, but deliberately retains the bridge for later decay. */
     private void stopBridge(UUID projectileId) {
         BukkitTask task = bridges.remove(projectileId);
         if (task != null) task.cancel();
         bridgeMatch.remove(projectileId);
+        BridgeTrail trail = bridgeTrails.get(projectileId);
+        if (trail == null) return;
+        if (trail.slices.isEmpty()) {
+            bridgeTrails.remove(projectileId);
+            return;
+        }
+        if (!trail.finished) {
+            trail.finished = true;
+            trail.nextRemovalTick = bridgeTick + trail.delayTicks;
+        }
+    }
+
+    /** One shared scheduler removes one cross-section per bridge at a time. */
+    private void tickBridgeDecay() {
+        bridgeTick++;
+        for (Iterator<Map.Entry<UUID, BridgeTrail>> it = bridgeTrails.entrySet().iterator();
+             it.hasNext();) {
+            Map.Entry<UUID, BridgeTrail> entry = it.next();
+            BridgeTrail trail = entry.getValue();
+            if (!trail.finished) continue;
+
+            GameMatch match = matches.getMatchInWorld(trail.world);
+            if (match == null || !trail.matchId.equals(match.getId())
+                    || match.getState() != MatchState.IN_GAME
+                    || matches.getWorld(trail.matchId) != trail.world) {
+                it.remove();
+                continue;
+            }
+            if (bridgeTick < trail.nextRemovalTick) continue;
+            List<BridgeCell> slice = trail.slices.pollOldest();
+            if (slice == null) {
+                it.remove();
+                continue;
+            }
+            // Erase in EXACT construction order. A reused location owned by
+            // someone else will be skipped by decayBridgeBlock().
+            for (BridgeCell cell : slice) {
+                int chunkX = cell.x >> 4;
+                int chunkZ = cell.z >> 4;
+                if (!trail.world.isChunkLoaded(chunkX, chunkZ)
+                        && !trail.world.loadChunk(chunkX, chunkZ, false)) continue;
+                Block block = trail.world.getBlockAt(cell.x, cell.y, cell.z);
+                matches.decayBridgeBlock(match, block, entry.getKey(), trail.color);
+            }
+            if (trail.slices.isEmpty()) it.remove();
+            else trail.nextRemovalTick = bridgeTick + trail.intervalTicks;
+        }
     }
 
     @EventHandler
@@ -476,7 +549,15 @@ public final class SpecialItemService implements ManagedService, Listener {
                 && event.getType() != MatchLifecycleEvent.Type.INSTANCE_REMOVED) return;
         UUID matchId = event.getMatch().getId();
         for (UUID id : new ArrayList<UUID>(bridgeMatch.keySet())) {
-            if (matchId.equals(bridgeMatch.get(id))) stopBridge(id);
+            if (!matchId.equals(bridgeMatch.get(id))) continue;
+            BukkitTask building = bridges.remove(id);
+            if (building != null) building.cancel();
+            bridgeMatch.remove(id);
+        }
+        // The instance is being removed: do not schedule any more world writes.
+        for (Iterator<Map.Entry<UUID, BridgeTrail>> it = bridgeTrails.entrySet().iterator();
+             it.hasNext();) {
+            if (matchId.equals(it.next().getValue().matchId)) it.remove();
         }
         for (Iterator<Map.Entry<UUID, SpecialMob>> it = mobs.entrySet().iterator(); it.hasNext();) {
             Map.Entry<UUID, SpecialMob> entry = it.next();
@@ -538,6 +619,39 @@ public final class SpecialItemService implements ManagedService, Listener {
         if (velocityTask != null) velocityTask.cancel();
         if (guard != null) guard.forget(mob.entity);
         if (mob.entity.isValid()) mob.entity.remove();
+    }
+
+    private static final class BridgeCell {
+        private final int x;
+        private final int y;
+        private final int z;
+
+        private BridgeCell(int x, int y, int z) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+    }
+
+    private static final class BridgeTrail {
+        private final UUID matchId;
+        private final World world;
+        private final byte color;
+        private final long delayTicks;
+        private final int intervalTicks;
+        private final BridgeEggDecayQueue<BridgeCell> slices =
+            new BridgeEggDecayQueue<BridgeCell>();
+        private boolean finished;
+        private long nextRemovalTick;
+
+        private BridgeTrail(UUID matchId, World world, byte color,
+                            long delayTicks, int intervalTicks) {
+            this.matchId = matchId;
+            this.world = world;
+            this.color = color;
+            this.delayTicks = delayTicks;
+            this.intervalTicks = intervalTicks;
+        }
     }
 
     private static final class SpecialMob {
