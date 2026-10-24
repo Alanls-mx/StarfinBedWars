@@ -75,10 +75,24 @@ public final class MatchPointPath {
         double crossSpan = Math.max(16.0D, islandRadius * 0.55D);
         double fallbackX = (bounds.getMaximumX() - bounds.getMinimumX()) * 0.30D;
         double fallbackZ = (bounds.getMaximumZ() - bounds.getMinimumZ()) * 0.30D;
-        radiusX = Math.min(availableX, islandsKnown
-            ? Math.max(islandRadiusX, crossSpan) : Math.max(0.0D, fallbackX));
-        radiusZ = Math.min(availableZ, islandsKnown
-            ? Math.max(islandRadiusZ, crossSpan) : Math.max(0.0D, fallbackZ));
+        double desiredRadiusX = islandsKnown
+            ? Math.max(islandRadiusX, crossSpan) : Math.max(0.0D, fallbackX);
+        double desiredRadiusZ = islandsKnown
+            ? Math.max(islandRadiusZ, crossSpan) : Math.max(0.0D, fallbackZ);
+        // On four-corner maps (e.g. islands at +/-90,+/-90), simply using
+        // half the coordinate extent creates an ellipse that misses every
+        // corner island. Expand the ellipse to pass near actual team spawns.
+        double islandScale = 1.0D;
+        if (islandsKnown && islandSpawns != null) {
+            for (Position spawn : islandSpawns) {
+                if (spawn == null) continue;
+                double nx = (spawn.getX() - centerX) / desiredRadiusX;
+                double nz = (spawn.getZ() - centerZ) / desiredRadiusZ;
+                islandScale = Math.max(islandScale, Math.sqrt(nx * nx + nz * nz));
+            }
+        }
+        radiusX = Math.min(availableX, desiredRadiusX * islandScale);
+        radiusZ = Math.min(availableZ, desiredRadiusZ * islandScale);
 
         int allowedMax = Math.min(247,
             Math.min(ceilingHeight - 9, bounds.getMaximumY() - 8));
