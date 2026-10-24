@@ -42,6 +42,14 @@ public class PresentationConfigMigratorTest {
         assertEquals(3, updated.getInt("match-point.dragon-blast-radius"));
         assertEquals(1, updated.getInt("match-point.dragon-blast-depth"));
         assertEquals(8, updated.getInt("match-point.dragon-blast-blocks"));
+        assertEquals(5, updated.getInt("match-point.demolition.partial-minutes"));
+        assertEquals(80, updated.getInt("match-point.demolition.partial-percent"));
+        assertEquals(8, updated.getInt("match-point.demolition.complete-minutes"));
+        assertEquals(7000, updated.getInt("match-point.demolition.survey-positions-per-tick"));
+        assertEquals(220, updated.getInt("match-point.demolition.max-blocks-per-tick"));
+        assertTrue(updated.getBoolean("match-point.lightning.enabled"));
+        assertEquals(60, updated.getInt("match-point.lightning.interval-ticks"));
+        assertEquals(24, updated.getInt("match-point.lightning.max-blocks-per-strike"));
         assertEquals(5.0D, updated.getDouble("match-point.dragon-blast-min-movement"), 0.0D);
         assertTrue(updated.getBoolean("match-point.bossbar-enabled"));
         assertEquals(9, updated.getInt("match.victory-celebration-seconds"));
@@ -90,7 +98,13 @@ public class PresentationConfigMigratorTest {
             + "  victory-celebration-seconds: 12\n"
             + "match-point:\n"
             + "  dragon-blast-blocks: 6\n"
-            + "  dragon-blast-interval-ticks: 60\n")
+            + "  dragon-blast-interval-ticks: 60\n"
+            + "  demolition:\n"
+            + "    complete-minutes: 10\n"
+            + "    partial-percent: 70\n"
+            + "  lightning:\n"
+            + "    enabled: false\n"
+            + "    max-blocks-per-strike: 16\n")
             .getBytes(StandardCharsets.UTF_8));
         YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
             getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
@@ -100,6 +114,12 @@ public class PresentationConfigMigratorTest {
         assertEquals(6, updated.getInt("match-point.dragon-blast-blocks"));
         assertEquals(60, updated.getInt("match-point.dragon-blast-interval-ticks"));
         assertEquals(3, updated.getInt("match-point.dragon-blast-radius"));
+        assertEquals(10, updated.getInt("match-point.demolition.complete-minutes"));
+        assertEquals(5, updated.getInt("match-point.demolition.partial-minutes"));
+        assertEquals(70, updated.getInt("match-point.demolition.partial-percent"));
+        assertFalse(updated.getBoolean("match-point.lightning.enabled"));
+        assertEquals(16, updated.getInt("match-point.lightning.max-blocks-per-strike"));
+        assertEquals(60, updated.getInt("match-point.lightning.interval-ticks"));
         assertTrue(updated.getBoolean("match-point.bossbar-enabled"));
         assertFalse(PresentationConfigMigrator.mergeFile(config, defaults));
     }
