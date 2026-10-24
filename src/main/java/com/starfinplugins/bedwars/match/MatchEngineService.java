@@ -70,6 +70,7 @@ public final class MatchEngineService implements ManagedService, Listener {
     private final Map<UUID, GameMatch> spectators = new java.util.concurrent.ConcurrentHashMap<UUID, GameMatch>();
     private final Map<UUID, World> matchWorlds = new HashMap<UUID, World>();
     private final Map<UUID, Set<String>> playerPlacedBlocks = new HashMap<UUID, Set<String>>();
+    private final BridgeBlockOwnership bridgeBlockOwners = new BridgeBlockOwnership();
     private final Set<String> unknownBedWarnings = new HashSet<String>();
     private final Map<UUID, Location> returnLocations = new HashMap<UUID, Location>();
     private final Map<UUID, GameMode> returnGameModes = new HashMap<UUID, GameMode>();
@@ -158,6 +159,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         lastAttackers.clear();
         matchWorlds.clear();
         playerPlacedBlocks.clear();
+        bridgeBlockOwners.clear();
         unknownBedWarnings.clear();
         returnLocations.clear();
         returnGameModes.clear();
@@ -548,6 +550,7 @@ public final class MatchEngineService implements ManagedService, Listener {
     private void finish(GameMatch match, MatchEndReason reason, String winner) {
         if (!match.finish(reason, winner)) return;
         playerPlacedBlocks.remove(match.getId());
+        bridgeBlockOwners.clearMatch(match.getId());
         unknownBedWarnings.removeIf(key -> key.startsWith(match.getId().toString() + ":"));
         for (GameParticipant participant : match.getParticipantList()) {
             cancel(respawnTasks.remove(participant.getPlayerId()));
@@ -1078,6 +1081,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (match == null) return;
         Set<String> placed = playerPlacedBlocks.get(match.getId());
         if (placed != null) placed.remove(blockKey(event.getBlock()));
+        bridgeBlockOwners.forget(match.getId(), blockKey(event.getBlock()));
     }
 
     private GameTeam teamForBed(GameMatch match, Block block) {
@@ -1192,6 +1196,8 @@ public final class MatchEngineService implements ManagedService, Listener {
             playerPlacedBlocks.put(match.getId(), placed);
         }
         placed.add(blockKey(event.getBlockPlaced()));
+        // New player-placed block at an old location is no longer owned by an egg.
+        bridgeBlockOwners.forget(match.getId(), blockKey(event.getBlockPlaced()));
     }
 
     private String blockKey(Block block) {
@@ -1200,6 +1206,12 @@ public final class MatchEngineService implements ManagedService, Listener {
 
     /** Register only new ability-generated blocks for normal break/explosion protection. */
     public boolean placeSpecialBlock(GameMatch match, Block block, Material material, byte data) {
+        return placeSpecialBlock(match, block, material, data, null);
+    }
+
+    /** Egg ownership is optional for other future temporary abilities. */
+    public boolean placeSpecialBlock(GameMatch match, Block block, Material material,
+                                     byte data, UUID eggId) {
         if (match == null || block == null || material != Material.WOOL
                 || block.getType() != Material.AIR || match.getState() != MatchState.IN_GAME
                 || matchWorlds.get(match.getId()) != block.getWorld()) return false;
@@ -1216,6 +1228,26 @@ public final class MatchEngineService implements ManagedService, Listener {
             playerPlacedBlocks.put(match.getId(), placed);
         }
         placed.add(blockKey(block));
+        if (eggId != null) bridgeBlockOwners.record(match.getId(), blockKey(block), eggId);
+        return true;
+    }
+
+    /**
+     * Remove only wool still owned by this specific Bridge Egg. If an enemy
+     * broke the bridge and placed replacement wool at identical coordinates,
+     * a missing ownership tag protects that new block from the decay task.
+     */
+    public boolean decayBridgeBlock(GameMatch match, Block block, UUID eggId, byte expectedColor) {
+        if (match == null || block == null || eggId == null
+                || match.getState() != MatchState.IN_GAME
+                || matchWorlds.get(match.getId()) != block.getWorld()) return false;
+        String key = blockKey(block);
+        if (!bridgeBlockOwners.owns(match.getId(), key, eggId)) return false;
+        bridgeBlockOwners.forget(match.getId(), key);
+        Set<String> placed = playerPlacedBlocks.get(match.getId());
+        if (placed != null) placed.remove(key);
+        if (block.getType() != Material.WOOL || block.getData() != expectedColor) return false;
+        block.setType(Material.AIR, false); // No drops and no block item duplication.
         return true;
     }
 
@@ -1224,6 +1256,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (match == null || block == null) return;
         Set<String> placed = playerPlacedBlocks.get(match.getId());
         if (placed != null) placed.remove(blockKey(block));
+        bridgeBlockOwners.forget(match.getId(), blockKey(block));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -1446,7 +1479,10 @@ public final class MatchEngineService implements ManagedService, Listener {
     private void forgetExplodedBlocks(GameMatch match, java.util.List<Block> destroyed) {
         Set<String> placed = playerPlacedBlocks.get(match.getId());
         if (placed == null) return;
-        for (Block block : destroyed) placed.remove(blockKey(block));
+        for (Block block : destroyed) {
+            placed.remove(blockKey(block));
+            bridgeBlockOwners.forget(match.getId(), blockKey(block));
+        }
     }
 
     @EventHandler
