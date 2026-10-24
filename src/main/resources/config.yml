@@ -178,6 +178,13 @@ shop:
     SPECIAL: BLAZE_POWDER
 
 visuals:
+  lobby-countdown:
+    start-at: 5
+    title: '&e&lINICIANDO'
+    subtitle: '&fA partida comeca em &e{time}&fs.'
+    cancelled: '&cAguardando mais jogadores...'
+    sound: NOTE_PLING
+    sound-enabled: true
   countdown:
     start-at: 5
     subtitle: '&ePrepare-se!'
@@ -204,3 +211,34 @@ visuals:
   draw:
     title: '&ePartida encerrada'
     subtitle: '&7Sem equipe vencedora'
+
+# Mensagens originais Starfin inspiradas na organizacao do BedWars1058.
+# Placeholders: {player}, {on}, {max}, {time}, {arena}, {killer}.
+messages:
+  player-joined: '&7{player} &eentrou (&b{on}&e/&b{max}&e)!'
+  player-left: '&7{player} &csaiu da partida.'
+  you-joined: '&aVoce entrou no mapa &e{arena}&a.'
+  reconnected: '&aVoce retornou a partida!'
+  lobby-ready: '&aJogadores suficientes! &eA partida esta sendo preparada.'
+  lobby-countdown: '&eA partida comeca em &6{time} &esegundos!'
+  spawn-preparing: '&ePrepare-se! Os spawns abrem em &6{time} &esegundos.'
+  spawn-countdown: '&eAs barreiras abrem em &6{time} &esegundos!'
+  countdown-cancelled: '&cContagem cancelada! Aguardando mais jogadores.'
+  match-started: '&a&lA PARTIDA COMECOU! &7Proteja sua cama e elimine as equipes adversarias!'
+  own-bed: '&cVoce nao pode destruir sua propria cama!'
+  death:
+    void: '&7{player} &7caiu no void.'
+    void-killer: '&7{player} &7foi derrubado no void por &e{killer}&7.'
+    fall: '&7{player} &7morreu de queda.'
+    fall-killer: '&7{player} &7foi derrubado por &e{killer}&7.'
+    fire: '&7{player} &7morreu queimado.'
+    lava: '&7{player} &7caiu na lava.'
+    drowning: '&7{player} &7se afogou.'
+    explosion: '&7{player} &7foi explodido.'
+    explosion-killer: '&7{player} &7foi explodido por &e{killer}&7.'
+    projectile: '&7{player} &7foi atingido por um projetil.'
+    projectile-killer: '&7{player} &7foi atingido por &e{killer}&7.'
+    combat: '&7{player} &7morreu em combate.'
+    combat-killer: '&7{player} &7foi eliminado por &e{killer}&7.'
+    generic: '&7{player} &7morreu.'
+    generic-killer: '&7{player} &7foi eliminado por &e{killer}&7.'
