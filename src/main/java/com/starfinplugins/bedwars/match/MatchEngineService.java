@@ -69,6 +69,7 @@ public final class MatchEngineService implements ManagedService, Listener {
     private final Map<UUID, GameMatch> byPlayer = new java.util.concurrent.ConcurrentHashMap<UUID, GameMatch>();
     private final Map<UUID, GameMatch> spectators = new java.util.concurrent.ConcurrentHashMap<UUID, GameMatch>();
     private final Map<UUID, World> matchWorlds = new HashMap<UUID, World>();
+    private final Map<UUID, Set<String>> playerWater = new HashMap<UUID, Set<String>>();
     private final Map<UUID, Set<String>> playerPlacedBlocks = new HashMap<UUID, Set<String>>();
     private final BridgeBlockOwnership bridgeBlockOwners = new BridgeBlockOwnership();
     private final Set<String> unknownBedWarnings = new HashSet<String>();
@@ -161,6 +162,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         lastAttackers.clear();
         matchWorlds.clear();
         playerPlacedBlocks.clear();
+        playerWater.clear();
         bridgeBlockOwners.clear();
         unknownBedWarnings.clear();
         returnLocations.clear();
@@ -557,6 +559,7 @@ public final class MatchEngineService implements ManagedService, Listener {
     private void finish(GameMatch match, MatchEndReason reason, String winner) {
         if (!match.finish(reason, winner)) return;
         playerPlacedBlocks.remove(match.getId());
+        playerWater.remove(match.getId());
         bridgeBlockOwners.clearMatch(match.getId());
         unknownBedWarnings.removeIf(key -> key.startsWith(match.getId().toString() + ":"));
         for (GameParticipant participant : match.getParticipantList()) {
@@ -1402,14 +1405,70 @@ public final class MatchEngineService implements ManagedService, Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBucketEmpty(org.bukkit.event.player.PlayerBucketEmptyEvent event) {
-        if (matchInWorld(event.getPlayer().getWorld()) != null) event.setCancelled(true);
+        GameMatch match = matchInWorld(event.getPlayer().getWorld());
+        if (match == null) return;
+        Block destination = event.getBlockClicked().getRelative(event.getBlockFace());
+        if (!canUseWater(match, event.getPlayer()) || event.getBucket() != Material.WATER_BUCKET
+                || destination.getType() != Material.AIR || !waterInside(match, destination)) {
+            event.setCancelled(true);
+        }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST)
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onWaterPlaced(org.bukkit.event.player.PlayerBucketEmptyEvent event) {
+        GameMatch match = matchInWorld(event.getPlayer().getWorld());
+        if (match == null || event.getBucket() != Material.WATER_BUCKET) return;
+        trackWater(match, event.getBlockClicked().getRelative(event.getBlockFace()));
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBucketFill(org.bukkit.event.player.PlayerBucketFillEvent event) {
-        if (matchInWorld(event.getPlayer().getWorld()) != null) event.setCancelled(true);
+        GameMatch match = matchInWorld(event.getPlayer().getWorld());
+        if (match == null) return;
+        if (!canUseWater(match, event.getPlayer()) || !ownsWater(match, event.getBlockClicked())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onWaterCollected(org.bukkit.event.player.PlayerBucketFillEvent event) {
+        GameMatch match = matchInWorld(event.getPlayer().getWorld());
+        if (match == null) return;
+        Set<String> water = playerWater.get(match.getId());
+        if (water != null) water.remove(blockKey(event.getBlockClicked()));
+    }
+
+    private boolean canUseWater(GameMatch match, Player player) {
+        GameParticipant participant = match.getParticipant(player.getUniqueId());
+        return match.getState() == MatchState.IN_GAME && byPlayer.get(player.getUniqueId()) == match
+            && participant != null && participant.getState() == ParticipantState.CONNECTED
+            && !spectators.containsKey(player.getUniqueId());
+    }
+
+    private boolean waterInside(GameMatch match, Block block) {
+        ArenaRegion area = match.getArena().getRegion(ArenaRegionType.MAIN);
+        return matchWorlds.get(match.getId()) == block.getWorld() && area != null
+            && block.getY() <= match.getArena().getCeilingHeight()
+            && block.getX() >= area.getMinimumX() && block.getX() <= area.getMaximumX()
+            && block.getY() >= area.getMinimumY() && block.getY() <= area.getMaximumY()
+            && block.getZ() >= area.getMinimumZ() && block.getZ() <= area.getMaximumZ();
+    }
+
+    private boolean ownsWater(GameMatch match, Block block) {
+        Set<String> water = playerWater.get(match.getId());
+        return water != null && water.contains(blockKey(block))
+            && (block.getType() == Material.WATER || block.getType() == Material.STATIONARY_WATER);
+    }
+
+    private void trackWater(GameMatch match, Block block) {
+        Set<String> water = playerWater.get(match.getId());
+        if (water == null) {
+            water = new HashSet<String>();
+            playerWater.put(match.getId(), water);
+        }
+        water.add(blockKey(block));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -1578,9 +1637,22 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (matchInWorld(event.getBlock().getWorld()) != null) event.setCancelled(true);
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockFlow(BlockFromToEvent event) {
-        if (matchInWorld(event.getBlock().getWorld()) != null) event.setCancelled(true);
+        GameMatch match = matchInWorld(event.getBlock().getWorld());
+        if (match == null) return;
+        Block destination = event.getToBlock();
+        if (match.getState() != MatchState.IN_GAME || !ownsWater(match, event.getBlock())
+                || !waterInside(match, destination)
+                || (destination.getType() != Material.AIR && !ownsWater(match, destination))) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onWaterFlowAccepted(BlockFromToEvent event) {
+        GameMatch match = matchInWorld(event.getBlock().getWorld());
+        if (match != null && ownsWater(match, event.getBlock())) trackWater(match, event.getToBlock());
     }
 
     @EventHandler
@@ -1741,6 +1813,26 @@ public final class MatchEngineService implements ManagedService, Listener {
                     arenas.getWorlds().removeInstance(world);
                 } catch (IOException cleanupError) {
                     plugin.getLogger().severe("Instancia mantida apos desconexao durante carregamento: "
+                        + world.getName() + ": " + cleanupError.getMessage());
+                }
+                return;
+            }
+            // YAML coordinates alone do not prove that a published world still
+            // contains its beds. Refuse the disposable copy before admitting
+            // players, so an incomplete template cannot create a broken match.
+            java.util.List<String> missingBeds =
+                com.starfinplugins.bedwars.arena.ArenaBedWorldValidator.validate(arena, world);
+            if (!missingBeds.isEmpty()) {
+                String reason = arenas.join(missingBeds);
+                firstPlayer.sendMessage("§cA arena " + arena.getId()
+                    + " nao pode iniciar: " + reason
+                    + ". Corrija na edicao e publique novamente.");
+                plugin.getLogger().warning("Arena " + arena.getId() + " rejeitada: "
+                    + reason + "; template preservado.");
+                try {
+                    arenas.getWorlds().removeInstance(world);
+                } catch (IOException cleanupError) {
+                    plugin.getLogger().severe("Instancia invalida preservada para diagnostico: "
                         + world.getName() + ": " + cleanupError.getMessage());
                 }
                 return;
