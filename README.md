@@ -13,7 +13,7 @@ Para o historico dos prompts e o inventario anterior, consulte `STARFINBEDWARS_P
 - O BedWars nao depende do StarfinCore. A API do StarfinMinigames ainda nao esta disponivel neste workspace.
 
 ```text
-mvn clean verify
+mvn -B verify
 ```
 
 O JAR e `target/StarfinBedWars-1.0.0-SNAPSHOT.jar`. A API Spigot e `provided` e nao e empacotada.
@@ -26,7 +26,7 @@ O JAR e `target/StarfinBedWars-1.0.0-SNAPSHOT.jar`. A API Spigot e `provided` e 
 4. Siga `STARFINBEDWARS_ARENA_GUIDE.md` para importar, editar uma copia isolada, selecionar regioes, publicar, validar e habilitar.
 5. Para configuracao interativa de equipes e geradores, consulte `STARFINBEDWARS_SETUP_WIZARD_GUIDE.md`.
 
-A configuracao existente preserva seus valores. Na primeira inicializacao desta versao, as novas chaves de apresentacao ausentes sao adicionadas a `config.yml`; o original fica em `config.yml.pre-presentation.bak`.
+A migracao adiciona apenas chaves ausentes em `config.yml` e guarda o original em `config.yml.pre-presentation.bak`. Tempos de respawn, altura de hologramas, icones e mensagens explicitamente definidos sao preservados. Se o rodape da scoreboard foi personalizado e o TAB ainda usa exatamente a marca antiga padrao, o TAB passa a usar `{footer}`.
 
 | Chave | Padrao | Uso |
 |---|---:|---|
@@ -46,6 +46,8 @@ A configuracao existente preserva seus valores. Na primeira inicializacao desta 
 | `purchase-sounds.*` | `NOTE_PLING`, `LEVEL_UP` | Sons de compra da loja e das melhorias. |
 | `match-chat.format` | tags, nome e mensagem | Formato dos canais de chat na partida. |
 | `tab.header`, `tab.footer` | marca configurada | Cabecalho e rodape do TAB na partida; `{footer}` usa `scoreboard.footer`, ou pode ser substituido por texto literal. |
+| `tab.lobby.enabled`, `tab.lobby.header`, `tab.lobby.footer` | habilitado, marca configurada | Exibe o TAB do BedWars no lobby e restaura esse cabecalho ao sair da partida. Desative se outro plugin controlar o TAB do lobby. |
+| `tab.skins.enabled`, `tab.skins.aliases`, `tab.skins.fallback-player` | habilitado, sem aliases nem fallback | Usa a textura assinada do perfil conectado ou consulta o perfil oficial pelo nome. Para um nome pirata sem skin publica, associe o nick a uma conta com skin em `aliases`; o fallback e opcional. |
 | `tab.enabled`, `tab.team-prefix`, `tab.team-prefixes.*`, `tab.show-spectators`, `tab.spectator-prefix` | habilitado, prefixos por equipe | Exibicao e identificacao dos jogadores no TAB. |
 | `scoreboard.title`, `scoreboard.footer` | `BED WARS`, marca | Titulo e rodape do placar da partida. Para usar seu dominio, altere `scoreboard.footer`; o TAB e os layouts com `{footer}` exibem esse texto. |
 | `scoreboard.enabled`, `scoreboard.preset` | habilitado, `CLASSIC` | Controla a sidebar e o modelo visual. |
@@ -57,14 +59,17 @@ A configuracao existente preserva seus valores. Na primeira inicializacao desta 
 | `equipment.armor-mode` | `CLASSIC` | Armadura `CLASSIC` ou `INVERTED`, fixada por partida. |
 | `equipment.sword-minimum`, `equipment.tool-minimum` | `WOOD` | Piso do downgrade de equipamentos adquiridos: `WOOD` ou `STONE`. |
 | `shop.category-order`, `shop.category-icons.*` | ordem e icones classicos | Abas da loja de seis linhas. |
+| `messages.shop.*`, `messages.upgrades.*` | textos coloridos em portugues | Feedback de compra, falha e nomes das melhorias. `{item}`, `{upgrade}` e `{level}` aceitam cores `&`; reaplique a cor apos o placeholder quando necessario. |
 | `starfinbedwars.chat.color` | `op` | Permite codigos `&` no chat da partida. Sem essa permissao, os codigos aparecem literalmente. |
 | `visuals.*` | titulos, sons e particulas | Contagem real de abertura, inicio e resultado da partida. |
 
 O reconnect usa `reconnect.yml`: habilitacao, modo `AUTOMATIC` ou `CONFIRMATION`, prazo Casual de 120 segundos e combat tag de 15 segundos. Consulte `STARFINBEDWARS_RECONNECT_GUIDE.md`. Chaves antigas `match.disconnect-grace-seconds` e `integrations.starfin-core.*` em instalacoes existentes nao sao mais utilizadas e podem ser removidas.
 
+Exemplo para um nick offline sem perfil oficial: `tab.skins.aliases.MeuNick: AlanLS_`. A busca ocorre fora da thread principal, com cache e limites de tempo; se a conta nao tiver textura publica assinada ou o servico estiver indisponivel, o cliente usa sua skin padrao. O UUID e o nome no TAB continuam os do jogador conectado. Ao voltar da partida, o plugin tambem devolve o inventario, os efeitos, o modo de jogo, o voo e as velocidades anteriores.
+
 Os arquivos `generators.yml`, `shop.yml`, `upgrades.yml`, `traps.yml` e `worlds.yml` sao criados na primeira inicializacao. Eles definem niveis/limites de geradores, itens e Quick Buy, custos de melhorias, efeitos/limites das armadilhas e politicas de mundos/regioes. Intervalos antigos padrao do nivel 1 de ferro (40 ticks) e ouro (200 ticks) sao atualizados para 80 e 300 ticks no primeiro startup desta versao; valores personalizados permanecem, e o original fica em `generators.yml.pre-slow-lv1.bak`. O catalogo da loja acrescenta TNT, escadas, obsidiana, perola, pocao de velocidade e balde de agua quando os respectivos IDs e slots estao livres; preserva os precos existentes e cria `shop.yml.pre-extended-catalog.bak`. Valores invalidos impedem a inicializacao do respectivo servico, em vez de habilitar funcionalidades com defaults implicitos. `WorldEdit` 6.x e opcional e nao e incluído como dependencia.
 
-Na loja, a primeira linha seleciona a categoria e os itens abaixo mudam para o submenu escolhido. As melhorias seguem o mesmo desenho, com abas Equipe e Armadilhas. Os itens e precos sao definidos nos respectivos arquivos YAML. A referencia historica enviada ate agora cobre a navegacao por categorias; uma comparacao exata dos itens e precos da antiga RedeSky depende das capturas ou lista que o usuario ainda vai enviar.
+Na loja, a primeira linha seleciona a categoria e os itens abaixo mudam para o submenu escolhido. As melhorias seguem o mesmo desenho, com abas Equipe e Armadilhas. Os itens e precos sao definidos nos respectivos arquivos YAML. O balde de agua comprado pode colocar agua dentro da regiao MAIN; a agua flui somente para ar dentro dos limites e nao altera blocos originais. A referencia historica enviada ate agora cobre a navegacao por categorias; uma comparacao exata dos itens e precos da antiga RedeSky depende das capturas ou lista que o usuario ainda vai enviar.
 
 ## Comandos
 
@@ -131,7 +136,7 @@ Geradores centrais respeitam limite efetivo de quatro unidades no chao, inclusiv
 
 Configure e confirme POS1/POS2 antes de escolher o modo ou criar equipes: `/sbw setarena center here` para calcular automaticamente ou `/sbw setarena pos1` e `/sbw setarena pos2` para marcar manualmente, depois `/sbw setarena confirm`. O plugin bloqueia as etapas seguintes enquanto os limites nao estiverem salvos. Depois, siga modo, capacidade de equipe e criacao das equipes nessa ordem. Depois de informar o nome de cada time, o assistente apresenta as 16 cores como opcoes clicaveis no chat; a escolha aplica tambem a cor de bloco correspondente, sem exigir codigo `&`. Apos configurar cama, spawn, respawn e lojas de cada time, marque uma vez POS1 e POS2 da regiao do gerador para criar juntos os geradores de Iron, Gold e Esmeralda daquele time. Ao final, digite `diamond` ou `emerald` e clique com o botao direito no bloco de cada gerador central; o minerio nasce sobre esse bloco, enquanto o holograma fica acima apenas para informar o nivel e o ciclo. O `/sbw setup status` exibe a etapa e instrucao reais. O assistente salva equipes, cores de bloco, lojas por equipe, regioes de geradores, limites e blocos das estruturas de spawn no schema YAML v7, mantendo leitura de arenas v1–v6. Solo usa footprint 3x3 com interior 1x1; Equipe usa 5x5 com interior 3x3. As estruturas registradas somem somente na copia isolada quando a partida inicia; o estado `STARTING` cancela dano antes do teleporte. Rascunhos e historico de Undo sobrevivem a reinicios, mas o clone temporario nao: reabra o editor para retomar; alteracoes de bloco nao publicadas no clone antigo nao sao recuperadas. O lobby deve ser configurado separadamente e o wizard nao habilita a arena.
 
-Ao concluir o setup, valide e publique a copia antes de habilitar: `/sbw arena validate <arena>`, `/sbw arena edit publish <arena>`, depois `/sbw arena enable <arena>`. Geradores centrais mostram um bloco flutuante, quatro icones orbitais e nivel/recurso/contagem regressiva. Os indicadores das camas sao enviados individualmente aos clientes. Consulte `STARFINBEDWARS_ANIMATED_HOLOGRAMS.md`.
+Ao concluir o setup, valide e publique a copia antes de habilitar: `/sbw arena validate <arena>`, `/sbw arena edit publish <arena>`, depois `/sbw arena enable <arena>`. A publicacao confere os blocos fisicos das camas; se um template antigo estiver incompleto, a partida tambem e recusada antes de admitir jogadores, com uma mensagem indicando a equipe e as coordenadas a corrigir. Geradores centrais mostram um bloco flutuante, quatro icones orbitais e nivel/recurso/contagem regressiva. Os indicadores das camas sao enviados individualmente aos clientes. Consulte `STARFINBEDWARS_ANIMATED_HOLOGRAMS.md`.
 
 `starfinbedwars.admin`, `starfinbedwars.command.arena` e `starfinbedwars.command.world` sao concedidas a operadores por padrao. Os comandos que exigem jogador nao funcionam pelo console.
 

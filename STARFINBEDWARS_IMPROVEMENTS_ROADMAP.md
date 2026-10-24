@@ -10,7 +10,7 @@ Base: `main` @ `281d4479723ac5309593020c5199855cb9ce3ca3` (24/10/2026).
 - Drops vanilla dos blocos explodidos sao desabilitados para evitar duplicacao de defesas.
 - Testes unitarios verificam os predicados da politica de explosoes.
 
-**Validacao pendente:** executar `mvn -B verify` em ambiente Java 8 com Spigot/PaperSpigot 1.8.8 e testar TNT na partida, incluindo interacao com listeners externos. Este ambiente de implementacao nao dispoe de Maven nem permite baixar dependencias. Ainda e necessario validar fisica, TNT e Fireball em testes de integracao.
+**Registro historico da etapa 1:** a observacao sobre indisponibilidade de Maven descrevia a sessao original. A validacao atual com Maven, Java 8 e PaperSpigot 1.8.8 aparece no fim deste documento. Interacoes de TNT e Fireball com plugins externos continuam dependendo do ambiente de producao.
 
 ## Proximas etapas (ainda nao implementadas)
 
@@ -805,11 +805,37 @@ Point inicia, nao as construes adicionadas depois por jogadores.
 Mundo instancia descartado ao terminar jogo -> mapa template restaurado
 na proxima partida.
 
-**A ser validado no servidor do usuario:** `mvn -B verify` com Java 8,
-`/sbw matchpoint`, observar rota cruzando centro, plataformas sem camas
-e outros geradores; testar raios enabled:true/false, destruicao real ao
-lado das ilhas, atingir ~80% em 5min e ~100% em 8min com a populacao de
-blocos do mapa real. Se ficar atrasado, ajustar
-`demolition.max-blocks-per-tick` com monitoramento de TPS; conferir
-limites da MAIN, chunks, logs de indexacao e restauracao apos nova partida.
-Nao ha Maven/nem homologacao PaperSpigot nesta sessao.
+**Registro historico:** as instrucoes de validacao acima foram escritas
+antes da rodada de testes abaixo. Uma verificacao posterior no servidor
+de producao ainda deve confirmar a interacao com plugins instalados la.
+
+## Auditoria e estabilizacao de 24/10/2026
+
+- `mvn -B verify` concluiu com 179 testes, sem falhas, e verificou as
+  classes NMS no JAR final. Servidor isolado PaperSpigot 445 / Java 8,
+  protocolo cliente 1.8.8, porta local 25576.
+- Match Point sobre 76.417 blocos originais de quatro regioes: apos
+  5 minutos restavam 15.286 (80,0% removidos), com progresso semelhante
+  nas quatro regioes; aos 8 minutos restavam apenas tres blocos, e o
+  indice informou 100% processado, sem chunks inacessiveis. Raios
+  atingiram diretamente 973 blocos nessa execucao. A pequena diferenca
+  da sondagem fisica final veio de blocos alterados pelo teste apos o
+  inicio da contagem, nao de regioes esquecidas pelo indice.
+- Duas partidas paralelas criaram mundos distintos. A segunda manteve
+  suas duas camas e seu volume de blocos enquanto a primeira terminou.
+  Um template com a cama blue fisicamente ausente foi recusado com
+  coordenadas na mensagem antes de admitir o jogador.
+- Sondas na partida confirmaram agua comprada no limite MAIN, fluxo
+  somente em ar, protecao do terreno e da agua originais, bloqueio de
+  lava e de jogadores em respawn. O defensor ignorou aliado e NPC
+  neutro, permitiu dano de inimigos e bloqueou projeteis de aliados.
+- Um jogador saiu da partida e recuperou modo criativo, permissao de
+  voo e velocidades personalizadas de voo/caminhada. Um cliente de
+  protocolo 1.8.8 recebeu entradas TAB com textura assinada para uma
+  conta original (`AlanLS_`) e para um nick offline configurado como
+  alias (`RedTester`); ao sair, o cabecalho configurado do lobby voltou.
+  Nicks sem perfil oficial nem alias usam a skin padrao do cliente.
+
+Os logs e as arenas deste ensaio ficaram somente em `target/`, fora do
+JAR e do versionamento. A validacao conjunta visual em producao continua
+pertencendo ao usuario e depende do conjunto real de plugins e mapas.
