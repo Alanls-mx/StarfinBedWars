@@ -53,15 +53,17 @@ match-point:
   dragon-waypoint-reach: 14.0
   # Distancia entre pontos da patrulha: percorre TODA a regiao MAIN (pos1/pos2).
   dragon-patrol-spacing: 40
-  # Destruicao visivel da superficie das ilhas no caminho do dragao.
-  dragon-erode-radius: 9
-  blocks-per-sweep: 28
-  # Destruicao GLOBAL: percorre todos os chunks da arena progressivamente,
-  # mesmo sem jogadores proximos ou quando o dragao voa longe das ilhas.
-  # Nao altera o mundo original: so a instancia temporaria da partida.
-  global-erosion:
-    scan-positions-per-tick: 3000
-    max-blocks-per-tick: 40
+  # Explosoes pequenas em X (quatro diagonais) conforme o dragao passa.
+  # A destruicao global por varredura foi DESATIVADA/removida.
+  # Intervalo 30 ticks = 1,5 segundo em 20 TPS.
+  dragon-blast-interval-ticks: 30
+  dragon-blast-radius: 3
+  dragon-blast-depth: 2
+  dragon-blast-blocks: 12
+  # So explode apos avancar alguns blocos; evita furar o mesmo local parado.
+  dragon-blast-min-movement: 3.5
+  # Barra MATCH POINT fixa perto da camera, mesmo olhando para longe do dragao.
+  bossbar-enabled: true
   dragon-damage-radius: 5.0
   dragon-damage: 5.0
 
