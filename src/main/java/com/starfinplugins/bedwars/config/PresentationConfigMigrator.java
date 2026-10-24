@@ -76,6 +76,7 @@ public final class PresentationConfigMigrator {
         "match-point.enabled", "match-point.after-minutes",
         "match-point.message", "match-point.dragon-height-offset",
         "match-point.dragon-angular-speed", "match-point.dragon-waypoint-reach",
+        "match-point.dragon-patrol-spacing", "match-point.dragon-erode-radius",
         "match-point.blocks-per-sweep",
         "match-point.global-erosion.scan-positions-per-tick",
         "match-point.global-erosion.max-blocks-per-tick",
