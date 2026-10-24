@@ -37,7 +37,9 @@ public class PresentationConfigMigratorTest {
         assertTrue(updated.getBoolean("special-items.defender-persistent"));
         assertTrue(updated.getBoolean("match-point.enabled"));
         assertEquals(30, updated.getInt("match-point.after-minutes"));
-        assertEquals(18, updated.getInt("match-point.blocks-per-sweep"));
+        assertEquals(28, updated.getInt("match-point.blocks-per-sweep"));
+        assertEquals(40, updated.getInt("match-point.dragon-patrol-spacing"));
+        assertEquals(9, updated.getInt("match-point.dragon-erode-radius"));
         assertEquals(3000, updated.getInt(
             "match-point.global-erosion.scan-positions-per-tick"));
         assertEquals(40, updated.getInt(
