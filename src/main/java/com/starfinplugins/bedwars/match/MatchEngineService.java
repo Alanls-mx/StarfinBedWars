@@ -1273,14 +1273,56 @@ public final class MatchEngineService implements ManagedService, Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onExplosion(EntityExplodeEvent event) {
-        if (matchInWorld(event.getLocation().getWorld()) != null) event.blockList().clear();
+        GameMatch match = matchInWorld(event.getLocation().getWorld());
+        if (match == null) return;
+        protectExplosionBlocks(match, event.blockList());
+        // Defensas destruidas nao retornam ao inventario por drops vanilla.
+        event.setYield(0.0F);
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockExplosion(BlockExplodeEvent event) {
-        if (matchInWorld(event.getBlock().getWorld()) != null) event.blockList().clear();
+        GameMatch match = matchInWorld(event.getBlock().getWorld());
+        if (match == null) return;
+        protectExplosionBlocks(match, event.blockList());
+        event.setYield(0.0F);
+    }
+
+    /**
+     * Explosoes podem destruir somente blocos registrados como colocados pelos
+     * participantes desta partida. A construcao original e as camas sao protegidas.
+     */
+    private void protectExplosionBlocks(GameMatch match, java.util.List<Block> affected) {
+        Set<String> placed = playerPlacedBlocks.get(match.getId());
+        boolean playing = match.getState() == MatchState.IN_GAME;
+        java.util.Iterator<Block> iterator = affected.iterator();
+        while (iterator.hasNext()) {
+            Block block = iterator.next();
+            if (block.getType() == Material.BED_BLOCK
+                    || !ExplosionBlockPolicy.canDestroy(playing, placed, blockKey(block))) {
+                iterator.remove();
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onExplosionFinished(EntityExplodeEvent event) {
+        GameMatch match = matchInWorld(event.getLocation().getWorld());
+        if (match != null) forgetExplodedBlocks(match, event.blockList());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockExplosionFinished(BlockExplodeEvent event) {
+        GameMatch match = matchInWorld(event.getBlock().getWorld());
+        if (match != null) forgetExplodedBlocks(match, event.blockList());
+    }
+
+    private void forgetExplodedBlocks(GameMatch match, java.util.List<Block> destroyed) {
+        Set<String> placed = playerPlacedBlocks.get(match.getId());
+        if (placed == null) return;
+        for (Block block : destroyed) placed.remove(blockKey(block));
     }
 
     @EventHandler
