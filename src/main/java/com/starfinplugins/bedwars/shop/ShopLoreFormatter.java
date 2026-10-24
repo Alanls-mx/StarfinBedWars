@@ -28,10 +28,11 @@ public final class ShopLoreFormatter {
                 if (word.isEmpty()) continue;
                 String piece = word;
                 while (visibleLength(piece) > width) {
-                    if (!current.isEmpty()) {
+                    // A carried color code alone is not a visible lore line.
+                    if (visibleLength(current) > 0) {
                         result.add(ChatColor.GRAY + current);
-                        current = ChatColor.getLastColors(current);
                     }
+                    current = ChatColor.getLastColors(current);
                     int splitAt = visiblePrefixEnd(piece, width);
                     String first = piece.substring(0, splitAt);
                     result.add(ChatColor.GRAY + current + first);
