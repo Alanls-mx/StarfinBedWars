@@ -184,6 +184,9 @@ equipment:
   tool-minimum: WOOD
 
 shop:
+  # Maximo de caracteres visiveis por linha da descricao (18 a 40).
+  # Linhas menores evitam tooltips fora da tela em resolucoes baixas.
+  description-line-length: 28
   category-order: [FAVORITES, SWORDS, ARMOR, TOOLS, BLOCKS, BOWS, POTIONS, UTILITIES, SPECIAL]
   category-icons:
     FAVORITES: NETHER_STAR
@@ -248,6 +251,9 @@ messages:
   countdown-cancelled: '&cContagem cancelada! Aguardando mais jogadores.'
   match-started: '&a&lA PARTIDA COMECOU! &7Proteja sua cama e elimine as equipes adversarias!'
   own-bed: '&cVocê não pode destruir sua própria cama!'
+  boundary-height: '&cVocê atingiu o limite de altura desta arena!'
+  boundary-edge: '&cVocê chegou ao limite da arena! Não é possível sair do mapa.'
+  boundary-warning-cooldown-seconds: 4
   respawn-countdown: '&eVoce renascera em &c{time} &esegundos.'
   respawned: '&aVoce renasceu!'
   you-eliminated: '&cVoce foi eliminado! Sua cama ja foi destruida.'
