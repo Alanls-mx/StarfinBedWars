@@ -183,3 +183,36 @@ confirmar que todos os blocos sao isolados por GameMatch e apagam quando a
 instancia e removida. Comparar recuo de Defender com `0.75/0.85` e
 `1.0/1.0`, inclusive Fireball e golpes de jogador. Nao declarar desempenho
 ou balanceamento final como comprovados antes desses testes.
+
+## NPCs de outras ilhas: Shop e Upgrades (2026-10-24)
+
+Regra corrigida: um NPC fisicamente colocado em uma ilha NAO pertence
+exclusivamente a equipe daquela ilha. Todos os jogadores conectados em
+`IN_GAME` na mesma instancia de partida podem interagir com qualquer
+Villager/ArmorStand de Shop ou Upgrades dentro do alcance do clique.
+
+- `ShopNpcRoute.canAccess` nao compara mais o `islandTeamId` do NPC
+  com a equipe do jogador. Continua exigindo UUID de GameMatch correto e
+  um ID valido de equipe do comprador.
+- `ShopNpcRoute.getPurchasingTeamId` retorna exclusivamente a equipe
+  do jogador visitante. Nunca retorna a equipe do NPC.
+- `ShopService.requestShopMenu` passa `purchaserTeamId` para
+  `TeamUpgradeService.openShop`, independentemente da ilha onde o
+  NPC esta localizado.
+- `TeamUpgradeService.onUpgradeClick`, `buyUpgrade` e `buyTrap`
+  continuam utilizando o `participant.getTeamId()` de quem clica;
+  nenhuma melhoria, armadilha ou upgrade de gerador de uma equipe
+  adversaria pode ser comprado acidentalmente.
+- `ShopService.purchase` continua usando inventario, saldo de recursos,
+  equipamentos permanentes e cor da la do comprador, nunca dados do NPC.
+- Permanece proibido interagir com NPC de outra GameMatch, com um
+  jogador fora da partida, espectador, desconectado ou distante demais
+  do NPC (mais de 6 blocos).
+- Testes JUnit de rotas de NPC de mesma/equipe diferente, alvo correto
+  da compra e do upgrade, dados invalidos e isolamento entre partidas.
+
+**Pendente validar em PaperSpigot 1.8.8:** testar pelo menos duas equipes:
+jogador Azul vai ate a base Vermelha, compra la azul e itens para seu
+inventario; compra Sharpness/Protection/Forge/Traps e verifica que
+apenas o time Azul e modificado. Confirmar que a Vermelha nao ganha
+beneficios e que os NPCs de outras partidas nao podem ser utilizados.
