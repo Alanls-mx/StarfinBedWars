@@ -1243,10 +1243,15 @@ public final class MatchEngineService implements ManagedService, Listener {
                 || matchWorlds.get(match.getId()) != block.getWorld()) return false;
         String key = blockKey(block);
         if (!bridgeBlockOwners.owns(match.getId(), key, eggId)) return false;
+        if (block.getType() != Material.WOOL || block.getData() != expectedColor) {
+            // A plugin may have replaced this position without a Bukkit place
+            // event. Forget the old egg, but do NOT unprotect the replacement.
+            bridgeBlockOwners.forget(match.getId(), key);
+            return false;
+        }
         bridgeBlockOwners.forget(match.getId(), key);
         Set<String> placed = playerPlacedBlocks.get(match.getId());
         if (placed != null) placed.remove(key);
-        if (block.getType() != Material.WOOL || block.getData() != expectedColor) return false;
         block.setType(Material.AIR, false); // No drops and no block item duplication.
         return true;
     }
