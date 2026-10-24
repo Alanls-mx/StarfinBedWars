@@ -25,6 +25,8 @@ public final class MatchVisualService implements ManagedService, Listener {
     private final Plugin plugin;
     private final MatchEngineService matches;
     private final Map<UUID, GameMatch> opening = new HashMap<UUID, GameMatch>();
+    private final Map<UUID, GameMatch> lobbyStarting = new HashMap<UUID, GameMatch>();
+    private final Map<UUID, Integer> lastLobbyCountdown = new HashMap<UUID, Integer>();
     private final Map<UUID, Integer> lastCountdown = new HashMap<UUID, Integer>();
     private final Map<UUID, PriorityTitle> titles = new HashMap<UUID, PriorityTitle>();
     private BukkitTask task;
@@ -45,6 +47,8 @@ public final class MatchVisualService implements ManagedService, Listener {
         task = null;
         org.bukkit.event.HandlerList.unregisterAll(this);
         opening.clear();
+        lobbyStarting.clear();
+        lastLobbyCountdown.clear();
         lastCountdown.clear();
         titles.clear();
     }
@@ -52,16 +56,33 @@ public final class MatchVisualService implements ManagedService, Listener {
     @EventHandler public void onLifecycle(MatchLifecycleEvent event) {
         GameMatch match = event.getMatch();
         switch (event.getType()) {
+            case COUNTDOWN_STARTED:
+                lobbyStarting.put(match.getId(), match);
+                lastLobbyCountdown.remove(match.getId());
+                break;
             case SPAWN_OPENING:
+                lobbyStarting.remove(match.getId());
+                lastLobbyCountdown.remove(match.getId());
                 opening.put(match.getId(), match);
                 lastCountdown.remove(match.getId());
                 break;
             case COUNTDOWN_CANCELLED:
                 opening.remove(match.getId());
+                lobbyStarting.remove(match.getId());
+                lastLobbyCountdown.remove(match.getId());
                 lastCountdown.remove(match.getId());
+                for (GameParticipant part : match.getParticipantList()) {
+                    Player waiting = Bukkit.getPlayer(part.getPlayerId());
+                    if (waiting != null && waiting.isOnline()) {
+                        show(waiting, "", text("visuals.lobby-countdown.cancelled",
+                            "&cAguardando mais jogadores..."), 1, 30);
+                    }
+                }
                 break;
             case STARTED:
                 opening.remove(match.getId());
+                lobbyStarting.remove(match.getId());
+                lastLobbyCountdown.remove(match.getId());
                 lastCountdown.remove(match.getId());
                 for (GameParticipant participant : match.getParticipantList()) {
                     Player player = Bukkit.getPlayer(participant.getPlayerId());
@@ -93,6 +114,8 @@ public final class MatchVisualService implements ManagedService, Listener {
                 break;
             case ENDED:
                 opening.remove(match.getId());
+                lobbyStarting.remove(match.getId());
+                lastLobbyCountdown.remove(match.getId());
                 lastCountdown.remove(match.getId());
                 announceResult(match);
                 break;
@@ -104,6 +127,24 @@ public final class MatchVisualService implements ManagedService, Listener {
     }
 
     private void refreshCountdowns() {
+        for (GameMatch match : new java.util.ArrayList<GameMatch>(lobbyStarting.values())) {
+            Integer seconds = matches.getLobbyCountdown(match);
+            int startAt = Math.max(1, Math.min(10,
+                plugin.getConfig().getInt("visuals.lobby-countdown.start-at", 5)));
+            if (seconds == null || seconds < 1 || seconds > startAt
+                    || seconds.equals(lastLobbyCountdown.get(match.getId()))) continue;
+            lastLobbyCountdown.put(match.getId(), seconds);
+            for (GameParticipant participant : match.getParticipantList()) {
+                if (participant.getState() != ParticipantState.CONNECTED) continue;
+                Player player = Bukkit.getPlayer(participant.getPlayerId());
+                if (player == null || !player.isOnline()
+                        || player.getWorld() != matches.getWorld(match.getId())) continue;
+                show(player, text("visuals.lobby-countdown.title", "&e&lINICIANDO"),
+                    text("visuals.lobby-countdown.subtitle", "&fA partida comeca em &e{time}&fs.")
+                        .replace("{time}", Integer.toString(seconds)), 1, 24);
+                playSound(player, "visuals.lobby-countdown.sound", "NOTE_PLING");
+            }
+        }
         for (GameMatch match : new java.util.ArrayList<GameMatch>(opening.values())) {
             Integer seconds = matches.getSpawnOpeningCountdown(match);
             int startAt = Math.max(1, Math.min(10,
