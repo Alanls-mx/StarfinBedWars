@@ -63,6 +63,21 @@ match-point:
   dragon-blast-blocks: 8
   # So explode depois de avancar alguns blocos.
   dragon-blast-min-movement: 5.0
+  # Metas contadas desde o inicio do Match Point. Referencia:
+  # total de blocos existentes na MAIN (pos1/pos2), excluindo ar e bedrock.
+  # Caso o servidor fique atrasado, ele tenta recuperar o progresso em lotes.
+  demolition:
+    partial-minutes: 5
+    partial-percent: 80
+    complete-minutes: 8
+    survey-positions-per-tick: 7000
+    max-blocks-per-tick: 220
+  # Raios visuais que tambem destroem estruturas durante o Match Point.
+  # Desativar com lightning.enabled: false sem alterar as metas de destruicao.
+  lightning:
+    enabled: true
+    interval-ticks: 60
+    max-blocks-per-strike: 24
   # Barra MATCH POINT fixa perto da camera, mesmo olhando para longe do dragao.
   bossbar-enabled: true
   dragon-damage-radius: 5.0
