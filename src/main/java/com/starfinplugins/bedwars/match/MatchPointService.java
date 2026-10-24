@@ -215,6 +215,7 @@ public final class MatchPointService implements ManagedService, Listener {
             if (eligible.contains(viewerId)) continue;
             Player player = Bukkit.getPlayer(viewerId);
             if (player != null) bossBars.hide(player);
+            else bossBars.forget(viewerId);
         }
     }
 
