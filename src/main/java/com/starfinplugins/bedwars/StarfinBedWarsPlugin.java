@@ -22,6 +22,7 @@ import com.starfinplugins.bedwars.menu.BedWarsMenuService;
 import com.starfinplugins.bedwars.setup.ArenaSetupWizardService;
 import com.starfinplugins.bedwars.service.ServiceLifecycle;
 import com.starfinplugins.bedwars.shop.ShopService;
+import com.starfinplugins.bedwars.shop.special.SpecialItemService;
 import com.starfinplugins.bedwars.upgrades.TeamUpgradeService;
 import com.starfinplugins.bedwars.world.WorldManagementService;
 import com.starfinplugins.bedwars.world.WorldSettings;
@@ -42,6 +43,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private ParticipantInventoryService participantInventory;
     private TeamUpgradeService teamUpgrades;
     private ShopService shops;
+    private SpecialItemService specialItems;
     private WorldSettings worldSettings;
     private WorldManagementService worldManagement;
     private ArenaEditingService arenaEditing;
@@ -99,6 +101,9 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             generators.setMobGuard(mobGuard);
             presentation = new MatchPresentationService(this, matchEngine, generators);
             teamUpgrades = new TeamUpgradeService(this, arenaService, matchEngine, generators);
+            specialItems = new SpecialItemService(this, matchEngine);
+            specialItems.setMobGuard(mobGuard);
+            teamUpgrades.setSpecialItems(specialItems);
             equipment = new MatchEquipmentService(this, teamUpgrades, matchEngine);
             matchEngine.setEquipment(equipment);
             visuals = new MatchVisualService(this, matchEngine);
@@ -120,6 +125,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services.add(teamUpgrades);
             services.add(equipment);
             services.add(shops);
+            services.add(specialItems);
             services.add(matchChat);
             services.add(presentation);
             services.add(visuals);
