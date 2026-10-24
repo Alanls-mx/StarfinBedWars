@@ -33,6 +33,7 @@ import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.entity.EntityTargetEvent;
 import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -49,6 +50,7 @@ public final class MatchPointService implements ManagedService, Listener {
     private final Plugin plugin;
     private final MatchEngineService matches;
     private final ManagedMobGuard mobGuard;
+    private final MatchPointDragonFlightV1_8_R3 flight = new MatchPointDragonFlightV1_8_R3();
     private final Map<UUID, Active> sessions = new HashMap<UUID, Active>();
     private BukkitTask timer;
     private long ticks;
@@ -65,7 +67,7 @@ public final class MatchPointService implements ManagedService, Listener {
         Bukkit.getPluginManager().registerEvents(this, plugin);
         timer = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override public void run() { tick(); }
-        }, 20L, 10L);
+        }, 1L, 1L);
     }
 
     @Override public void stop() {
@@ -127,7 +129,7 @@ public final class MatchPointService implements ManagedService, Listener {
     }
 
     private void tick() {
-        ticks += 10L;
+        ticks++;
         for (Iterator<Map.Entry<UUID, Active>> it = sessions.entrySet().iterator(); it.hasNext();) {
             Map.Entry<UUID, Active> entry = it.next();
             Active active = entry.getValue();
@@ -140,6 +142,9 @@ public final class MatchPointService implements ManagedService, Listener {
             World world = matches.getWorld(match.getId());
             if (world == null) continue;
             if (!active.triggered) {
+                // The flight controller runs every tick for smooth animation;
+                // Match Point timing only needs a check once per second.
+                if (ticks % 20L != 0L) continue;
                 long threshold = Math.max(1L, Math.min(120L,
                     plugin.getConfig().getLong("match-point.after-minutes", 30L))) * 60000L;
                 if (match.getStartedAt() == null || System.currentTimeMillis()
@@ -217,16 +222,39 @@ public final class MatchPointService implements ManagedService, Listener {
     private void advance(Active active, World world) {
         EnderDragon dragon = active.dragon;
         if (dragon == null || !dragon.isValid() || dragon.isDead() || active.path == null) return;
-        active.angle += Math.max(0.01D, Math.min(0.20D,
-            plugin.getConfig().getDouble("match-point.dragon-angular-speed", 0.065D)));
-        double[] p = active.path.at(active.angle);
-        Location target = new Location(world, p[0], p[1], p[2]);
-        target.setYaw((float) Math.toDegrees(-active.angle));
-        // Another plugin or the server may reject the teleport. Only erode
-        // the map and damage players where the dragon actually arrived.
-        if (!dragon.teleport(target)) return;
-        destroyNearby(active, dragon.getLocation());
-        damageNearby(active, dragon.getLocation());
+
+        // Move toward a sequence of waypoints using the dragon's OWN 1.8.8
+        // flight AI. No periodic teleport, no forced rotation, no broken
+        // history of body/head/tail positions.
+        double[] point = active.path.at(active.angle);
+        Location waypoint = new Location(world, point[0], point[1], point[2]);
+        double reach = Math.max(10.0D, Math.min(20.0D,
+            plugin.getConfig().getDouble("match-point.dragon-waypoint-reach", 14.0D)));
+        if (dragon.getLocation().distanceSquared(waypoint) <= reach * reach
+                || ++active.waypointTicks > 160) {
+            double increment = Math.max(0.03D, Math.min(0.20D,
+                plugin.getConfig().getDouble("match-point.dragon-angular-speed", 0.065D)));
+            active.angle = (active.angle + increment * 4.0D) % (Math.PI * 2.0D);
+            active.waypointTicks = 0;
+            point = active.path.at(active.angle);
+            waypoint = new Location(world, point[0], point[1], point[2]);
+        }
+        try {
+            flight.steer(dragon, waypoint);
+        } catch (RuntimeException failure) {
+            // An incompatible fork must never leave a constantly teleporting,
+            // visually broken dragon on screen.
+            plugin.getLogger().severe("Match Point: controle de voo v1_8_R3 falhou: "
+                + failure.getMessage());
+            removeDragon(active);
+            return;
+        }
+
+        // Use the actual dragon position, not an artificial path point.
+        // This keeps erosion and damage synchronized with what players see.
+        Location actual = dragon.getLocation();
+        destroyNearby(active, actual);
+        damageNearby(active, actual);
     }
 
     /**
@@ -297,6 +325,11 @@ public final class MatchPointService implements ManagedService, Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onDragonRandomTarget(EntityTargetEvent event) {
+        if (isOwnedDragon(event.getEntity())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onDragonDamage(EntityDamageEvent event) {
         if (isOwnedDragon(event.getEntity())) event.setCancelled(true);
     }
@@ -320,6 +353,7 @@ public final class MatchPointService implements ManagedService, Listener {
         private final GameMatch match;
         private boolean triggered;
         private double angle;
+        private int waypointTicks;
         private MatchPointPath path;
         private EnderDragon dragon;
         private Active(GameMatch match) { this.match = match; }
