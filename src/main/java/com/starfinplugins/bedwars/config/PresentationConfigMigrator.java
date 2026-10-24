@@ -72,6 +72,7 @@ public final class PresentationConfigMigrator {
         "special-items.defender-knockback.horizontal",
         "special-items.defender-knockback.vertical",
         "special-items.defender-lifetime-seconds",
+        "special-items.defender-persistent",
         "match-point.enabled", "match-point.after-minutes",
         "match-point.message", "match-point.dragon-height-offset",
         "match-point.dragon-angular-speed", "match-point.blocks-per-sweep",
