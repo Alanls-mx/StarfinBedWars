@@ -491,3 +491,64 @@ de alvo permanece no listener de `MatchPointService`.
 **A compilacao ainda precisa ser repetida no PC do usuario.** O log de
 source/target 8 obsolete e apenas warning do JDK mais novo, nao o motivo
 do erro. Nao alegar sucesso do build ate `mvn -B verify` concluir.
+
+## Hotfix Match Point: dragao somente entre duas ilhas, sem destruicao visivel
+
+### Problemas diagnosticados
+1. O trajeto era guiado pelos **spawns dos times**, nao pela selecao
+   `/sbw setarena pos1` e `pos2`. Em duas ilhas, isso restringia o
+   voo ao corredor entre elas.
+2. O servico escolhia `arena.getBounds()` (regiao de protecao Y=0..255)
+   antes da regiao **MAIN** (pos1/pos2 real, com os limites de altura
+   utilizados para cadastrar o mapa). Como resultado, a destruicao
+   global analisava grandes volumes de ar.
+3. A destruicao local examinava blocos proximo da ALTURA do corpo do
+   dragao, que frequentemente voa sobre o vazio das ilhas.
+4. A altura retornada por `World.getHighestBlockYAt()` no legado
+   Spigot 1.8 pode apontar para o ar acima da superficie, e o heightmap
+   nao inclui necessariamente alguns blocos transparentes.
+
+### Correcao de voo
+- `MatchPointArea.resolve()` escolhe MAIN antes da protecao, mantendo
+  compatibilidade com arenas antigas sem MAIN.
+- `MatchPointPatrolRoute` monta um percurso serpenteante por toda a area
+  pos1/pos2: cobre bordas, cantos e centro independentemente da posicao ou
+  quantidade de jogadores, sempre com margem para o tamanho do dragao.
+- O sistema continua usando a IA NMS nativa com waypoints, **sem teleporte
+  repetido**; ao chegar a um ponto ou apos o limite de ticks passa ao
+  seguinte. A distancia entre pontos pode ser ajustada em
+  `match-point.dragon-patrol-spacing` (padrao 40, 20..64).
+- O console imprime a regiao de voo MAIN (X/Y/Z e quantidade de pontos).
+
+### Correcao da destruicao
+- O dragao pode voar acima da ilha, mas `destroyNearby()` agora
+  mira o topo real dos blocos na coluna X/Z de sua passagem.
+- Em 1.8, caso `getHighestBlockYAt()` retorne ar, procura para
+  baixo ate encontrar bloco. Local alternado por passagem evita destruir
+  sempre os mesmos blocos em um canto pequeno.
+- `MatchPointErosionCursor` percorre TODOS os blocos na regiao MAIN.
+  Para reduzir overhead de celulas no ceu sem deixar lacunas, pula SOMENTE
+  secoes de chunk (16 blocos de altura) comprovadamente vazias por
+  `ChunkSnapshot.isSectionEmpty` — preservando a varredura de
+  vidro, la, agua e outros blocos ignorados pelo heightmap.
+- Cada bloco apagado remove seu registro de construcao temporaria, sem
+  gerar drops. BEDROCK continua preservado.
+- Ao menos a cada 10 segundos, o console registra **quantos blocos foram
+  efetivamente destruidos** na varredura global e pelo dragao.
+- Apenas chunks clonados existentes na instancia da GameMatch sao
+  alterados. O mundo template original nunca e destruido e a proxima
+  partida inicia novamente de copia limpa.
+
+### Testes / homologacao pendente
+- `MatchPointAreaTest`: seleciona MAIN entre pos1/pos2 em vez da regiao
+  de protecao Y=0..255 e testa fallback legado.
+- `MatchPointPatrolRouteTest`: verifica cobertura dos 4 quadrantes,
+  centro, bordas, trajetos com pontos proximos e altitude.
+- `MatchPointErosionCursorTest`: verifica salto de secoes comprovadamente
+  vazias sem corromper ordem/contagem e cobertura de blocos.
+- `PresentationConfigMigratorTest`: confere novas configuracoes.
+- **Nao foi executado `mvn -B verify` nem homologacao no PaperSpigot**
+  nesta rodada. Rodar a compilacao com Java 8 no ambiente do usuario,
+  iniciar partida, usar `/sbw matchpoint` e acompanhar no console
+  quantidade de blocos removidos. Testar 2, 4 e 8 ilhas, vidro,
+  construcoes fora da vista dos jogadores, restauracao posterior.
