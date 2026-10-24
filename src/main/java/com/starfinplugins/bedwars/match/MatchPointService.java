@@ -211,8 +211,8 @@ public final class MatchPointService implements ManagedService, Listener {
         // test command must not irreversibly break beds without a Match Point.
         if (active.dragon == null || !active.dragon.isValid()) return;
         active.erosion = new MatchPointErosionCursor(
-            bounds.getMinimumX(), Math.max(1, bounds.getMinimumY()), bounds.getMinimumZ(),
-            bounds.getMaximumX(), Math.min(254, bounds.getMaximumY()), bounds.getMaximumZ());
+            bounds.getMinimumX(), bounds.getMinimumY(), bounds.getMinimumZ(),
+            bounds.getMaximumX(), bounds.getMaximumY(), bounds.getMaximumZ());
         matches.destroyAllBedsAtMatchPoint(match);
         for (GameParticipant participant : match.getParticipantList()) {
             Player player = Bukkit.getPlayer(participant.getPlayerId());
