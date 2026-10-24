@@ -26,6 +26,37 @@ public class MatchPointPathTest {
         assertEquals(105.0D, eastern[1], 0.001D);
     }
 
+    @Test public void twoAlignedIslandsGetAFullLoopRatherThanFourBlockStrip() {
+        ArenaRegion bounds = new ArenaRegion("world", -140, 0, -140, 140, 180, 140);
+        MatchPointPath path = new MatchPointPath(bounds, 180, 108, Arrays.asList(
+            new Position("world", -90, 105, 0, 0, 0),
+            new Position("world", 90, 105, 0, 0, 0)));
+        // Old implementation had a radius of 4 blocks on the other axis,
+        // causing the dragon to writhe in a narrow turnaround.
+        assertTrue("Dragon must sweep across the central island area",
+            path.at(Math.PI / 2.0D)[2] > 35.0D);
+        assertTrue(path.at(3.0D * Math.PI / 2.0D)[2] < -35.0D);
+        assertTrue(path.at(0)[0] > 80.0D);
+        assertTrue(path.at(Math.PI)[0] < -80.0D);
+        for (int step = 0; step < 360; step++) {
+            double[] p = path.at(Math.toRadians(step));
+            assertTrue(p[0] > bounds.getMinimumX());
+            assertTrue(p[0] < bounds.getMaximumX());
+            assertTrue(p[2] > bounds.getMinimumZ());
+            assertTrue(p[2] < bounds.getMaximumZ());
+            assertTrue(p[1] < 180);
+        }
+    }
+
+    @Test public void twoIslandsAlongZStillHaveHorizontalBreathingRoom() {
+        ArenaRegion bounds = new ArenaRegion("world", -140, 0, -140, 140, 180, 140);
+        MatchPointPath path = new MatchPointPath(bounds, 180, 108, Arrays.asList(
+            new Position("world", 0, 105, -75, 0, 0),
+            new Position("world", 0, 105, 75, 0, 0)));
+        assertTrue(path.at(0.0D)[0] > 30.0D);
+        assertTrue(path.at(Math.PI)[0] < -30.0D);
+    }
+
     @Test public void supportsTinyArenasWithoutEscapingBounds() {
         ArenaRegion bounds = new ArenaRegion("world", 0, 0, 0, 5, 100, 5);
         MatchPointPath path = new MatchPointPath(bounds, 100, 90);
