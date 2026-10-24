@@ -611,3 +611,68 @@ retorno ao lobby e instancia nova intacta. Nenhum JAR compilado nesta sessao.
   os spawns quando as duas ilhas estao alinhadas nos eixos X ou Z.
   Assim o voo ainda explora o mapa inteiro, mas tambem atinge as ilhas
   reais; nao tenta forcar a destruicao de toda a area ao mesmo tempo.
+
+## Hotfix: NoClassDefFoundError ShopNpcFactoryV1_8_R3 ao desligar
+
+### Relato observado no PaperSpigot-445 / Java 8u504
+O usuario enviou stack trace de `onDisable`:
+`java.lang.NoClassDefFoundError:
+com/starfinplugins/bedwars/shop/npc/ShopNpcFactoryV1_8_R3`,
+originado em `ShopService.stop(ShopService.java:125)`, cujo
+`ShopNpcFactoryV1_8_R3.unregisterType()` era incondicional.
+
+**O arquivo-fonte ShopNpcFactoryV1_8_R3.java ESTÁ presente no repositorio
+e o pom.xml usa empacotamento JAR Maven padrao.**
+Portanto nao remover os NPCs ou substituir por NPC vanilla como "correcao":
+a falha indica que a classe nao estava acessivel ao classloader do plugin
+NO JAR CARREGADO, e a causa exata depende da instalacao. Causas plausiveis:
+JAR implantado incompleto/diferente ou substituido enquanto o servidor
+ainda o utilizava. O stack trace isolado nao determina a causa.
+
+### Protecoes implementadas
+- `ShopService.stop()` protege o unregister contra
+  `RuntimeException | LinkageError`, registra mensagem e stack trace
+  explicando que o JAR deve ser reinstalado com o servidor desligado, e
+  continua a limpeza dos mapas e tarefas do Shop.
+- `ServiceLifecycle.stop()` captura `LinkageError` por servico, assim
+  uma falha de carregamento NMS nao impede outros servicos de liberar
+  mundos, inventarios, timers etc. Na inicializacao, `start()`
+  tambem garante shutdown de servicos iniciados se houver LinkageError.
+- `StarfinBedWarsPlugin.verifyBundledClasses()` roda antes de
+  inicializar servicos, usando `Class.forName(..., false, classloader)`
+  nas classes NMS essenciais: `ShopNpcFactoryV1_8_R3`,
+  `ShopNpcVillager`, `MatchPointDragonFlightV1_8_R3` e
+  `MatchPointBossBarV1_8_R3`; se faltar, nao inicializa metade do plugin
+  e registra erro claro de pacote incompleto ou incompativel.
+- `pom.xml` adiciona fase `maven-antrun-plugin:run` em `verify` para
+  conferir que as quatro classes estao PRESENTES no JAR final, nao apenas
+  no diretorio compilado. Build falha com mensagem especifica se faltar.
+- Teste `ServiceLifecycleLinkageTest` simula
+  `NoClassDefFoundError` em stop e start; verifica ordem de limpeza,
+  agregacao dos erros e liberacao de todos os servicos.
+
+### Implantacao segura no Windows
+1. Executar `stop` no console e aguardar o processo Java ENCERRAR
+   completamente (nao apenas ficar na tela inicial).
+2. Em CMD, na raiz do projeto:
+   `git fetch origin`,
+   `git switch improvement/phase-1-explosion-protection`,
+   `git pull --ff-only origin improvement/phase-1-explosion-protection`,
+   `mvn -B verify`.
+3. Conferir conteudo do JAR:
+   `jar tf target\\StarfinBedWars-1.0.0-SNAPSHOT.jar | findstr
+   /C:"ShopNpcFactoryV1_8_R3.class"`. O comando deve imprimir a
+   entrada da classe dentro do archive.
+4. Copiar `target\\StarfinBedWars-1.0.0-SNAPSHOT.jar` para
+   `plugins\\` do servidor, removendo JARs antigos/duplicados
+   da mesma versao; conferir que os hashes dos arquivos origem/destino
+   sao identicos, se necessario via `certutil -hashfile <arquivo> SHA256`.
+5. Iniciar o servidor do ZERO; jamais copiar/substituir o JAR de um
+   plugin que ja esta carregado, e nao usar `/reload`.
+
+### Estado da validacao
+Alteracoes enviadas ao GitHub mas nao compiladas/testadas neste ambiente.
+Ainda executar `mvn -B verify` e um ciclo real de startup/partida/stop
+no PaperSpigot-445 com o JAR novo. Caso o problema continue com classe
+presente no JAR, recolher as PRIMEIRAS mensagens de erro durante
+a inicializacao e confirmar o checksum do JAR em `plugins/`.
