@@ -27,6 +27,8 @@ public class PresentationConfigMigratorTest {
         YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
         assertEquals("&aMinha arena", updated.getString("scoreboard.title"));
         assertTrue(updated.getStringList("scoreboard.layouts.in-game").contains("{teams}"));
+        assertEquals("OWN_TEAM", updated.getString("bed-hologram.visibility"));
+        assertEquals(4, updated.getInt("generator-holograms.orbit.icon-count"));
         assertEquals(original, new String(Files.readAllBytes(
             new File(folder.getRoot(), "config.yml.pre-presentation.bak").toPath()),
             StandardCharsets.UTF_8));
@@ -47,5 +49,23 @@ public class PresentationConfigMigratorTest {
         assertEquals("{footer}", updated.getString("tab.footer"));
         assertEquals("&b&lSTARFIN BEDWARS\\n{footer}", updated.getString("tab.header"));
         assertEquals("&ewww.meuserver.com.br", updated.getString("scoreboard.footer"));
+    }
+
+    @Test
+    public void preservesExistingBedTextAndGeneratorSettings() throws Exception {
+        File config = folder.newFile("custom.yml");
+        Files.write(config.toPath(), ("bed-hologram:\n  intact: '&aMinha cama'\n"
+            + "  destroyed: '&4Perdida'\n  height: 1.8\n"
+            + "generator-holograms:\n  orbit:\n    icon-count: 2\n")
+            .getBytes(StandardCharsets.UTF_8));
+        YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
+            getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
+        assertTrue(PresentationConfigMigrator.mergeFile(config, defaults));
+        YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
+        assertEquals("&aMinha cama", updated.getString("bed-hologram.intact"));
+        assertEquals("&4Perdida", updated.getString("bed-hologram.destroyed"));
+        assertEquals(1.8D, updated.getDouble("bed-hologram.height"), 0.0D);
+        assertEquals(2, updated.getInt("generator-holograms.orbit.icon-count"));
+        assertEquals(6.0D, updated.getDouble("generator-holograms.orbit.rotation-speed"), 0.0D);
     }
 }

@@ -147,3 +147,6 @@ Ranked, rating, temporadas, torneios, reconnect persistente, StarfinParty, Starf
 - `mvn -B clean verify` concluido com sucesso apos as alteracoes atuais: 32 testes aprovados e JAR produzido com compilacao `release 8`.
 - Os testes cobrem dominio, geometria das salas de spawn, limites automaticos e persistencia YAML v6/legada. A validacao nao substitui teste em servidor real Spigot 1.8.8.
 - Nenhum commit ou push foi realizado; o workspace segue folder-backed e sem Git.
+# Prompt 6.4 — hologramas animados (24/10/2026)
+
+Geradores centrais agora mostram quatro minérios em órbita X/Z, bloco com pose de rotação e flutuação opcional. O contador segue o relógio da produção. Indicadores de cama passaram a entidades virtuais enviadas por jogador, com padrão `OWN_TEAM`, prazo de aviso após destruição e limpeza por partida. Configuração e limites em `config.yml`; migração preserva textos existentes. Build e teste de dois clientes no PaperSpigot 1.8.8 passaram. A inspeção gráfica com cliente Minecraft e o teste de carga com cinco partidas continuam pendentes. Detalhes em `STARFINBEDWARS_ANIMATED_HOLOGRAMS.md`.

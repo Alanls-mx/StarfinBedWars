@@ -34,3 +34,6 @@ O StarfinMinigames nao foi encontrado no workspace nesta etapa; nenhuma API sua 
 - O projeto nao possui servico de idioma por jogador, por isso textos de sistema seguem em portugues configuravel, sem traducao individual. A integracao com StarfinMinigames depende de acesso a sua API.
 - O contador de eventos do placar mostra o proximo ciclo real do gerador central; evolucoes globais de geradores, evento final e evento de camas ainda nao existem na engine.
 - Cabecalho TAB, comportamento de NPCs, hologramas e alertas precisam de teste funcional com clientes em um servidor Spigot 1.8.8.
+# Prompt 6.4 — atualização visual
+
+Blocos centrais de Diamante e Esmeralda usam rotação pela pose da cabeça e flutuação calculada a partir da âncora. Quatro ícones pequenos de minério orbitam cada bloco. Os textos ficam acima do conjunto e são atualizados somente quando mudam. Hologramas das camas usam packets individuais por equipe; nenhuma entidade física de cama permanece no mundo. Veja `STARFINBEDWARS_ANIMATED_HOLOGRAMS.md` para configuração e validação.

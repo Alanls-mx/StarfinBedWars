@@ -21,7 +21,30 @@ public final class PresentationConfigMigrator {
         "bed-hologram.enabled", "bed-hologram.height", "bed-hologram.intact",
         "bed-hologram.destroyed", "purchase-sounds.shop", "purchase-sounds.upgrade",
         "purchase-sounds.volume", "purchase-sounds.pitch",
-        "shop-npc.items-skin", "shop-npc.upgrades-skin"
+        "shop-npc.items-skin", "shop-npc.upgrades-skin",
+        "bed-hologram.visibility", "bed-hologram.show-to-spectators",
+        "bed-hologram.show-when-intact", "bed-hologram.show-when-destroyed",
+        "bed-hologram.destroyed-duration-seconds",
+        "generator-holograms.enabled", "generator-holograms.text.enabled",
+        "generator-holograms.text.show-level", "generator-holograms.text.show-resource",
+        "generator-holograms.text.show-countdown", "generator-holograms.text.update-interval-ticks",
+        "generator-holograms.central-block.enabled", "generator-holograms.central-block.rotate",
+        "generator-holograms.central-block.rotation-speed",
+        "generator-holograms.central-block.floating.enabled",
+        "generator-holograms.central-block.floating.amplitude",
+        "generator-holograms.central-block.floating.period-ticks",
+        "generator-holograms.orbit.enabled", "generator-holograms.orbit.icon-count",
+        "generator-holograms.orbit.radius", "generator-holograms.orbit.height-offset",
+        "generator-holograms.orbit.rotation-speed", "generator-holograms.orbit.update-interval-ticks",
+        "generator-holograms.orbit.vertical-oscillation.enabled",
+        "generator-holograms.orbit.vertical-oscillation.amplitude",
+        "generator-holograms.resources.diamond.central-material",
+        "generator-holograms.resources.diamond.orbit-material",
+        "generator-holograms.resources.emerald.central-material",
+        "generator-holograms.resources.emerald.orbit-material",
+        "generator-holograms.performance.max-icons-per-generator",
+        "generator-holograms.performance.pause-when-no-viewers",
+        "generator-holograms.performance.activation-distance"
     };
 
     private PresentationConfigMigrator() { }

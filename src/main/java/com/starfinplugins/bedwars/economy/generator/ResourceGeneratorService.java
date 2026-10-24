@@ -43,10 +43,14 @@ import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
+import org.bukkit.util.EulerAngle;
 
 public final class ResourceGeneratorService implements ManagedService, Listener {
     private static final String ITEM_TAG = "starfinbedwars-generator";
-    private static final double CENTRAL_HOLOGRAM_RAISE = 2.5D;
+    // Visual centers are relative to the physical drop anchor, never to a previous teleport.
+    private static final double VISUAL_CENTER_RAISE = 2.35D;
+    private static final double NORMAL_HELMET_OFFSET = 1.5D;
+    private static final double HAND_ITEM_OFFSET = 1.85D;
     private final Plugin plugin;
     private final ArenaService arenas;
     private final MatchEngineService matchEngine;
@@ -57,6 +61,7 @@ public final class ResourceGeneratorService implements ManagedService, Listener 
     private final Map<UUID, Map<String, GeneratorHologram>> holograms =
         new HashMap<UUID, Map<String, GeneratorHologram>>();
     private GeneratorSettings settings;
+    private GeneratorHologramSettings hologramSettings;
     private GeneratorEventSchedule eventSchedule;
     private final Map<UUID, Integer> nextEventIndexes = new HashMap<UUID, Integer>();
     private BukkitTask task;
@@ -78,6 +83,7 @@ public final class ResourceGeneratorService implements ManagedService, Listener 
     @Override
     public void start() throws Exception {
         settings = GeneratorSettings.load(plugin);
+        hologramSettings = new GeneratorHologramSettings(plugin.getConfig());
         eventSchedule = GeneratorEventSchedule.load(plugin);
         Bukkit.getPluginManager().registerEvents(this, plugin);
         task = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
@@ -256,7 +262,7 @@ public final class ResourceGeneratorService implements ManagedService, Listener 
         Map<String, GeneratorHologram> matchHolograms = new HashMap<String, GeneratorHologram>();
         for (GeneratorInstance instance : created) {
             ResourceGeneratorDefinition definition = instance.getDefinition();
-            if (definition.getTeamId() == null
+            if (hologramSettings.enabled && definition.getTeamId() == null
                     && (definition.getResource() == ResourceType.DIAMOND
                         || definition.getResource() == ResourceType.EMERALD)) {
                 matchHolograms.put(definition.getId(), createHologram(definition, world));
@@ -276,9 +282,9 @@ public final class ResourceGeneratorService implements ManagedService, Listener 
             if (world == null) continue;
             if (currentTick % 20L == 0L) applyTimedUpgrades(match, entry.getValue());
             if (currentTick % 20L == 0L) confineItems(entry.getKey(), entry.getValue(), world);
-            if (currentTick % 4L == 0L) animateHolograms(entry.getKey());
+            if (currentTick % hologramSettings.orbitInterval == 0L) animateHolograms(entry.getKey());
             for (GeneratorInstance instance : entry.getValue()) {
-                if (currentTick % 20L == 0L) updateHologram(entry.getKey(), instance);
+                if (currentTick % hologramSettings.textInterval == 0L) updateHologram(entry.getKey(), instance);
                 if (!instance.isDue(currentTick)) continue;
                 ResourceType type = instance.getDefinition().getResource();
                 List<GeneratorLevel> levels = settings.getLevels(type);
@@ -411,42 +417,79 @@ public final class ResourceGeneratorService implements ManagedService, Listener 
 
     private GeneratorHologram createHologram(ResourceGeneratorDefinition definition, World world) {
         Location position = arenas.toLocation(definition.getPosition(), world);
-        Location base = position.clone().add(0.0D, CENTRAL_HOLOGRAM_RAISE - 1.0D, 0.0D);
+        Location center = position.clone().add(0.0D, VISUAL_CENTER_RAISE, 0.0D);
         Material displayBlock = definition.getResource() == ResourceType.DIAMOND
-            ? Material.DIAMOND_BLOCK : Material.EMERALD_BLOCK;
-        // The helmet is rendered above the stand's origin. Lift its stand so the
-        // block sits clear of the title instead of covering "Nivel I".
-        ArmorStand blockStand = armorStand(base.clone().add(0.0D, 1.1D, 0.0D));
-        blockStand.setHelmet(new ItemStack(displayBlock));
+            ? hologramSettings.diamondBlock : hologramSettings.emeraldBlock;
+        ArmorStand blockStand = null;
+        Location blockBase = center.clone().subtract(0.0D, NORMAL_HELMET_OFFSET, 0.0D);
+        if (hologramSettings.block) {
+            blockStand = armorStand(blockBase);
+            blockStand.setHelmet(new ItemStack(displayBlock));
+        }
         List<ArmorStand> ores = new ArrayList<ArmorStand>();
-        for (int index = 0; index < 2; index++) {
-            ArmorStand ore = armorStand(base.clone().add(index == 0 ? -0.78D : 0.78D,
-                1.12D, 0.0D));
-            ore.setSmall(true);
-            ore.setHelmet(new ItemStack(definition.getResource().getMaterial()));
-            ores.add(ore);
+        Location orbitBase = center.clone().add(0.0D, hologramSettings.orbitHeight - HAND_ITEM_OFFSET, 0.0D);
+        if (hologramSettings.orbit) {
+            for (int index = 0; index < hologramSettings.iconCount; index++) {
+                Location icon = orbitBase.clone().add(
+                    OrbitMath.x(currentTick, index, hologramSettings.iconCount,
+                        hologramSettings.orbitSpeed, hologramSettings.orbitRadius), 0.0D,
+                    OrbitMath.z(currentTick, index, hologramSettings.iconCount,
+                        hologramSettings.orbitSpeed, hologramSettings.orbitRadius));
+                ArmorStand ore = armorStand(icon);
+                ore.setArms(true);
+                ore.setRightArmPose(new EulerAngle(-Math.PI / 2.0D, 0.0D, 0.0D));
+                ore.setItemInHand(new ItemStack(definition.getResource() == ResourceType.DIAMOND
+                    ? hologramSettings.diamondIcon : hologramSettings.emeraldIcon));
+                ores.add(ore);
+            }
         }
         List<ArmorStand> text = new ArrayList<ArmorStand>();
-        text.add(namedStand(base.clone().add(0.0D, 1.3D, 0.0D), ""));
-        text.add(namedStand(base.clone().add(0.0D, 0.9D, 0.0D), ""));
-        text.add(namedStand(base.clone().add(0.0D, 0.5D, 0.0D), ""));
-        return new GeneratorHologram(blockStand, ores, text);
+        if (hologramSettings.text) {
+            if (hologramSettings.level) text.add(namedStand(center.clone().add(0.0D, 1.3D, 0.0D), ""));
+            if (hologramSettings.resource) text.add(namedStand(center.clone().add(0.0D, 0.95D, 0.0D), ""));
+            if (hologramSettings.countdown) text.add(namedStand(center.clone().add(0.0D, 0.6D, 0.0D), ""));
+        }
+        return new GeneratorHologram(blockStand, blockBase, ores, orbitBase, text, world);
     }
 
     private void animateHolograms(UUID matchId) {
         Map<String, GeneratorHologram> active = holograms.get(matchId);
         if (active == null) return;
         for (GeneratorHologram hologram : active.values()) {
+            if (hologramSettings.pauseWithoutViewers && !hasNearbyViewer(hologram)) continue;
+            if (hologram.block != null && hologram.block.isValid()) {
+                if (hologramSettings.floatBlock) {
+                    Location at = hologram.blockBase.clone().add(0.0D,
+                        OrbitMath.floatOffset(currentTick, hologramSettings.floatAmplitude,
+                            hologramSettings.floatPeriod), 0.0D);
+                    hologram.block.teleport(at);
+                }
+                if (hologramSettings.rotate) {
+                    double angle = Math.toRadians((currentTick * hologramSettings.blockSpeed) % 360.0D);
+                    hologram.block.setHeadPose(new EulerAngle(0.0D, angle, 0.0D));
+                }
+            }
             for (int index = 0; index < hologram.ores.size(); index++) {
                 ArmorStand ore = hologram.ores.get(index);
                 if (!ore.isValid()) continue;
-                Location at = ore.getLocation();
-                double phase = (currentTick / 9.0D) + index * Math.PI;
-                at.setY(hologram.oreBaseY + Math.sin(phase) * 0.13D);
-                at.setYaw((float) ((currentTick * 5L + index * 180L) % 360L));
+                double angle = OrbitMath.angle(currentTick, index, hologram.ores.size(),
+                    hologramSettings.orbitSpeed);
+                double y = hologramSettings.oscillate
+                    ? Math.sin(angle * 2.0D) * hologramSettings.orbitAmplitude : 0.0D;
+                Location at = hologram.orbitBase.clone().add(Math.cos(angle) * hologramSettings.orbitRadius,
+                    y, Math.sin(angle) * hologramSettings.orbitRadius);
+                at.setYaw((float) (Math.toDegrees(angle) + 90.0D));
                 ore.teleport(at);
             }
         }
+    }
+
+    private boolean hasNearbyViewer(GeneratorHologram hologram) {
+        double limit = hologramSettings.activationDistance * hologramSettings.activationDistance;
+        for (org.bukkit.entity.Player player : hologram.world.getPlayers()) {
+            if (player.getLocation().distanceSquared(hologram.blockBase) <= limit) return true;
+        }
+        return false;
     }
 
     private ArmorStand armorStand(Location location) {
@@ -480,10 +523,19 @@ public final class ResourceGeneratorService implements ManagedService, Listener 
         if (levels.isEmpty() || instance.getLevel() < 1 || instance.getLevel() > levels.size()) return;
         int seconds = (int) Math.ceil(instance.getTicksUntilProduction(currentTick) / 20.0D);
         ChatColor color = resource == ResourceType.DIAMOND ? ChatColor.AQUA : ChatColor.GREEN;
-        hologram.text.get(0).setCustomName(ChatColor.YELLOW + "Nivel " + roman(instance.getLevel()));
-        hologram.text.get(1).setCustomName(color + (resource == ResourceType.DIAMOND
-            ? "Diamante" : "Esmeralda"));
-        hologram.text.get(2).setCustomName(ChatColor.GOLD + "Gera em " + seconds + " segundos");
+        int line = 0;
+        if (hologramSettings.text && hologramSettings.level)
+            setNameIfChanged(hologram.text.get(line++), ChatColor.YELLOW + "Nível " + roman(instance.getLevel()));
+        if (hologramSettings.text && hologramSettings.resource)
+            setNameIfChanged(hologram.text.get(line++), color + (resource == ResourceType.DIAMOND
+                ? "Diamante" : "Esmeralda"));
+        if (hologramSettings.text && hologramSettings.countdown)
+            setNameIfChanged(hologram.text.get(line), ChatColor.GOLD + "Gera em "
+                + ChatColor.RED + seconds + " segundos");
+    }
+
+    private void setNameIfChanged(ArmorStand stand, String text) {
+        if (stand.isValid() && !text.equals(stand.getCustomName())) stand.setCustomName(text);
     }
 
     private String roman(int level) {
@@ -647,18 +699,23 @@ public final class ResourceGeneratorService implements ManagedService, Listener 
         private final ArmorStand block;
         private final List<ArmorStand> ores;
         private final List<ArmorStand> text;
-        private final double oreBaseY;
+        private final Location blockBase;
+        private final Location orbitBase;
+        private final World world;
 
-        private GeneratorHologram(ArmorStand block, List<ArmorStand> ores, List<ArmorStand> text) {
+        private GeneratorHologram(ArmorStand block, Location blockBase, List<ArmorStand> ores,
+                                  Location orbitBase, List<ArmorStand> text, World world) {
             this.block = block;
+            this.blockBase = blockBase;
             this.ores = ores;
+            this.orbitBase = orbitBase;
             this.text = text;
-            this.oreBaseY = ores.get(0).getLocation().getY();
+            this.world = world;
         }
 
         private void remove(ManagedMobGuard mobGuard) {
             if (mobGuard != null) mobGuard.forget(block);
-            if (block.isValid()) block.remove();
+            if (block != null && block.isValid()) block.remove();
             for (ArmorStand ore : ores) {
                 if (mobGuard != null) mobGuard.forget(ore);
                 if (ore.isValid()) ore.remove();

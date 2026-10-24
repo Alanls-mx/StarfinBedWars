@@ -33,9 +33,52 @@ shop-hologram:
 
 bed-hologram:
   enabled: true
+  visibility: OWN_TEAM # OWN_TEAM, ALL_TEAMS ou DISABLED
+  show-to-spectators: false
   height: 1.2
-  intact: '{color}&l{team} &fCama'
-  destroyed: '{color}&l{team} &cCama destruida'
+  intact: '&c&lDEFENDA SUA CAMA!'
+  destroyed: '&c&lSUA CAMA FOI DESTRUIDA!'
+  show-when-intact: true
+  show-when-destroyed: true
+  destroyed-duration-seconds: 5
+
+generator-holograms:
+  enabled: true
+  text:
+    enabled: true
+    show-level: true
+    show-resource: true
+    show-countdown: true
+    update-interval-ticks: 20
+  central-block:
+    enabled: true
+    rotate: true
+    rotation-speed: 4.0
+    floating:
+      enabled: true
+      amplitude: 0.12
+      period-ticks: 60
+  orbit:
+    enabled: true
+    icon-count: 4
+    radius: 1.05
+    height-offset: 0.15
+    rotation-speed: 6.0
+    update-interval-ticks: 2
+    vertical-oscillation:
+      enabled: false
+      amplitude: 0.05
+  resources:
+    diamond:
+      central-material: DIAMOND_BLOCK
+      orbit-material: DIAMOND
+    emerald:
+      central-material: EMERALD_BLOCK
+      orbit-material: EMERALD
+  performance:
+    max-icons-per-generator: 8
+    pause-when-no-viewers: true
+    activation-distance: 48
 
 purchase-sounds:
   shop: NOTE_PLING
