@@ -1,4 +1,54 @@
 items:
+  fireball:
+    name: "Bola de Fogo"
+    description: "Lance uma bola de fogo para afastar os inimigos."
+    material: FIREBALL
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 40
+    slot: 0
+    quick-buy: true
+  bridge-egg:
+    name: "Ovo de Ponte"
+    description: "Arremesse para construir uma trilha de la da sua equipe."
+    material: EGG
+    data: 0
+    amount: 1
+    resource: EMERALD
+    cost: 2
+    slot: 1
+    quick-buy: false
+  bedbug:
+    name: "BedBug"
+    description: "Arremesse uma bola de neve para invocar um Silverfish aliado."
+    material: SNOW_BALL
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 40
+    slot: 2
+    quick-buy: false
+  dream-defender:
+    name: "Defensor de Sonhos"
+    description: "Clique com o direito no chao para invocar um Golem aliado."
+    material: PUMPKIN
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 120
+    slot: 3
+    quick-buy: false
+  magic-milk:
+    name: "Leite Magico"
+    description: "Protege de armadilhas inimigas durante 30 segundos."
+    material: MILK_BUCKET
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 4
+    slot: 4
+    quick-buy: false
   tnt:
     name: "TNT"
     description: "Explosivo para abrir defesas."
