@@ -673,12 +673,15 @@ public final class SpecialItemService implements ManagedService, Listener {
                     || matches.isSpectating(player.getUniqueId())
                     || mob.teamId.equals(participant.getTeamId())) continue;
             double distance = player.getLocation().distanceSquared(creature.getLocation());
-            if (distance < best
-                    && (!(creature instanceof IronGolem)
-                        || hasSolidFloor(creature.getLocation().clone().add(
-                            player.getLocation().toVector()
-                                .subtract(creature.getLocation().toVector())
-                                .setY(0).normalize().multiply(1.5D))))) {
+            if (distance < best) {
+                if (creature instanceof IronGolem) {
+                    Location from = creature.getLocation();
+                    Vector direction = player.getLocation().toVector().subtract(from.toVector());
+                    direction.setY(0.0D);
+                    if (direction.lengthSquared() > 0.01D
+                            && !hasSolidFloor(from.clone().add(
+                                direction.normalize().multiply(1.5D)))) continue;
+                }
                 nearest = player;
                 best = distance;
             }
