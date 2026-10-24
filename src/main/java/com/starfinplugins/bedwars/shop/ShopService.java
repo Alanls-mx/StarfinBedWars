@@ -85,6 +85,7 @@ public final class ShopService implements ManagedService, Listener {
     private int maintenanceTicks;
     /** Debounce superclass and armor-manipulation packets in the same server tick. */
     private final Set<UUID> pendingOpen = new HashSet<UUID>();
+    private final Map<UUID, BukkitTask> pendingShopRefresh = new HashMap<UUID, BukkitTask>();
     private ShopSettings settings;
     private ManagedMobGuard mobGuard;
     private MatchEquipmentService equipment;
@@ -128,6 +129,8 @@ public final class ShopService implements ManagedService, Listener {
         npcBodies.clear();
         shopGroups.clear();
         pendingOpen.clear();
+        for (BukkitTask task : pendingShopRefresh.values()) task.cancel();
+        pendingShopRefresh.clear();
         maintenanceTicks = 0;
         favorites.clear();
     }
@@ -706,15 +709,20 @@ public final class ShopService implements ManagedService, Listener {
     private void refreshLater(final Player player, final ClassicShopMenu menu,
                               final ClassicShopMenu.Category category,
                               final int page, final boolean editing) {
-        Bukkit.getScheduler().runTask(plugin, new Runnable() {
+        final UUID playerId = player.getUniqueId();
+        BukkitTask previous = pendingShopRefresh.remove(playerId);
+        if (previous != null) previous.cancel();
+        BukkitTask task = Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override public void run() {
+                pendingShopRefresh.remove(playerId);
                 if (!player.isOnline() || player.getOpenInventory() == null
                         || player.getOpenInventory().getTopInventory() != menu.getInventory()) return;
-                menu.refresh(player, settings.getItems().values(), favoritesFor(player.getUniqueId()),
+                menu.refresh(player, settings.getItems().values(), favoritesFor(playerId),
                     category, page, editing, categoryOrder(), categoryIcons());
                 player.updateInventory();
             }
         });
+        pendingShopRefresh.put(playerId, task);
     }
 
     private Set<String> favoritesFor(UUID playerId) {
