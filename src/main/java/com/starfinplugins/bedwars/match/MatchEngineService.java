@@ -389,7 +389,7 @@ public final class MatchEngineService implements ManagedService, Listener {
                 }
                 countdownValues.put(match.getArena().getId(), remaining - 1);
             }
-        }, 20L, 20L));
+        }, 0L, 20L));
     }
 
     private void beginSpawnOpening(final GameMatch match) {
@@ -481,7 +481,7 @@ public final class MatchEngineService implements ManagedService, Listener {
                 }
                 spawnOpeningValues.put(arenaId, remaining - 1);
             }
-        }, 20L, 20L));
+        }, 0L, 20L));
     }
 
     private void startMatch(GameMatch match) {
