@@ -51,7 +51,14 @@ match-point:
   dragon-angular-speed: 0.065
   # Distancia do ponto de destino para escolher o proximo ponto (10 a 20 blocos).
   dragon-waypoint-reach: 14.0
+  # Destruicao local proxima ao dragao, a cada segundo.
   blocks-per-sweep: 18
+  # Destruicao GLOBAL: percorre todos os chunks da arena progressivamente,
+  # mesmo sem jogadores proximos ou quando o dragao voa longe das ilhas.
+  # Nao altera o mundo original: so a instancia temporaria da partida.
+  global-erosion:
+    scan-positions-per-tick: 3000
+    max-blocks-per-tick: 40
   dragon-damage-radius: 5.0
   dragon-damage: 5.0
 
