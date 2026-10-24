@@ -54,10 +54,6 @@ public final class MatchPointBossBarV1_8_R3 {
 
     private void move(Player player, View view) {
         Location pos = hiddenPosition(player);
-        if (view.wither.getBukkitEntity() == null) {
-            // The wither never becomes a world entity; NMS coordinates work
-            // even without a corresponding tracked Bukkit entity.
-        }
         view.wither.setPosition(pos.getX(), pos.getY(), pos.getZ());
         send(player, new PacketPlayOutEntityTeleport(view.wither));
     }
