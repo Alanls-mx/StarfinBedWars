@@ -20,6 +20,7 @@ import com.starfinplugins.bedwars.world.ManagedMobGuard;
 import com.starfinplugins.bedwars.world.SafeLocationResolver;
 import com.starfinplugins.bedwars.shop.npc.ShopNpcFactoryV1_8_R3;
 import com.starfinplugins.bedwars.shop.special.SpecialItemService;
+import com.starfinplugins.bedwars.shop.special.SpecialItemType;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -769,6 +770,11 @@ public final class ShopService implements ManagedService, Listener {
                 || player.getWorld() != matches.getWorld(match.getId())) {
             player.closeInventory();
             player.sendMessage(ChatColor.RED + "A partida nao esta disponivel para compras.");
+            return;
+        }
+        if (SpecialItemType.byId(definition.getId()) != null
+                && !plugin.getConfig().getBoolean("special-items.enabled", true)) {
+            player.sendMessage(ChatColor.RED + "Itens especiais estao desabilitados.");
             return;
         }
         ItemStack product = createProduct(definition, match, participant);
