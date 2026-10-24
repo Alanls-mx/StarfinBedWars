@@ -136,6 +136,8 @@ public final class MatchPointMapIndex {
      * Batch up to 64 blocks from the nearest occupied chunk before searching
      * again. This avoids an O(number of chunks) search for EVERY removed block.
      */
+    private Cell lastConsumed;
+
     public Cell consumeNearest(double dragonX, double dragonZ) {
         if (!finished) return null;
         if (preferredBucket == null || preferredBucket.isEmpty() || preferredCount >= 64) {
@@ -156,7 +158,17 @@ public final class MatchPointMapIndex {
         if (preferredBucket == null) return null;
         preferredCount++;
         consumed++;
-        return preferredBucket.poll();
+        lastConsumed = preferredBucket.poll();
+        return lastConsumed;
+    }
+
+    /** Requeue an inaccessible block instead of counting it as destroyed. */
+    public void retryLast(Cell cell) {
+        if (cell == null || cell != lastConsumed || preferredBucket == null) return;
+        preferredBucket.rewind();
+        preferredCount--;
+        consumed--;
+        lastConsumed = null;
     }
 
     /**
@@ -218,6 +230,7 @@ public final class MatchPointMapIndex {
         }
         private boolean isEmpty() { return cursor == samples.size(); }
         private Cell poll() { return samples.get(cursor++); }
+        private void rewind() { if (cursor > 0) cursor--; }
         private double centerX() { return cx * 16.0D + 8.0D; }
         private double centerZ() { return cz * 16.0D + 8.0D; }
         private double averageY() { return originalCount == 0 ? 80.0D : sumY/(double)originalCount; }
