@@ -49,6 +49,7 @@ public class PresentationConfigMigratorTest {
         assertEquals(220, updated.getInt("match-point.demolition.max-blocks-per-tick"));
         assertTrue(updated.getBoolean("match-point.lightning.enabled"));
         assertEquals(60, updated.getInt("match-point.lightning.interval-ticks"));
+        assertEquals(3, updated.getInt("match-point.lightning.radius"));
         assertEquals(24, updated.getInt("match-point.lightning.max-blocks-per-strike"));
         assertEquals(5.0D, updated.getDouble("match-point.dragon-blast-min-movement"), 0.0D);
         assertTrue(updated.getBoolean("match-point.bossbar-enabled"));
