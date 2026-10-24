@@ -370,3 +370,50 @@ Executar `mvn -B verify` com JDK 8 e testar:
 7. Abate comum continua transferindo recursos; ultimo abate de vitoria nao
    transfere recursos ao inventario do vencedor.
 8. Confirmar isolamento entre duas partidas simultaneas e performance.
+
+## Correcao da movimentacao do EnderDragon no Match Point (imagem 24/10/2026)
+
+Sintomas observados: o dragao se contorcia perto do alto da arena,
+nao percorria as ilhas, apesar de o boss bar "MATCH POINT" aparecer.
+
+### Causa identificada
+O codigo executava `dragon.teleport(target)` a cada 10 ticks, enquanto
+o motor vanilla do EnderDragon do Minecraft 1.8.8 tentava fazer suas
+proprias curvas. O teleporte nao preservava o movimento natural nem
+a historico de rotacao/posicao usado para animar cabeca, asas e cauda.
+O `MatchPointPath` tambem usava raio de apenas 4 blocos no eixo sem
+variacao de spawn, criando uma trajetoria extremamente achatada em mapas
+com duas ilhas alinhadas.
+
+### Solucao implementada
+- `MatchPointDragonFlightV1_8_R3` controla os DESTINOS da propria IA do
+  Minecraft 1.8.8 via campos nativos de `EntityEnderDragon`: `a`, `b`,
+  `c` (coordenadas), `bA` (alvo de entidade) e `bw` (escolha aleatoria).
+- NAO teletransporta repetidamente. O dragon avanca com velocidade e
+  rotacao naturais; corpo, asas e cauda recebem interpolacao correta.
+- O `MatchPointService` fornece destinos a cada tick e avanca para o
+  proximo waypoint quando chega proximo ao atual, ou apos limite de
+  tempo para evitar travamento. Selecao de alvo vanilla e cancelada apenas
+  para o dragao desta partida.
+- `MatchPointPath` nao fica mais achatada com duas ilhas alinhadas:
+  mantem trajeto eliptico amplo, distribui distancia nos dois eixos,
+  respeita as bordas e reserva margem para o corpo e as asas do dragao.
+- Altura de voo baseada nos spawns das equipes, com variacao suave no
+  eixo vertical dentro do teto configurado e dos limites do mapa.
+- `damageNearby` e `destroyNearby` usam a posicao REAL do dragao,
+  nao posicao ficticia da rota.
+- Invulnerabilidade ampliada aos hits nos `EnderDragonPart`
+  (cabeca, asas e cauda), alem da entidade principal.
+- Nova opcao `match-point.dragon-waypoint-reach: 14.0`.
+  `dragon-angular-speed` passa a controlar o incremento angular
+  dos waypoints (nao teleportes).
+- Testes de mapa de duas ilhas alinhadas em X e em Z, bordas e
+  altitude, alem dos testes existentes.
+- Configuracoes anteriores sao preservadas pelo migrador.
+
+**Validacao pendente no PaperSpigot 1.8.8:** executar `mvn -B verify`,
+comeca uma partida, usar `/sbw matchpoint`, observar o dragao voando
+naturalmente e visitar todas as ilhas, sem se contorcer. Observar
+destruicao proxima ao dragon, boss bar, danos aos jogadores,
+invulnerabilidade ao acertar a cabeca/asas/cauda, e retornar ao lobby.
+Testar mapas 2/4/8 equipes; nenhuma validacao grafica foi feita neste ambiente.
