@@ -216,3 +216,40 @@ jogador Azul vai ate a base Vermelha, compra la azul e itens para seu
 inventario; compra Sharpness/Protection/Forge/Traps e verifica que
 apenas o time Azul e modificado. Confirmar que a Vermelha nao ganha
 beneficios e que os NPCs de outras partidas nao podem ser utilizados.
+
+## Desaparecimento progressivo da ponte do Ovo de Ponte
+
+Implementado na mesma branch de desenvolvimento, apos a ponte reforcada de
+3 blocos de largura / 2 de espessura.
+
+- O inicio da remocao ocorre **5 segundos depois de o Ovo de Ponte parar
+  de construir**, por colisao, limite de distancia/ticks ou orcamento.
+- As secoes da ponte somem **na ordem exata em que foram construidas**,
+  desde a primeira secao (origem) ate a ultima (ponta).
+- Uma secao transversal por passo, a cada 3 ticks (0,15 segundo a 20 TPS),
+  sem tarefa Bukkit por bloco. Um scheduler unico atende todos os ovos ativos.
+- Configuracoes: `special-items.bridge-egg.decay-delay-seconds` (padrao 5,
+  permitido 0–120) e `special-items.bridge-egg.decay-interval-ticks`
+  (padrao 3, permitido 1–20).
+- A fila de secoes de cada ovo e independente: varios ovos e partidas
+  simultaneas nao misturam suas construcoes.
+- `BridgeBlockOwnership` preserva a identidade do ovo, da partida e da
+  posicao; remover ou substituir blocos manualmente limpa a titularidade.
+  A expiracao somente apaga la ainda pertencente aquele ovo e da mesma cor,
+  sem drops e sem apagar outros blocos ou estruturas originais.
+- Quebra, explosao e substituicao de blocos atualizam os registros de
+  protecao do mapa; expiracao remove os registros de blocos desaparecidos.
+- Fim de partida, exclusao da instancia e encerramento do plugin cancelam
+  construcao e expiracao sem tarefas orfas.
+- Testes novos: ordenacao FIFO das secoes, ausencia de secoes vazias,
+  isolamento por partida/ovo, protecao de blocos substituidos e migracao
+  sem sobrescrever valores anteriores do config.yml.
+
+### Validacao pendente no servidor 1.8.8
+
+Executar `mvn -B verify` com JDK 8, construir ponte com 2 ovos em ilhas
+diferentes, aguardar o atraso, observar remocao gradual da origem ate a
+ponta; tentar quebrar a ponte e reconstruir la no mesmo lugar antes do
+decaimento; verificar que a nova la permanece. Testar projeteis que colidem
+cedo, player sai do chunk e fim da partida durante o efeito. Essa verificacao
+no servidor ainda nao ocorreu nesta rodada.
