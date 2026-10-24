@@ -122,7 +122,17 @@ public final class ShopService implements ManagedService, Listener {
         if (anchorCheck != null) anchorCheck.cancel();
         anchorCheck = null;
         for (UUID matchId : new ArrayList<UUID>(shopEntities.keySet())) removeShops(matchId);
-        ShopNpcFactoryV1_8_R3.unregisterType();
+        try {
+            ShopNpcFactoryV1_8_R3.unregisterType();
+        } catch (LinkageError error) {
+            // If the running JAR was replaced/corrupted or the NPC class was
+            // omitted, shutdown must still release inventories and services.
+            // Log the actual packaging problem instead of aborting onDisable.
+            plugin.getLogger().log(java.util.logging.Level.SEVERE,
+                "A classe NMS dos NPCs nao esta acessivel no JAR carregado. "
+                    + "Pare o servidor, recompile com mvn -B verify e copie o JAR "
+                    + "somente com o servidor desligado.", error);
+        }
         shopEntities.clear();
         spawnedKinds.clear();
         npcAnchors.clear();
