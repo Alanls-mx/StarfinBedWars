@@ -11,15 +11,14 @@ import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
 import com.starfinplugins.bedwars.service.ManagedService;
 import com.starfinplugins.bedwars.world.ManagedMobGuard;
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
-import org.bukkit.ChunkSnapshot;
+import org.bukkit.Effect;
+import org.bukkit.Sound;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -55,6 +54,7 @@ public final class MatchPointService implements ManagedService, Listener {
     private final MatchEngineService matches;
     private final ManagedMobGuard mobGuard;
     private final MatchPointDragonFlightV1_8_R3 flight = new MatchPointDragonFlightV1_8_R3();
+    private final MatchPointBossBarV1_8_R3 bossBars = new MatchPointBossBarV1_8_R3();
     private final Map<UUID, Active> sessions = new HashMap<UUID, Active>();
     private BukkitTask timer;
     private long ticks;
@@ -80,6 +80,7 @@ public final class MatchPointService implements ManagedService, Listener {
         HandlerList.unregisterAll(this);
         for (Active active : sessions.values()) removeDragon(active);
         sessions.clear();
+        bossBars.clear();
     }
 
     @EventHandler
@@ -93,6 +94,7 @@ public final class MatchPointService implements ManagedService, Listener {
                 || event.getType() == MatchLifecycleEvent.Type.INSTANCE_REMOVED) {
             Active active = sessions.remove(match.getId());
             if (active != null) removeDragon(active);
+            syncBossBars();
         }
     }
 
@@ -161,6 +163,33 @@ public final class MatchPointService implements ManagedService, Listener {
                 advance(active, world);
             }
         }
+        if (ticks % 10L == 0L) syncBossBars();
+    }
+
+    /** Keep a fake, client-only Wither health bar near each 1.8.8 viewer. */
+    private void syncBossBars() {
+        java.util.Set<UUID> eligible = new java.util.HashSet<UUID>();
+        for (Active active : sessions.values()) {
+            if (!active.triggered || active.match.getState() != MatchState.IN_GAME
+                    || active.dragon == null || !active.dragon.isValid()) continue;
+            World world = matches.getWorld(active.match.getId());
+            if (world == null) continue;
+            for (Player player : world.getPlayers()) {
+                if (!player.isOnline()) continue;
+                eligible.add(player.getUniqueId());
+                try {
+                    bossBars.update(player, ChatColor.DARK_PURPLE + "" + ChatColor.BOLD + "MATCH POINT");
+                } catch (RuntimeException error) {
+                    plugin.getLogger().warning("Nao foi possivel atualizar a barra Match Point de "
+                        + player.getName() + ": " + error.getMessage());
+                }
+            }
+        }
+        for (UUID viewerId : bossBars.getViewerIds()) {
+            if (eligible.contains(viewerId)) continue;
+            Player player = Bukkit.getPlayer(viewerId);
+            if (player != null) bossBars.hide(player);
+        }
     }
 
     private void activate(Active active, World world) {
@@ -216,9 +245,6 @@ public final class MatchPointService implements ManagedService, Listener {
         // Only alter the match when the Dragon actually exists. A failed
         // test command must not irreversibly break beds without a Match Point.
         if (active.dragon == null || !active.dragon.isValid()) return;
-        active.erosion = new MatchPointErosionCursor(
-            bounds.getMinimumX(), bounds.getMinimumY(), bounds.getMinimumZ(),
-            bounds.getMaximumX(), bounds.getMaximumY(), bounds.getMaximumZ());
         matches.destroyAllBedsAtMatchPoint(match);
         for (GameParticipant participant : match.getParticipantList()) {
             Player player = Bukkit.getPlayer(participant.getPlayerId());
@@ -232,10 +258,6 @@ public final class MatchPointService implements ManagedService, Listener {
     }
 
     private void advance(Active active, World world) {
-        // This sweep is independent of player count, view distance and the
-        // dragon's current waypoint. Every generated chunk inside the arena
-        // is examined, even if nobody is near it or the dragon has despawned.
-        erodeEntireArena(active, world);
         EnderDragon dragon = active.dragon;
         if (dragon == null || !dragon.isValid() || dragon.isDead() || active.route == null) return;
 
@@ -272,137 +294,70 @@ public final class MatchPointService implements ManagedService, Listener {
     }
 
     /**
-     * Deliberate, rate-limited island erosion instead of uncontrolled vanilla
-     * EnderDragon grief. Only disposable match instance chunks are modified.
+     * TNT-like bursts in four diagonal directions create a small X in the
+     * ground exactly where the dragon passes. Unlike the former global
+     * cursor, NO blocks are removed anywhere else in the arena.
      */
     private void destroyNearby(Active active, Location point) {
-        if (ticks % 20L != 0L) return;
+        final int interval = Math.max(12, Math.min(80,
+            plugin.getConfig().getInt("match-point.dragon-blast-interval-ticks", 30)));
+        if (ticks - active.lastBlastTick < interval) return;
+        // Never tunnel out the same place because the dragon is stuck.
+        final double minMovement = Math.max(1.0D, Math.min(10.0D,
+            plugin.getConfig().getDouble("match-point.dragon-blast-min-movement", 3.5D)));
+        if (active.lastBlastPosition != null
+                && active.lastBlastPosition.getWorld() == point.getWorld()
+                && active.lastBlastPosition.distanceSquared(point) < minMovement * minMovement) {
+            return;
+        }
         ArenaRegion bounds = MatchPointArea.resolve(active.match.getArena());
         if (bounds == null) return;
-        final int maxRemoved = Math.max(1, Math.min(75,
-            plugin.getConfig().getInt("match-point.blocks-per-sweep", 28)));
-        final int radius = Math.max(3, Math.min(14,
-            plugin.getConfig().getInt("match-point.dragon-erode-radius", 9)));
-        final int diameter = radius * 2 + 1;
-        final int total = diameter * diameter;
-        // Alternate the first sampled column so each sweep cuts different
-        // terrain instead of drilling the same hole every second.
-        final int start = (int) ((ticks / 20L * 37L) % total);
+        final int maxBlocks = Math.max(1, Math.min(40,
+            plugin.getConfig().getInt("match-point.dragon-blast-blocks", 12)));
+        final int radius = Math.max(1, Math.min(6,
+            plugin.getConfig().getInt("match-point.dragon-blast-radius", 3)));
+        final int depth = Math.max(1, Math.min(4,
+            plugin.getConfig().getInt("match-point.dragon-blast-depth", 2)));
+
+        final World world = point.getWorld();
+        int centerX = point.getBlockX();
+        int centerZ = point.getBlockZ();
         int removed = 0;
-        World world = point.getWorld();
-        for (int offset = 0; offset < total && removed < maxRemoved; offset++) {
-            int sample = (start + offset) % total;
-            int dx = sample % diameter - radius;
-            int dz = sample / diameter - radius;
-            if (dx * dx + dz * dz > radius * radius) continue;
-            int x = point.getBlockX() + dx;
-            int z = point.getBlockZ() + dz;
+        Location visibleImpact = null;
+        for (MatchPointXBlast.Offset offset : MatchPointXBlast.offsets(radius)) {
+            if (removed >= maxBlocks) break;
+            int x = centerX + offset.x, z = centerZ + offset.z;
             if (x < bounds.getMinimumX() || x > bounds.getMaximumX()
                     || z < bounds.getMinimumZ() || z > bounds.getMaximumZ()
                     || !world.isChunkLoaded(x >> 4, z >> 4)) continue;
-            // The dragon may fly above the islands. Erode the actual terrain
-            // surface at X/Z rather than the empty air around its body.
-            int y = Math.min(bounds.getMaximumY(), world.getHighestBlockYAt(x, z));
-            if (y < bounds.getMinimumY()) continue;
-            // PaperSpigot 1.8 may return the Y of the AIR above the surface.
-            // Look down a few blocks so dragon strikes genuinely hit islands.
-            for (int depth = 0; depth < 8 && y >= bounds.getMinimumY(); depth++, y--) {
+
+            int highest = Math.min(bounds.getMaximumY(), world.getHighestBlockYAt(x, z));
+            if (highest < bounds.getMinimumY()) continue;
+            // Spigot 1.8 height maps may point to the AIR above the terrain.
+            // Remove a few layers only, like TNT digging a small crater.
+            int erasedInColumn = 0;
+            for (int y = highest, searched = 0;
+                    y >= bounds.getMinimumY() && searched < 12
+                    && erasedInColumn < depth && removed < maxBlocks;
+                    y--, searched++) {
                 Block block = world.getBlockAt(x, y, z);
                 if (block.getType() == Material.AIR) continue;
-                if (eraseBlock(active, block)) removed++;
-                break;
-            }
-        }
-        if (removed > 0) active.localDestroyed += removed;
-    }
-
-    /**
-     * Progressive destruction of the WHOLE disposable match map.
-     * Chunk-first scanning covers every x/y/z location once, with bounded
-     * main-thread work and at most one new chunk loaded per tick.
-     *
-     * Unlike dragon-local destruction, no players or dragon proximity are
-     * required. The caller only runs this for this match's cloned world.
-     */
-    private void erodeEntireArena(Active active, World world) {
-        MatchPointErosionCursor cursor = active.erosion;
-        if (cursor == null || !cursor.hasNext()) return;
-        final int checksPerTick = Math.max(250, Math.min(8000,
-            plugin.getConfig().getInt("match-point.global-erosion.scan-positions-per-tick", 3000)));
-        final int blocksPerTick = Math.max(1, Math.min(120,
-            plugin.getConfig().getInt("match-point.global-erosion.max-blocks-per-tick", 40)));
-        int changed = 0;
-        int chunkLoads = 0;
-        int checks = 0;
-        while (cursor.hasNext() && checks < checksPerTick && changed < blocksPerTick) {
-            MatchPointErosionCursor.Cell cell = cursor.peek();
-            long chunkKey = (((long) cell.chunkX()) << 32) ^ (cell.chunkZ() & 0xffffffffL);
-            if (!active.unavailableChunks.contains(chunkKey)
-                    && !world.isChunkLoaded(cell.chunkX(), cell.chunkZ())) {
-                // One previously unloaded chunk per tick prevents simultaneous
-                // map-wide chunk loads, even when no players are present.
-                if (chunkLoads >= 1) break;
-                chunkLoads++;
-                boolean loaded;
-                try {
-                    loaded = world.loadChunk(cell.chunkX(), cell.chunkZ(), false);
-                } catch (RuntimeException error) {
-                    loaded = false;
-                    plugin.getLogger().warning("Match Point: falha ao carregar chunk "
-                        + cell.chunkX() + "," + cell.chunkZ() + " da instancia "
-                        + world.getName() + ": " + error.getMessage());
-                }
-                if (!loaded) {
-                    active.unavailableChunks.add(chunkKey);
-                    plugin.getLogger().warning("Match Point: chunk da arena indisponivel "
-                        + cell.chunkX() + "," + cell.chunkZ()
-                        + "; nenhum bloco externo sera gerado.");
+                if (visibleImpact == null) visibleImpact = block.getLocation().add(0.5D, 0.5D, 0.5D);
+                if (eraseBlock(active, block)) {
+                    erasedInColumn++;
+                    removed++;
                 }
             }
-            if (active.unavailableChunks.contains(chunkKey)) {
-                cursor.advance();
-                checks++;
-                continue;
-            }
+        }
 
-            // A 280x280x256 arena has ~20 million coordinates. The heightmap
-            // cannot safely skip sky: in 1.8 it ignores some transparent blocks.
-            // Instead skip ONLY 16-block sections verified empty in the original
-            // chunk snapshot. Glass, wool, water and other blocks are preserved
-            // in the scan even when the heightmap would ignore them.
-            if (active.snapshotChunk != chunkKey || active.snapshot == null) {
-                active.snapshot = world.getChunkAt(cell.chunkX(), cell.chunkZ())
-                    .getChunkSnapshot(false, false, false);
-                active.snapshotChunk = chunkKey;
+        active.lastBlastTick = ticks;
+        active.lastBlastPosition = point.clone();
+        if (removed > 0) {
+            active.localDestroyed += removed;
+            if (visibleImpact != null) {
+                world.playEffect(visibleImpact, Effect.EXPLOSION_LARGE, 0);
+                world.playSound(visibleImpact, Sound.EXPLODE, 0.85F, 0.85F);
             }
-            if (active.snapshot.isSectionEmpty(cell.y >> 4)) {
-                int originalY = cell.y;
-                cursor.skipAirAbove((cell.y & ~15) - 1);
-                if (cursor.peek().y == originalY) cursor.advance();
-                checks++;
-                continue;
-            }
-            Block block = world.getBlockAt(cell.x, cell.y, cell.z);
-            cursor.advance();
-            checks++;
-            if (eraseBlock(active, block)) changed++;
-        }
-        active.globalDestroyed += changed;
-        // Give admins real evidence of block removal even before the first
-        // 25% of a large selected region has been scanned.
-        if (ticks % 200L == 0L) {
-            plugin.getLogger().info("Match Point [" + active.match.getArena().getId()
-                + "]: " + active.globalDestroyed + " blocos removidos na varredura"
-                + ", " + active.localDestroyed + " na passagem do dragao"
-                + "; area pos1/pos2 verificada: " + cursor.getProgressPercent() + "%.");
-        }
-        int progress = cursor.getProgressPercent();
-        if (progress >= active.lastErosionReport + 25 || !cursor.hasNext()) {
-            active.lastErosionReport = progress;
-            plugin.getLogger().info("Match Point: destruicao progressiva da arena "
-                + active.match.getArena().getId() + " " + progress + "% ("
-                + cursor.getVisited() + "/" + cursor.getTotal() + " posicoes verificadas, "
-                + active.localDestroyed + " blocos destruidos perto do dragao).");
         }
     }
 
@@ -484,13 +439,9 @@ public final class MatchPointService implements ManagedService, Listener {
         private int waypointTicks;
         private MatchPointPatrolRoute route;
         private EnderDragon dragon;
-        private MatchPointErosionCursor erosion;
-        private int lastErosionReport;
         private long localDestroyed;
-        private long globalDestroyed;
-        private long snapshotChunk = Long.MIN_VALUE;
-        private ChunkSnapshot snapshot;
-        private final Set<Long> unavailableChunks = new HashSet<Long>();
+        private long lastBlastTick = Long.MIN_VALUE / 2L;
+        private Location lastBlastPosition;
         private Active(GameMatch match) { this.match = match; }
     }
 }
