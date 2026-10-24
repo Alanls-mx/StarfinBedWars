@@ -1,6 +1,7 @@
 package com.starfinplugins.bedwars.shop;
 
 import com.starfinplugins.bedwars.domain.economy.ShopItemDefinition;
+import com.starfinplugins.bedwars.shop.special.SpecialItemType;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -68,15 +69,27 @@ public final class ClassicShopMenu implements InventoryHolder {
         this.pageCount = Math.max(1, (filtered.size() + 26) / 27);
         this.page = Math.max(0, Math.min(requestedPage, pageCount - 1));
         this.inventory = Bukkit.createInventory(this, 54,
-            ChatColor.BLUE + "Loja: " + category.getTitle());
+            ChatColor.DARK_AQUA + "Starfin " + ChatColor.DARK_GRAY + "| "
+                + ChatColor.YELLOW + category.getTitle());
         int tabSlot = 0;
         int activeSlot = -1;
         for (Category tab : order) {
             if (tabSlot >= 9) break;
             if (tab != Category.FAVORITES && !hasCategory(all, tab)) continue;
             categorySlots.put(tabSlot, tab);
-            inventory.setItem(tabSlot, named(icons.containsKey(tab) ? icons.get(tab) : tab.getIcon(),
-                ChatColor.YELLOW + tab.getTitle()));
+            ItemStack categoryIcon = named(
+                icons.containsKey(tab) ? icons.get(tab) : tab.getIcon(),
+                tab == category ? ChatColor.GREEN + "" + ChatColor.BOLD + tab.getTitle()
+                    : ChatColor.YELLOW + tab.getTitle());
+            ItemMeta tabMeta = categoryIcon.getItemMeta();
+            List<String> tabLore = new ArrayList<String>();
+            tabLore.add(ChatColor.GRAY + "Categoria da loja");
+            tabLore.add(tab == category
+                ? ChatColor.GREEN + "Selecionada"
+                : ChatColor.YELLOW + "Clique para visualizar");
+            tabMeta.setLore(tabLore);
+            categoryIcon.setItemMeta(tabMeta);
+            inventory.setItem(tabSlot, categoryIcon);
             if (tab == category) activeSlot = tabSlot;
             tabSlot++;
         }
@@ -90,22 +103,34 @@ public final class ClassicShopMenu implements InventoryHolder {
             ItemStack display = new ItemStack(definition.getMaterial(), definition.getAmount(),
                 definition.getData());
             ItemMeta meta = display.getItemMeta();
-            meta.setDisplayName(ChatColor.YELLOW + definition.getDisplayName());
             boolean affordable = count(player, definition.getCostType().getMaterial()) >= definition.getCost();
+            meta.setDisplayName((affordable ? ChatColor.GREEN : ChatColor.RED)
+                + definition.getDisplayName());
             List<String> lore = new ArrayList<String>();
-            lore.add(ChatColor.GRAY + "Quantidade: " + definition.getAmount());
-            lore.add(ChatColor.GRAY + "Preco: " + definition.getCost() + " "
-                + definition.getCostType().name());
+            lore.add(ChatColor.DARK_GRAY + "STARFIN BEDWARS");
+            lore.add(" ");
             String description = definition.getDescription().isEmpty()
                 ? "Item para sua partida." : definition.getDescription();
             lore.add(ChatColor.GRAY + ChatColor.translateAlternateColorCodes('&', description));
-            lore.add(editing ? ChatColor.AQUA + "Clique para alterar favorito"
+            lore.add(ChatColor.GRAY + "Quantidade: " + ChatColor.WHITE + definition.getAmount());
+            lore.add(ChatColor.GRAY + "Custo: " + ChatColor.GOLD + definition.getCost()
+                + " " + currencyLabel(definition.getCostType().name()));
+            lore.add(" ");
+            lore.add(editing ? ChatColor.AQUA + "Clique para alterar favoritos"
                 : affordable ? ChatColor.GREEN + "Clique para comprar"
                     : ChatColor.RED + "Recursos insuficientes");
+            if (favorites.contains(definition.getId())) lore.add(ChatColor.YELLOW + "★ Favorito");
             meta.setLore(lore);
             display.setItemMeta(meta);
             inventory.setItem(slot, display);
             entries.put(slot, definition);
+        }
+        for (int slot = 45; slot <= 53; slot++) {
+            inventory.setItem(slot, namedPane((short) 15));
+        }
+        if (filtered.isEmpty()) {
+            inventory.setItem(31, named(Material.BARRIER,
+                ChatColor.RED + "Nenhum item nesta categoria"));
         }
         if (page > 0) inventory.setItem(45, named(Material.ARROW, ChatColor.YELLOW + "Anterior"));
         inventory.setItem(49, named(Material.BOOK, editing
@@ -121,6 +146,10 @@ public final class ClassicShopMenu implements InventoryHolder {
 
     public static Category categoryOf(ShopItemDefinition item) {
         String name = item.getMaterial().name();
+        SpecialItemType special = SpecialItemType.byId(item.getId());
+        if (special != null) {
+            return special == SpecialItemType.FIREBALL ? Category.UTILITIES : Category.SPECIAL;
+        }
         if (name.endsWith("_SWORD")) return Category.SWORDS;
         if (name.endsWith("_HELMET") || name.endsWith("_CHESTPLATE")
                 || name.endsWith("_LEGGINGS") || name.endsWith("_BOOTS")) return Category.ARMOR;
@@ -133,6 +162,14 @@ public final class ClassicShopMenu implements InventoryHolder {
             return Category.UTILITIES;
         if (item.getMaterial().isBlock()) return Category.BLOCKS;
         return Category.SPECIAL;
+    }
+
+    private static String currencyLabel(String name) {
+        if ("IRON".equals(name)) return "Ferros";
+        if ("GOLD".equals(name)) return "Ouros";
+        if ("DIAMOND".equals(name)) return "Diamantes";
+        if ("EMERALD".equals(name)) return "Esmeraldas";
+        return name;
     }
 
     private static int count(Player player, Material material) {
