@@ -433,10 +433,12 @@ public final class SpecialItemService implements ManagedService, Listener {
     }
 
     private boolean spawnDefender(GameMatch match, String teamId, Location at) {
-        // 0 means the Defender remains until defeated or until its match ends.
-        return spawnPet(match, teamId, at, EntityType.IRON_GOLEM,
-            Math.max(0, Math.min(3600, plugin.getConfig().getInt(
-                "special-items.defender-lifetime-seconds", 0))));
+        // Existing servers may still have the old "30 seconds" value saved.
+        // The new persistence flag defaults to true and takes precedence.
+        int lifespan = plugin.getConfig().getBoolean("special-items.defender-persistent", true)
+            ? 0 : Math.max(0, Math.min(3600, plugin.getConfig().getInt(
+                "special-items.defender-lifetime-seconds", 30)));
+        return spawnPet(match, teamId, at, EntityType.IRON_GOLEM, lifespan);
     }
 
     private boolean spawnPet(GameMatch match, String teamId, Location at,
