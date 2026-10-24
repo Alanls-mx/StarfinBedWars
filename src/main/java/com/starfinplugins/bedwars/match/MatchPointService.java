@@ -11,6 +11,8 @@ import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
 import com.starfinplugins.bedwars.service.ManagedService;
 import com.starfinplugins.bedwars.world.ManagedMobGuard;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -208,6 +210,9 @@ public final class MatchPointService implements ManagedService, Listener {
         // Only alter the match when the Dragon actually exists. A failed
         // test command must not irreversibly break beds without a Match Point.
         if (active.dragon == null || !active.dragon.isValid()) return;
+        active.erosion = new MatchPointErosionCursor(
+            bounds.getMinimumX(), Math.max(1, bounds.getMinimumY()), bounds.getMinimumZ(),
+            bounds.getMaximumX(), Math.min(254, bounds.getMaximumY()), bounds.getMaximumZ());
         matches.destroyAllBedsAtMatchPoint(match);
         for (GameParticipant participant : match.getParticipantList()) {
             Player player = Bukkit.getPlayer(participant.getPlayerId());
@@ -221,6 +226,10 @@ public final class MatchPointService implements ManagedService, Listener {
     }
 
     private void advance(Active active, World world) {
+        // This sweep is independent of player count, view distance and the
+        // dragon's current waypoint. Every generated chunk inside the arena
+        // is examined, even if nobody is near it or the dragon has despawned.
+        erodeEntireArena(active, world);
         EnderDragon dragon = active.dragon;
         if (dragon == null || !dragon.isValid() || dragon.isDead() || active.path == null) return;
 
@@ -293,6 +302,70 @@ public final class MatchPointService implements ManagedService, Listener {
         }
     }
 
+    /**
+     * Progressive destruction of the WHOLE disposable match map.
+     * Chunk-first scanning covers every x/y/z location once, with bounded
+     * main-thread work and at most one new chunk loaded per tick.
+     *
+     * Unlike dragon-local destruction, no players or dragon proximity are
+     * required. The caller only runs this for this match's cloned world.
+     */
+    private void erodeEntireArena(Active active, World world) {
+        MatchPointErosionCursor cursor = active.erosion;
+        if (cursor == null || !cursor.hasNext()) return;
+        final int checksPerTick = Math.max(250, Math.min(8000,
+            plugin.getConfig().getInt("match-point.global-erosion.scan-positions-per-tick", 3000)));
+        final int blocksPerTick = Math.max(1, Math.min(120,
+            plugin.getConfig().getInt("match-point.global-erosion.max-blocks-per-tick", 40)));
+        int changed = 0;
+        int chunkLoads = 0;
+        int checks = 0;
+        while (cursor.hasNext() && checks < checksPerTick && changed < blocksPerTick) {
+            MatchPointErosionCursor.Cell cell = cursor.peek();
+            long chunkKey = (((long) cell.chunkX()) << 32) ^ (cell.chunkZ() & 0xffffffffL);
+            if (!active.unavailableChunks.contains(chunkKey)
+                    && !world.isChunkLoaded(cell.chunkX(), cell.chunkZ())) {
+                // One previously unloaded chunk per tick prevents simultaneous
+                // map-wide chunk loads, even when no players are present.
+                if (chunkLoads >= 1) break;
+                chunkLoads++;
+                boolean loaded;
+                try {
+                    loaded = world.loadChunk(cell.chunkX(), cell.chunkZ(), false);
+                } catch (RuntimeException error) {
+                    loaded = false;
+                    plugin.getLogger().warning("Match Point: falha ao carregar chunk "
+                        + cell.chunkX() + "," + cell.chunkZ() + " da instancia "
+                        + world.getName() + ": " + error.getMessage());
+                }
+                if (!loaded) {
+                    active.unavailableChunks.add(chunkKey);
+                    plugin.getLogger().warning("Match Point: chunk da arena indisponivel "
+                        + cell.chunkX() + "," + cell.chunkZ()
+                        + "; nenhum bloco externo sera gerado.");
+                }
+            }
+            cursor.advance();
+            checks++;
+            if (active.unavailableChunks.contains(chunkKey)) continue;
+            Block block = world.getBlockAt(cell.x, cell.y, cell.z);
+            Material material = block.getType();
+            // BEDROCK deliberately remains indestructible. All ordinary map
+            // blocks (including player blocks, water and decorations) erode.
+            if (material == Material.AIR || material == Material.BEDROCK) continue;
+            matches.forgetMatchPointBlock(active.match, block);
+            block.setType(Material.AIR, false);
+            changed++;
+        }
+        int progress = cursor.getProgressPercent();
+        if (progress >= active.lastErosionReport + 25 || !cursor.hasNext()) {
+            active.lastErosionReport = progress;
+            plugin.getLogger().info("Match Point: destruicao progressiva da arena "
+                + active.match.getArena().getId() + " " + progress + "% ("
+                + cursor.getVisited() + "/" + cursor.getTotal() + " posicoes verificadas).");
+        }
+    }
+
     private void damageNearby(Active active, Location center) {
         if (ticks % 20L != 0L) return;
         double radius = Math.max(2.0D, Math.min(9.0D,
@@ -362,6 +435,9 @@ public final class MatchPointService implements ManagedService, Listener {
         private int waypointTicks;
         private MatchPointPath path;
         private EnderDragon dragon;
+        private MatchPointErosionCursor erosion;
+        private int lastErosionReport;
+        private final Set<Long> unavailableChunks = new HashSet<Long>();
         private Active(GameMatch match) { this.match = match; }
     }
 }
