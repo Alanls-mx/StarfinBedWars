@@ -295,11 +295,11 @@ public final class MatchPointService implements ManagedService, Listener {
         // history of body/head/tail positions.
         double[] point = active.route.at(active.waypointIndex);
         Location waypoint = new Location(world, point[0], point[1], point[2]);
-        // A 14-block arrival tolerance lets the dragon skip the island
-        // entirely while a blast only reaches 3 blocks. Existing configs may
-        // still say 14, so cap the runtime tolerance at 7.
-        double reach = Math.max(3.0D, Math.min(7.0D,
-            plugin.getConfig().getDouble("match-point.dragon-waypoint-reach", 6.0D)));
+        // Waypoints now lie ON the actual islands. Use a smaller arrival
+        // tolerance than the 3-block blast radius plus platform footprint.
+        // Clamp old user configs (14) as well, otherwise islands are skipped.
+        double reach = Math.max(2.0D, Math.min(5.0D,
+            plugin.getConfig().getDouble("match-point.dragon-waypoint-reach", 4.0D)));
         if (dragon.getLocation().distanceSquared(waypoint) <= reach * reach
                 || ++active.waypointTicks > 700) {
             active.waypointIndex = (active.waypointIndex + 1) % active.route.size();
