@@ -37,9 +37,11 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerEggThrowEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.metadata.FixedMetadataValue;
@@ -138,6 +140,7 @@ public final class SpecialItemService implements ManagedService, Listener {
                 case BRIDGE_EGG:
                     Egg egg = player.launchProjectile(Egg.class);
                     egg.setVelocity(player.getEyeLocation().getDirection().multiply(1.35D));
+                    egg.setMetadata("starfinbedwars-bridge-egg", new FixedMetadataValue(plugin, true));
                     startBridge(egg, match, participant);
                     used = true;
                     break;
@@ -248,6 +251,13 @@ public final class SpecialItemService implements ManagedService, Listener {
     }
 
     @EventHandler
+    public void onSpecialEgg(PlayerEggThrowEvent event) {
+        if (event.getEgg().hasMetadata("starfinbedwars-bridge-egg")) {
+            event.setHatching(false);
+        }
+    }
+
+    @EventHandler
     public void onProjectileImpact(ProjectileHitEvent event) {
         Projectile projectile = event.getEntity();
         if (projectile instanceof Egg && bridges.containsKey(projectile.getUniqueId())) {
@@ -320,6 +330,15 @@ public final class SpecialItemService implements ManagedService, Listener {
         }
     }
 
+    @EventHandler
+    public void onPetDeath(EntityDeathEvent event) {
+        if (ownMetadata(event.getEntity()) == null) return;
+        event.getDrops().clear();
+        event.setDroppedExp(0);
+        SpecialMob removed = mobs.remove(event.getEntity().getUniqueId());
+        if (removed != null && guard != null) guard.forget(removed.entity);
+    }
+
     private boolean isFriendlyTarget(String data, Player target) {
         String[] parts = data.split("\\|", 2);
         if (parts.length != 2) return true;
@@ -370,11 +389,40 @@ public final class SpecialItemService implements ManagedService, Listener {
             if (mob.expiresAt < now || !mob.entity.isValid()) {
                 removeMob(mob);
                 it.remove();
+            } else {
+                selectEnemyTarget(mob);
             }
         }
         for (Iterator<Map.Entry<UUID, MilkProtection>> it = milk.entrySet().iterator(); it.hasNext();) {
             if (it.next().getValue().untilMillis < now) it.remove();
         }
+    }
+
+    /** Give defenders and bedbugs a target: vanilla IronGolems do not always chase players. */
+    private void selectEnemyTarget(SpecialMob mob) {
+        Creature creature = mob.entity;
+        GameMatch match = matches.getMatchInWorld(creature.getWorld());
+        if (match == null || !match.getId().equals(mob.matchId)
+                || match.getState() != MatchState.IN_GAME) {
+            creature.setTarget(null);
+            return;
+        }
+        Player nearest = null;
+        double best = 12.0D * 12.0D;
+        for (Player player : creature.getWorld().getPlayers()) {
+            GameMatch joined = matches.getMatchForPlayer(player.getUniqueId());
+            GameParticipant participant = match.getParticipant(player.getUniqueId());
+            if (joined != match || participant == null
+                    || participant.getState() != ParticipantState.CONNECTED
+                    || matches.isSpectating(player.getUniqueId())
+                    || mob.teamId.equals(participant.getTeamId())) continue;
+            double distance = player.getLocation().distanceSquared(creature.getLocation());
+            if (distance < best) {
+                nearest = player;
+                best = distance;
+            }
+        }
+        creature.setTarget(nearest);
     }
 
     private void removeMob(SpecialMob mob) {
