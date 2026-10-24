@@ -8,6 +8,15 @@ import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
 import com.starfinplugins.bedwars.service.ManagedService;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+import org.bukkit.Color;
+import org.bukkit.FireworkEffect;
+import org.bukkit.Location;
+import org.bukkit.World;
+import org.bukkit.entity.Firework;
+import org.bukkit.inventory.meta.FireworkMeta;
 import java.util.Map;
 import java.util.UUID;
 import org.bukkit.Bukkit;
@@ -30,6 +39,8 @@ public final class MatchVisualService implements ManagedService, Listener {
     private final Map<UUID, Integer> lastCountdown = new HashMap<UUID, Integer>();
     private final Map<UUID, PriorityTitle> titles = new HashMap<UUID, PriorityTitle>();
     private BukkitTask task;
+    private final Map<UUID, BukkitTask> victoryShows = new HashMap<UUID, BukkitTask>();
+    private final Random celebrationRandom = new Random();
 
     public MatchVisualService(Plugin plugin, MatchEngineService matches) {
         this.plugin = plugin;
@@ -44,6 +55,8 @@ public final class MatchVisualService implements ManagedService, Listener {
     }
     @Override public void stop() {
         if (task != null) task.cancel();
+        for (BukkitTask show : victoryShows.values()) show.cancel();
+        victoryShows.clear();
         task = null;
         org.bukkit.event.HandlerList.unregisterAll(this);
         opening.clear();
@@ -129,6 +142,11 @@ public final class MatchVisualService implements ManagedService, Listener {
                 lastCountdown.remove(match.getId());
                 announceResult(match);
                 break;
+            case PLAYERS_RETURNED:
+            case INSTANCE_REMOVED:
+                BukkitTask endedShow = victoryShows.remove(match.getId());
+                if (endedShow != null) endedShow.cancel();
+                break;
             case PLAYER_LEFT:
                 if (event.getParticipant() != null) titles.remove(event.getParticipant().getPlayerId());
                 break;
@@ -178,6 +196,7 @@ public final class MatchVisualService implements ManagedService, Listener {
     private void announceResult(GameMatch match) {
         boolean winner = match.getEndReason() == MatchEndReason.VICTORY
             && match.getWinnerTeamId() != null;
+        if (winner) startVictoryCelebration(match);
         String winnerName = winner && match.getTeam(match.getWinnerTeamId()) != null
             ? match.getTeam(match.getWinnerTeamId()).getDefinition().getDisplayName() : "";
         long seconds = match.getStartedAt() == null || match.getEndedAt() == null ? 0
@@ -206,6 +225,68 @@ public final class MatchVisualService implements ManagedService, Listener {
             player.sendMessage(ChatColor.GRAY + "Duracao: " + ChatColor.WHITE
                 + (seconds / 60) + "m " + (seconds % 60) + "s");
         }
+    }
+
+    /**
+     * Continues the celebration until the engine returns players to the
+     * lobby (normally after 100 ticks). No per-firework scheduler is created.
+     */
+    private void startVictoryCelebration(final GameMatch match) {
+        if (!plugin.getConfig().getBoolean("visuals.victory.celebration.enabled", true)
+                || victoryShows.containsKey(match.getId())) return;
+        final World world = matches.getWorld(match.getId());
+        if (world == null) return;
+        final int bursts = Math.max(1, Math.min(8, plugin.getConfig()
+            .getInt("visuals.victory.celebration.fireworks-per-burst", 4)));
+        final long interval = Math.max(5L, Math.min(30L, plugin.getConfig()
+            .getInt("visuals.victory.celebration.interval-ticks", 10)));
+        final int radius = Math.max(2, Math.min(12, plugin.getConfig()
+            .getInt("visuals.victory.celebration.radius", 6)));
+        BukkitTask show = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
+            @Override public void run() {
+                if (match.getState() != com.starfinplugins.bedwars.domain.match.MatchState.ENDING
+                        || matches.getWorld(match.getId()) != world || world.getPlayers().isEmpty()) {
+                    BukkitTask current = victoryShows.remove(match.getId());
+                    if (current != null) current.cancel();
+                    return;
+                }
+                List<Player> winners = new ArrayList<Player>();
+                for (GameParticipant participant : match.getParticipantList()) {
+                    if (!participant.getTeamId().equals(match.getWinnerTeamId())) continue;
+                    Player player = Bukkit.getPlayer(participant.getPlayerId());
+                    if (player != null && player.isOnline() && player.getWorld() == world) {
+                        winners.add(player);
+                    }
+                }
+                if (winners.isEmpty()) return;
+                for (int i = 0; i < bursts; i++) {
+                    Player player = winners.get(i % winners.size());
+                    Location at = player.getLocation().clone().add(
+                        (celebrationRandom.nextDouble() * 2.0D - 1.0D) * radius,
+                        1.0D + celebrationRandom.nextDouble() * 2.0D,
+                        (celebrationRandom.nextDouble() * 2.0D - 1.0D) * radius);
+                    try {
+                        Firework firework = (Firework) world.spawn(at, Firework.class);
+                        FireworkMeta meta = firework.getFireworkMeta();
+                        Color primary = new Color[] {Color.AQUA, Color.YELLOW, Color.LIME,
+                            Color.FUCHSIA, Color.RED, Color.ORANGE}[i % 6];
+                        meta.addEffect(FireworkEffect.builder()
+                            .with(FireworkEffect.Type.BALL_LARGE)
+                            .withColor(primary).withFade(Color.WHITE)
+                            .flicker(true).trail(true).build());
+                        meta.setPower(1);
+                        firework.setFireworkMeta(meta);
+                    } catch (RuntimeException exception) {
+                        plugin.getLogger().warning("Falha no fogo de artificio da vitoria: "
+                            + exception.getMessage());
+                    }
+                }
+                for (Player winner : winners) {
+                    winner.playSound(winner.getLocation(), Sound.LEVEL_UP, 0.6F, 1.45F);
+                }
+            }
+        }, 0L, interval);
+        victoryShows.put(match.getId(), show);
     }
 
     private void show(Player player, String title, String subtitle, int priority, int stayTicks) {
