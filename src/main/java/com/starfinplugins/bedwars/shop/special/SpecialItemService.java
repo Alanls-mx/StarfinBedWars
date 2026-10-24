@@ -37,6 +37,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
@@ -62,6 +63,8 @@ public final class SpecialItemService implements ManagedService, Listener {
     private final Map<UUID, BukkitTask> bridges = new HashMap<UUID, BukkitTask>();
     private final Map<UUID, UUID> bridgeMatch = new HashMap<UUID, UUID>();
     private final Map<UUID, MilkProtection> milk = new HashMap<UUID, MilkProtection>();
+    private final Map<UUID, BukkitTask> pendingGolemKnockback =
+        new HashMap<UUID, BukkitTask>();
     private BukkitTask expiry;
     
     public SpecialItemService(Plugin plugin, MatchEngineService matches) {
@@ -84,6 +87,8 @@ public final class SpecialItemService implements ManagedService, Listener {
         if (expiry != null) expiry.cancel();
         expiry = null;
         for (BukkitTask task : bridges.values()) task.cancel();
+        for (BukkitTask task : pendingGolemKnockback.values()) task.cancel();
+        pendingGolemKnockback.clear();
         bridges.clear();
         bridgeMatch.clear();
         for (SpecialMob mob : mobs.values()) removeMob(mob);
@@ -217,27 +222,86 @@ public final class SpecialItemService implements ManagedService, Listener {
     private void startBridge(final Egg egg, final GameMatch match, final GameParticipant participant) {
         final UUID projectileId = egg.getUniqueId();
         final UUID matchId = match.getId();
-        final short color = match.getTeam(participant.getTeamId()).getDefinition().getColorData();
+        final World world = egg.getWorld();
+        final byte color = match.getTeam(participant.getTeamId()).getDefinition().getColorData();
+
+        int requestedWidth = plugin.getConfig().getInt("special-items.bridge-egg.width", 3);
+        final int width = requestedWidth == 1 || requestedWidth == 3 || requestedWidth == 5
+            ? requestedWidth : 3;
+        final int thickness = Math.max(1, Math.min(2,
+            plugin.getConfig().getInt("special-items.bridge-egg.thickness", 2)));
+        final int maximumBlocks = Math.max(48, Math.min(640,
+            plugin.getConfig().getInt("special-items.bridge-egg.max-blocks", 480)));
+        final int maximumTicks = Math.max(5, Math.min(120,
+            plugin.getConfig().getInt("special-items.bridge-egg.max-ticks", 70)));
+
         bridgeMatch.put(projectileId, matchId);
         BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             private int ticks;
-            private String lastBlock;
+            private int placedBlocks;
+            private int lastX = Integer.MIN_VALUE;
+            private int lastZ = Integer.MIN_VALUE;
+
             @Override public void run() {
-                if (++ticks > 70 || !egg.isValid() || egg.isDead()
+                if (++ticks > maximumTicks || placedBlocks >= maximumBlocks
+                        || !egg.isValid() || egg.isDead()
                         || match.getState() != MatchState.IN_GAME
-                        || matches.getWorld(matchId) != egg.getWorld()) {
+                        || matches.getWorld(matchId) != world) {
                     stopBridge(projectileId);
                     return;
                 }
-                // Lay colored wool below the moving egg, never overwrite the map.
-                Location location = egg.getLocation().add(0.0D, -1.2D, 0.0D);
-                Block block = location.getBlock();
-                String key = block.getX() + ":" + block.getY() + ":" + block.getZ();
-                if (key.equals(lastBlock)) return;
-                lastBlock = key;
-                if (isInsideArena(match, location)) {
-                    matches.placeSpecialBlock(match, block, Material.WOOL, (byte) color);
+
+                Location at = egg.getLocation();
+                if (!isInsideArena(match, at)) {
+                    stopBridge(projectileId);
+                    return;
                 }
+
+                // The previous single-block strip was difficult to cross.
+                // Build a 3-wide, 2-thick path by default (configurable), normal
+                // to the direction of travel. Fill small gaps between ticks.
+                int x = at.getBlockX();
+                int z = at.getBlockZ();
+                int floorY = (int) Math.floor(at.getY() - 1.2D);
+                if (floorY < 0 || floorY > 255) {
+                    stopBridge(projectileId);
+                    return;
+                }
+                int distance = lastX == Integer.MIN_VALUE ? 0
+                    : Math.max(Math.abs(x - lastX), Math.abs(z - lastZ));
+                // Never draw an enormous line if the projectile is teleported.
+                if (distance > 6) {
+                    lastX = x;
+                    lastZ = z;
+                    return;
+                }
+                Vector velocity = egg.getVelocity();
+                java.util.List<BridgeEggShape.Offset> shape =
+                    BridgeEggShape.footprint(width, thickness, velocity.getX(), velocity.getZ());
+                int steps = Math.max(1, distance);
+                int fromX = lastX == Integer.MIN_VALUE ? x : lastX;
+                int fromZ = lastZ == Integer.MIN_VALUE ? z : lastZ;
+
+                for (int step = 1; step <= steps && placedBlocks < maximumBlocks; step++) {
+                    int centerX = (int) Math.round(fromX + (x - fromX) * (step / (double) steps));
+                    int centerZ = (int) Math.round(fromZ + (z - fromZ) * (step / (double) steps));
+                    for (BridgeEggShape.Offset offset : shape) {
+                        if (placedBlocks >= maximumBlocks) break;
+                        int bx = centerX + offset.getX();
+                        int by = floorY + offset.getY();
+                        int bz = centerZ + offset.getZ();
+                        if (by < 0 || by > 255 || !world.isChunkLoaded(bx >> 4, bz >> 4)) continue;
+                        Block block = world.getBlockAt(bx, by, bz);
+                        // The match engine guards the arena bounds and never
+                        // replaces template or other players' existing blocks.
+                        if (matches.placeSpecialBlock(match, block, Material.WOOL, color)) {
+                            placedBlocks++;
+                        }
+                    }
+                }
+                lastX = x;
+                lastZ = z;
+                if (placedBlocks >= maximumBlocks) stopBridge(projectileId);
             }
         }, 1L, 1L);
         bridges.put(projectileId, task);
