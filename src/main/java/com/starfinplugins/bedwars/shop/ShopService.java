@@ -713,7 +713,7 @@ public final class ShopService implements ManagedService, Listener {
             return false;
         }
         Inventory active = player.getOpenInventory().getTopInventory();
-        return active != null && active.getSize() == 54 && active.getHolder() == menu;
+        return ShopInventoryGuard.isSameShop(active, menu);
     }
 
     /** Refresh contents on the existing 54-slot window; NEVER replace the
