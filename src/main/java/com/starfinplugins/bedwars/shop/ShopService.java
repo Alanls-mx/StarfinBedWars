@@ -673,7 +673,8 @@ public final class ShopService implements ManagedService, Listener {
     private void openMenu(Player player, ClassicShopMenu.Category category, int page, boolean editing) {
         ClassicShopMenu menu = new ClassicShopMenu(player, settings.getItems().values(),
             favoritesFor(player.getUniqueId()), category, page, editing,
-            categoryOrder(), categoryIcons());
+            categoryOrder(), categoryIcons(),
+            plugin.getConfig().getInt("shop.description-line-length", 28));
         player.openInventory(menu.getInventory());
     }
 
