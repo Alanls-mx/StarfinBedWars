@@ -37,13 +37,13 @@ public class PresentationConfigMigratorTest {
         assertTrue(updated.getBoolean("special-items.defender-persistent"));
         assertTrue(updated.getBoolean("match-point.enabled"));
         assertEquals(30, updated.getInt("match-point.after-minutes"));
-        assertEquals(28, updated.getInt("match-point.blocks-per-sweep"));
         assertEquals(40, updated.getInt("match-point.dragon-patrol-spacing"));
-        assertEquals(9, updated.getInt("match-point.dragon-erode-radius"));
-        assertEquals(3000, updated.getInt(
-            "match-point.global-erosion.scan-positions-per-tick"));
-        assertEquals(40, updated.getInt(
-            "match-point.global-erosion.max-blocks-per-tick"));
+        assertEquals(40, updated.getInt("match-point.dragon-blast-interval-ticks"));
+        assertEquals(3, updated.getInt("match-point.dragon-blast-radius"));
+        assertEquals(1, updated.getInt("match-point.dragon-blast-depth"));
+        assertEquals(8, updated.getInt("match-point.dragon-blast-blocks"));
+        assertEquals(5.0D, updated.getDouble("match-point.dragon-blast-min-movement"), 0.0D);
+        assertTrue(updated.getBoolean("match-point.bossbar-enabled"));
         assertEquals(9, updated.getInt("match.victory-celebration-seconds"));
         assertTrue(updated.getBoolean("visuals.victory.celebration.enabled"));
         assertEquals(4, updated.getInt("visuals.victory.celebration.fireworks-per-burst"));
