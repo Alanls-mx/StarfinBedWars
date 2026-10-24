@@ -77,6 +77,7 @@ match-point:
   lightning:
     enabled: true
     interval-ticks: 60
+    radius: 3
     max-blocks-per-strike: 24
   # Barra MATCH POINT fixa perto da camera, mesmo olhando para longe do dragao.
   bossbar-enabled: true
