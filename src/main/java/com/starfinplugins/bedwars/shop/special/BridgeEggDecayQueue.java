@@ -22,6 +22,9 @@ public final class BridgeEggDecayQueue<T> {
         slices.addLast(Collections.unmodifiableList(new ArrayList<T>(builtInOrder)));
     }
 
+    /** Inspect the next section without consuming it (e.g. unloaded chunk). */
+    public List<T> peekOldest() { return slices.peekFirst(); }
+
     /** First built slice disappears first. */
     public List<T> pollOldest() {
         return slices.pollFirst();
