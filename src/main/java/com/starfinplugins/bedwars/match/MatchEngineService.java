@@ -572,12 +572,18 @@ public final class MatchEngineService implements ManagedService, Listener {
         fire(MatchLifecycleEvent.Type.ENDED, match, null, winner);
         broadcast(match, winner == null ? "Partida encerrada." : "Equipe vencedora: "
             + match.getTeam(winner).getDefinition().getDisplayName());
+        // Give the winning team a longer fireworks celebration, but keep
+        // ordinary draws/cancelled matches on the previous 5-second return.
+        int celebrationSeconds = Math.max(5, Math.min(20,
+            plugin.getConfig().getInt("match.victory-celebration-seconds", 9)));
+        long returnDelay = reason == MatchEndReason.VICTORY && winner != null
+            ? celebrationSeconds * 20L : 100L;
         Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
             @Override
             public void run() {
                 restore(match);
             }
-        }, 100L);
+        }, returnDelay);
     }
 
     private void resolveWinner(GameMatch match) {
