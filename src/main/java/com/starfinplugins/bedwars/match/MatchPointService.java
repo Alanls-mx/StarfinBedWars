@@ -502,6 +502,7 @@ public final class MatchPointService implements ManagedService, Listener {
             .getInt("match-point.lightning.interval-ticks", 60)));
         boolean lightningDue = lightningEnabled && ticks - active.lastLightningTick >= lightningInterval;
         Location lightningAt = null;
+        int lightningCoreRemoved = 0;
         int loadedChunks = 0;
         for (; done < cap; done++) {
             MatchPointMapIndex.Cell cell = map.consumeNearest(dragon.getX(), dragon.getZ());
@@ -523,6 +524,7 @@ public final class MatchPointService implements ManagedService, Listener {
                 if (lightningDue && lightningAt == null && !alreadyAir) {
                     lightningAt = new Location(world, cell.x + 0.5D,
                         cell.y + 1.0D, cell.z + 0.5D);
+                    lightningCoreRemoved = 1;
                 }
                 if (active.waveAt == null && !alreadyAir) {
                     active.waveAt = new Location(world, cell.x + 0.5D,
@@ -542,9 +544,12 @@ public final class MatchPointService implements ManagedService, Listener {
             // but the plugin breaks REAL blocks under the strike. These
             // original coordinates later count as AIR in the index.
             int broken = breakLightningBlocks(active, world, lightningAt);
-            if (broken > 0) {
+            // The initial strike block was already removed by this tick's
+            // scheduled quota. Even if all neighbors were empty, the bolt
+            // still corresponds to a REAL block that disappeared.
+            if (broken + lightningCoreRemoved > 0) {
                 world.strikeLightningEffect(lightningAt);
-                active.lightningDestroyed += broken;
+                active.lightningDestroyed += broken + lightningCoreRemoved;
             }
             active.lastLightningTick = ticks;
         }
