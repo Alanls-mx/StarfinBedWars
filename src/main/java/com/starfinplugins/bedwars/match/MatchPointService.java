@@ -276,6 +276,7 @@ public final class MatchPointService implements ManagedService, Listener {
         active.area = bounds;
         active.mapIndex = new MatchPointMapIndex(bounds);
         active.startedAtMillis = System.currentTimeMillis();
+        active.lastLightningTick = ticks;
         active.demolition = demolitionSchedule();
         matches.destroyAllBedsAtMatchPoint(match);
         for (GameParticipant participant : match.getParticipantList()) {
@@ -527,7 +528,13 @@ public final class MatchPointService implements ManagedService, Listener {
                     active.waveAt = new Location(world, cell.x + 0.5D,
                         cell.y + 0.5D, cell.z + 0.5D);
                 }
-            } else active.failedRemovals++;
+            } else {
+                // Do not advertise 100% when a protected/unbreakable block
+                // remains in its original indexed position.
+                map.retryLast(cell);
+                active.failedRemovals++;
+                break;
+            }
         }
         active.scheduledRemoved += removed;
         if (lightningDue && lightningAt != null) {
