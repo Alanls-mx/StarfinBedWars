@@ -113,8 +113,7 @@ public final class MatchPointService implements ManagedService, Listener {
         if (world == null || matches.getMatchForArena(match.getArena().getId()) != match) {
             return ForceResult.NO_WORLD;
         }
-        ArenaRegion bounds = match.getArena().getRegion(ArenaRegionType.MAIN);
-        if (bounds == null) bounds = match.getArena().getBounds();
+        ArenaRegion bounds = MatchPointArea.resolve(match.getArena());
         if (bounds == null) return ForceResult.INVALID_ARENA;
 
         Active active = sessions.get(match.getId());
@@ -166,8 +165,7 @@ public final class MatchPointService implements ManagedService, Listener {
 
     private void activate(Active active, World world) {
         GameMatch match = active.match;
-        ArenaRegion bounds = match.getArena().getRegion(ArenaRegionType.MAIN);
-        if (bounds == null) bounds = match.getArena().getBounds();
+        ArenaRegion bounds = MatchPointArea.resolve(match.getArena());
         if (bounds == null) {
             plugin.getLogger().warning("Match Point sem limites de arena: "
                 + match.getArena().getId());
@@ -279,8 +277,7 @@ public final class MatchPointService implements ManagedService, Listener {
      */
     private void destroyNearby(Active active, Location point) {
         if (ticks % 20L != 0L) return;
-        ArenaRegion bounds = active.match.getArena().getRegion(ArenaRegionType.MAIN);
-        if (bounds == null) bounds = active.match.getArena().getBounds();
+        ArenaRegion bounds = MatchPointArea.resolve(active.match.getArena());
         if (bounds == null) return;
         final int maxRemoved = Math.max(1, Math.min(75,
             plugin.getConfig().getInt("match-point.blocks-per-sweep", 28)));
