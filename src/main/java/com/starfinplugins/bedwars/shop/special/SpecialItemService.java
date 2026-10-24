@@ -42,7 +42,6 @@ import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerEggThrowEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.metadata.MetadataValue;
@@ -376,10 +375,6 @@ public final class SpecialItemService implements ManagedService, Listener {
         for (Iterator<Map.Entry<UUID, MilkProtection>> it = milk.entrySet().iterator(); it.hasNext();) {
             if (matchId.equals(it.next().getValue().matchId)) it.remove();
         }
-    }
-
-    @EventHandler public void onQuit(PlayerQuitEvent event) {
-        milk.remove(event.getPlayer().getUniqueId());
     }
 
     private void expireEffects() {
