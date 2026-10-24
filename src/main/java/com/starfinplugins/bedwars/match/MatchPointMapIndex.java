@@ -31,6 +31,8 @@ public final class MatchPointMapIndex {
     private long totalBlocks;
     private long consumed;
     private boolean finished;
+    private Bucket preferredBucket;
+    private int preferredCount;
 
     public MatchPointMapIndex(ArenaRegion area) {
         if (area == null) throw new IllegalArgumentException("Area MAIN ausente.");
@@ -130,23 +132,31 @@ public final class MatchPointMapIndex {
     public long getTotalBlocks() { return totalBlocks; }
     public long getConsumed() { return consumed; }
 
-    /** Prioritizes currently occupied chunks near the real dragon. */
+    /**
+     * Batch up to 64 blocks from the nearest occupied chunk before searching
+     * again. This avoids an O(number of chunks) search for EVERY removed block.
+     */
     public Cell consumeNearest(double dragonX, double dragonZ) {
         if (!finished) return null;
-        Bucket nearest = null;
-        double best = Double.POSITIVE_INFINITY;
-        for (Bucket bucket : buckets.values()) {
-            if (bucket.isEmpty()) continue;
-            double distance = Math.pow(bucket.centerX() - dragonX, 2)
-                + Math.pow(bucket.centerZ() - dragonZ, 2);
-            if (distance < best) {
-                best = distance;
-                nearest = bucket;
+        if (preferredBucket == null || preferredBucket.isEmpty() || preferredCount >= 64) {
+            preferredBucket = null;
+            preferredCount = 0;
+            double best = Double.POSITIVE_INFINITY;
+            for (Bucket bucket : buckets.values()) {
+                if (bucket.isEmpty()) continue;
+                double dx = bucket.centerX() - dragonX;
+                double dz = bucket.centerZ() - dragonZ;
+                double distance = dx * dx + dz * dz;
+                if (distance < best) {
+                    best = distance;
+                    preferredBucket = bucket;
+                }
             }
         }
-        if (nearest == null) return null;
+        if (preferredBucket == null) return null;
+        preferredCount++;
         consumed++;
-        return nearest.poll();
+        return preferredBucket.poll();
     }
 
     /**
@@ -172,7 +182,7 @@ public final class MatchPointMapIndex {
                     break;
                 }
             }
-            if (!nearby) chosen.add(bucket);
+            if (!nearby && bucket.originalCount > 0) chosen.add(bucket);
         }
         List<Position> result = new ArrayList<Position>();
         for (Bucket bucket : chosen) {
