@@ -49,8 +49,9 @@ match-point:
   dragon-height-offset: 3
   # Tamanho do proximo trecho de voo na rota natural do dragao (0.03 a 0.20).
   dragon-angular-speed: 0.065
-  # Distancia do ponto de destino para escolher o proximo ponto (8 a 24 blocos).
-  dragon-waypoint-reach: 14.0
+  # Distancia maxima para considerar um waypoint visitado (2 a 5 blocos).
+  # Evita o dragao ignorar as ilhas antes de chegar perto dos blocos.
+  dragon-waypoint-reach: 4.0
   # Voo em X sobre toda a area MAIN (pos1/pos2), alternando diagonais.
   # Distancia entre waypoints. Nao ha varredura em grade.
   dragon-patrol-spacing: 40
