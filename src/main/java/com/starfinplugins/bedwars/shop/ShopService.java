@@ -124,7 +124,7 @@ public final class ShopService implements ManagedService, Listener {
         for (UUID matchId : new ArrayList<UUID>(shopEntities.keySet())) removeShops(matchId);
         try {
             ShopNpcFactoryV1_8_R3.unregisterType();
-        } catch (LinkageError error) {
+        } catch (RuntimeException | LinkageError error) {
             // If the running JAR was replaced/corrupted or the NPC class was
             // omitted, shutdown must still release inventories and services.
             // Log the actual packaging problem instead of aborting onDisable.
