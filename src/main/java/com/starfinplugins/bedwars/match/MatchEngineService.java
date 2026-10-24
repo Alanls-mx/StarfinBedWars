@@ -899,11 +899,17 @@ public final class MatchEngineService implements ManagedService, Listener {
         GameTeam team = match.getTeam(participant.getTeamId());
         if (!team.isBedAlive()) {
             match.setParticipantState(player.getUniqueId(), ParticipantState.ELIMINATED);
+            player.sendMessage(message("messages.you-eliminated",
+                "&cVoce foi eliminado! Sua cama ja foi destruida."));
             fire(MatchLifecycleEvent.Type.PLAYER_ELIMINATED, match, participant, participant.getTeamId());
             resolveWinnerLater(match);
         } else {
             match.setParticipantState(player.getUniqueId(), ParticipantState.RESPAWNING);
             cancel(respawnTasks.remove(player.getUniqueId()));
+            player.sendMessage(message("messages.respawn-countdown",
+                "&eVoce renascera em &c{time} &esegundos.",
+                "time", Integer.toString(respawnSeconds)));
+            fire(MatchLifecycleEvent.Type.PLAYER_DIED, match, participant, participant.getTeamId());
         }
         // Evita a tela de morte e inicia imediatamente o periodo de espectador.
         Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
@@ -1038,7 +1044,7 @@ public final class MatchEngineService implements ManagedService, Listener {
                                 fallProtectionUntil.put(player.getUniqueId(),
                                     System.currentTimeMillis() + 3000L);
                                 match.setParticipantState(player.getUniqueId(), ParticipantState.CONNECTED);
-                                player.sendMessage(org.bukkit.ChatColor.GREEN + "Voce renasceu.");
+                                player.sendMessage(message("messages.respawned", "&aVoce renasceu!"));
                             }
                         }
                         respawnTasks.remove(player.getUniqueId());
