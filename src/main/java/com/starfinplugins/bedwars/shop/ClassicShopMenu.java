@@ -44,16 +44,33 @@ public final class ClassicShopMenu implements InventoryHolder {
     private final Map<Integer, ShopItemDefinition> entries =
         new LinkedHashMap<Integer, ShopItemDefinition>();
     private final Map<Integer, Category> categorySlots = new LinkedHashMap<Integer, Category>();
-    private final Category category;
-    private final int page;
-    private final boolean editing;
-    private final int pageCount;
+    private Category category;
+    private int page;
+    private boolean editing;
+    private int pageCount;
 
     public ClassicShopMenu(Player player, Iterable<ShopItemDefinition> items, Set<String> favorites,
                            Category category, int requestedPage, boolean editing,
                            List<Category> order, Map<Category, Material> icons) {
+        this.inventory = Bukkit.createInventory(this, 54,
+            ChatColor.DARK_AQUA + "Starfin " + ChatColor.DARK_GRAY + "| "
+                + ChatColor.YELLOW + "Loja");
+        refresh(player, items, favorites, category, requestedPage, editing, order, icons);
+    }
+
+    /**
+     * Switch views inside the SAME Bukkit inventory. In 1.8.8, repeatedly
+     * opening a new window after clicks may leave the client using an obsolete
+     * window id and produce Container.getSlot(49) on a 45-slot player view.
+     */
+    public void refresh(Player player, Iterable<ShopItemDefinition> items, Set<String> favorites,
+                        Category category, int requestedPage, boolean editing,
+                        List<Category> order, Map<Category, Material> icons) {
         this.category = category;
         this.editing = editing;
+        inventory.clear();
+        entries.clear();
+        categorySlots.clear();
         List<ShopItemDefinition> all = new ArrayList<ShopItemDefinition>();
         for (ShopItemDefinition item : items) all.add(item);
         Collections.sort(all, new java.util.Comparator<ShopItemDefinition>() {
@@ -68,9 +85,6 @@ public final class ClassicShopMenu implements InventoryHolder {
         }
         this.pageCount = Math.max(1, (filtered.size() + 26) / 27);
         this.page = Math.max(0, Math.min(requestedPage, pageCount - 1));
-        this.inventory = Bukkit.createInventory(this, 54,
-            ChatColor.DARK_AQUA + "Starfin " + ChatColor.DARK_GRAY + "| "
-                + ChatColor.YELLOW + category.getTitle());
         int tabSlot = 0;
         int activeSlot = -1;
         for (Category tab : order) {
