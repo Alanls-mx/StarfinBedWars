@@ -13,6 +13,9 @@ import com.starfinplugins.bedwars.domain.arena.AutomaticArenaBounds;
 import com.starfinplugins.bedwars.domain.arena.ResourceGeneratorDefinition;
 import com.starfinplugins.bedwars.domain.economy.ResourceType;
 import com.starfinplugins.bedwars.match.MatchEngineService;
+import com.starfinplugins.bedwars.match.MatchPointService;
+import com.starfinplugins.bedwars.domain.match.GameMatch;
+import com.starfinplugins.bedwars.domain.match.MatchState;
 import com.starfinplugins.bedwars.world.WorldManagementService;
 import com.starfinplugins.bedwars.world.SafeLocationResolver;
 import com.starfinplugins.bedwars.integration.worldedit.WorldEditSelectionAdapter;
@@ -150,6 +153,55 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                     + " definida como " + args[3] + ".");
             } catch (IllegalArgumentException error) {
                 sender.sendMessage(PREFIX + ChatColor.RED + error.getMessage());
+            }
+            return true;
+        }
+        if ("matchpoint".equalsIgnoreCase(args[0])) {
+            if (!sender.hasPermission("starfinbedwars.command.matchpoint")
+                    && !sender.hasPermission("starfinbedwars.admin")) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "Sem permissao para forcar Match Point.");
+                return true;
+            }
+            if (args.length > 2) {
+                sender.sendMessage(PREFIX + ChatColor.YELLOW
+                    + "Uso: /sbw matchpoint [id-da-arena].");
+                return true;
+            }
+            GameMatch target = null;
+            if (args.length == 2) {
+                target = matches.getMatchForArena(args[1].toLowerCase(Locale.ROOT));
+            } else if (sender instanceof Player) {
+                Player player = (Player) sender;
+                target = matches.getMatchForPlayer(player.getUniqueId());
+                if (target == null) target = matches.getSpectatedMatch(player.getUniqueId());
+            } else {
+                sender.sendMessage(PREFIX + ChatColor.YELLOW
+                    + "No console use /sbw matchpoint <id-da-arena>.");
+                return true;
+            }
+            if (target == null || target.getState() != MatchState.IN_GAME) {
+                sender.sendMessage(PREFIX + ChatColor.RED
+                    + "Nenhuma partida em andamento encontrada. Informe uma arena ativa.");
+                return true;
+            }
+            MatchPointService service = plugin.getMatchPoint();
+            if (service == null) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "Sistema Match Point indisponivel.");
+                return true;
+            }
+            MatchPointService.ForceResult result = service.forceMatchPoint(target);
+            if (result == MatchPointService.ForceResult.ACTIVATED) {
+                sender.sendMessage(PREFIX + ChatColor.GREEN + "Match Point iniciado agora em "
+                    + target.getArena().getId() + "! Todas as camas foram quebradas.");
+                plugin.getLogger().info("Match Point FORCADO por " + sender.getName()
+                    + " na arena " + target.getArena().getId()
+                    + " partida " + target.getId());
+            } else if (result == MatchPointService.ForceResult.ALREADY_ACTIVE) {
+                sender.sendMessage(PREFIX + ChatColor.YELLOW
+                    + "O Match Point ja esta ativo nesta partida.");
+            } else {
+                sender.sendMessage(PREFIX + ChatColor.RED
+                    + "Nao foi possivel forcar Match Point (" + result + ").");
             }
             return true;
         }
@@ -1390,7 +1442,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             return;
         }
         sender.sendMessage(PREFIX + ChatColor.YELLOW + "/" + label
-            + " <help [setup|arena|world|player]|version|status|menu|arena|setarena|world|join|spectate|leave|chat|next|npc>");
+            + " <help [setup|arena|world|player]|version|status|menu|arena|setarena|world|join|spectate|leave|chat|next|npc|matchpoint>");
         sender.sendMessage(ChatColor.GRAY + "/sbw menu | /sbw arena menu");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena create <id> <mundo-descarregado> | import <id> <mundo-descarregado>");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena tp <arena> | /sbw arena exit");
@@ -1410,6 +1462,11 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         sender.sendMessage(ChatColor.GRAY + "/sbw setup <status|undo|pause|resume <arena>|cancel <arena>>");
         sender.sendMessage(ChatColor.GRAY + "/sbw setarena <center here|pos1|pos2|upoversize <L>x<C>|upheight <n>|uplow <n>|tp|preview|confirm|cancel>");
         sender.sendMessage(ChatColor.GRAY + "/sbw join <arena> | /sbw spectate <arena> | /sbw leave");
+        if (sender.hasPermission("starfinbedwars.command.matchpoint")
+                || sender.hasPermission("starfinbedwars.admin")) {
+            sender.sendMessage(ChatColor.GRAY
+                + "/sbw matchpoint [arena] - forcar Match Point para teste (OP)");
+        }
     }
 
     private void sendStatus(CommandSender sender) {
@@ -1444,9 +1501,25 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             if (hasArenaAdmin(sender)) {
                 choices.addAll(Arrays.asList("setarena", "create", "setup", "next"));
             }
+            if (sender.hasPermission("starfinbedwars.command.matchpoint")
+                    || sender.hasPermission("starfinbedwars.admin")) choices.add("matchpoint");
             if (sender.hasPermission("starfinbedwars.command.world")
                     || sender.hasPermission("starfinbedwars.admin")) choices.add("world");
             return filter(choices, args[0]);
+        }
+        if ("matchpoint".equalsIgnoreCase(args[0]) && args.length == 2) {
+            if (!sender.hasPermission("starfinbedwars.command.matchpoint")
+                    && !sender.hasPermission("starfinbedwars.admin")) {
+                return Collections.emptyList();
+            }
+            List<String> active = new ArrayList<String>();
+            for (ArenaDefinition arena : arenas.getArenas()) {
+                GameMatch match = matches.getMatchForArena(arena.getId());
+                if (match != null && match.getState() == MatchState.IN_GAME) {
+                    active.add(arena.getId());
+                }
+            }
+            return filter(active, args[1]);
         }
         if ("help".equalsIgnoreCase(args[0]) && args.length == 2) {
             return filter(Arrays.asList("setup", "arena", "world", "player"), args[1]);
