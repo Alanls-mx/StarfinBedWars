@@ -8,6 +8,9 @@ match:
   spawn-opening-seconds: 10
   tnt-auto-prime: true # Colocar TNT durante a partida acende automaticamente o pavio.
   tnt-fuse-ticks: 40 # 2 segundos; entre 1 e 200 ticks.
+  # Vitoria: 9 segundos para os fogos antes de retornar ao lobby.
+  # Empates e encerramentos sem vencedor continuam com 5 segundos.
+  victory-celebration-seconds: 9
 
 # Itens especiais do BedWars classico (compra configurada em shop.yml).
 special-items:
