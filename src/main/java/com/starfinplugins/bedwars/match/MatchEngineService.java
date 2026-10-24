@@ -47,6 +47,7 @@ import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
@@ -358,6 +359,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (countdowns.containsKey(id)) return;
         match.transition(MatchState.STARTING);
         countdownValues.put(id, match.getArena().getCountdownSeconds());
+        fire(MatchLifecycleEvent.Type.COUNTDOWN_STARTED, match, null, null);
         countdowns.put(id, Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override
             public void run() {
@@ -371,14 +373,16 @@ public final class MatchEngineService implements ManagedService, Listener {
                     updateCountdown(match);
                     return;
                 }
-                if (remaining <= 1) {
+                if (remaining <= 0) {
                     cancel(countdowns.remove(match.getArena().getId()));
                     countdownValues.remove(match.getArena().getId());
                     beginSpawnOpening(match);
                     return;
                 }
-                if (remaining <= 10 || remaining % 10 == 0) {
-                    broadcast(match, "Lobby fecha em " + remaining + "s.");
+                if (remaining <= 5 || remaining % 10 == 0) {
+                    announce(match, "messages.lobby-countdown",
+                        "&eA partida comeca em &6{time} &esegundos!",
+                        "time", Integer.toString(remaining));
                 }
                 countdownValues.put(match.getArena().getId(), remaining - 1);
             }
@@ -441,7 +445,9 @@ public final class MatchEngineService implements ManagedService, Listener {
         fire(MatchLifecycleEvent.Type.SPAWN_OPENING, match, null, null);
         final String arenaId = match.getArena().getId();
         spawnOpeningValues.put(arenaId, spawnOpeningSeconds);
-        broadcast(match, "Os spawns abrem em " + spawnOpeningSeconds + " segundos.");
+        announce(match, "messages.spawn-preparing",
+            "&ePrepare-se! A partida comeca em &6{time} &esegundos.",
+            "time", Integer.toString(spawnOpeningSeconds));
         spawnOpeningTasks.put(arenaId, Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override public void run() {
                 Integer remaining = spawnOpeningValues.get(arenaId);
@@ -459,15 +465,16 @@ public final class MatchEngineService implements ManagedService, Listener {
                     updateCountdown(match);
                     return;
                 }
-                if (remaining <= 1) {
-                    broadcast(match, "Os spawns abrem em 1 segundo.");
+                if (remaining <= 0) {
                     cancel(spawnOpeningTasks.remove(arenaId));
                     spawnOpeningValues.remove(arenaId);
                     startMatch(match);
                     return;
                 }
-                if (remaining <= 10 || remaining % 5 == 0) {
-                    broadcast(match, "Os spawns abrem em " + remaining + " segundos.");
+                if (remaining <= 5 || remaining % 5 == 0) {
+                    announce(match, "messages.spawn-countdown",
+                        "&eAs barreiras abrem em &6{time} &esegundos!",
+                        "time", Integer.toString(remaining));
                 }
                 spawnOpeningValues.put(arenaId, remaining - 1);
             }
@@ -490,7 +497,8 @@ public final class MatchEngineService implements ManagedService, Listener {
             if (player != null) player.setFallDistance(0.0F);
         }
         match.transition(MatchState.IN_GAME);
-        broadcast(match, "A partida comecou!");
+        announce(match, "messages.match-started",
+            "&a&lA PARTIDA COMECOU! &7Proteja sua cama e destrua as adversarias.");
         fire(MatchLifecycleEvent.Type.STARTED, match, null, null);
     }
 
@@ -616,6 +624,78 @@ public final class MatchEngineService implements ManagedService, Listener {
 
     private void fire(MatchLifecycleEvent.Type type, GameMatch match, GameParticipant participant, String team) {
         Bukkit.getPluginManager().callEvent(new MatchLifecycleEvent(type, match, participant, team));
+    }
+
+    private String message(String path, String fallback, String... tokens) {
+        return org.bukkit.ChatColor.translateAlternateColorCodes('&',
+            MatchMessageTemplates.format(plugin.getConfig().getString(path, fallback), tokens));
+    }
+
+    private void announce(GameMatch match, String path, String fallback, String... tokens) {
+        broadcast(match, message(path, fallback, tokens));
+    }
+
+    /** Get the killer before prepareValidDeath consumes recent combat attribution. */
+    private Player deathKiller(Player victim, GameMatch match, GameParticipant participant) {
+        Player direct = victim.getKiller();
+        if (validKiller(direct, match, participant)) return direct;
+        RecentAttacker previous = lastAttackers.get(victim.getUniqueId());
+        if (previous == null || !previous.matchId.equals(match.getId())
+                || System.currentTimeMillis() - previous.atMillis > 15000L) return null;
+        Player recent = Bukkit.getPlayer(previous.attackerId);
+        return validKiller(recent, match, participant) ? recent : null;
+    }
+
+    private String deathReason(DamageCause cause) {
+        if (cause == null) return "generic";
+        switch (cause) {
+            case VOID: return "void";
+            case FALL: return "fall";
+            case FIRE: case FIRE_TICK: return "fire";
+            case LAVA: return "lava";
+            case DROWNING: return "drowning";
+            case BLOCK_EXPLOSION: case ENTITY_EXPLOSION: return "explosion";
+            case PROJECTILE: return "projectile";
+            case ENTITY_ATTACK: return "combat";
+            default: return "generic";
+        }
+    }
+
+    private void announcePlayerDeath(GameMatch match, Player victim, GameParticipant participant) {
+        DamageCause cause = victim.getLastDamageCause() == null ? null
+            : victim.getLastDamageCause().getCause();
+        String reason = deathReason(cause);
+        Player killer = deathKiller(victim, match, participant);
+        boolean finalKill = !match.getTeam(participant.getTeamId()).isBedAlive();
+        String key = MatchMessageTemplates.deathKey(reason, killer != null, finalKill);
+        String fallback;
+        if ("void".equals(reason)) {
+            fallback = killer == null ? "&7{player} &7caiu no void."
+                : "&7{player} &7foi derrubado no void por &e{killer}&7.";
+        } else if ("fall".equals(reason)) {
+            fallback = killer == null ? "&7{player} &7morreu de queda."
+                : "&7{player} &7foi derrubado por &e{killer}&7.";
+        } else if ("fire".equals(reason) || "lava".equals(reason)) {
+            fallback = "&7{player} &7morreu queimado.";
+        } else if ("drowning".equals(reason)) {
+            fallback = "&7{player} &7se afogou.";
+        } else if ("explosion".equals(reason)) {
+            fallback = killer == null ? "&7{player} &7foi explodido."
+                : "&7{player} &7foi explodido por &e{killer}&7.";
+        } else {
+            fallback = killer == null ? "&7{player} &7morreu."
+                : "&7{player} &7foi eliminado por &e{killer}&7.";
+        }
+        // Non-duplicated final-kill suffix with configurable overrides.
+        String selected = plugin.getConfig().getString(key);
+        if (selected == null) {
+            String nonfinal = MatchMessageTemplates.deathKey(reason, killer != null, false);
+            selected = plugin.getConfig().getString(nonfinal, fallback);
+            if (finalKill) selected += " &b&lABATE FINAL!";
+        }
+        broadcast(match, org.bukkit.ChatColor.translateAlternateColorCodes('&',
+            MatchMessageTemplates.format(selected, "player", victim.getName(),
+                "killer", killer == null ? "" : killer.getName())));
     }
 
     private void broadcast(GameMatch match, String message) {
@@ -805,6 +885,8 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (match == null || match.getState() != MatchState.IN_GAME) return;
         GameParticipant participant = match.getParticipant(player.getUniqueId());
         if (participant == null || participant.getState() != ParticipantState.CONNECTED) return;
+        event.setDeathMessage(null); // Prevent duplicate server-wide vanilla death broadcasts.
+        announcePlayerDeath(match, player, participant);
         event.getDrops().clear();
         event.setDroppedExp(0);
         event.setKeepInventory(true);
@@ -1010,9 +1092,12 @@ public final class MatchEngineService implements ManagedService, Listener {
             }
             return;
         }
-        if (!bedTeam.isBedAlive() || participant.getTeamId().equals(bedTeam.getDefinition().getId())) {
+        if (participant.getTeamId().equals(bedTeam.getDefinition().getId())) {
+            player.sendMessage(message("messages.own-bed",
+                "&cVoce nao pode destruir sua propria cama!"));
             return;
         }
+        if (!bedTeam.isBedAlive()) return;
         if (!match.destroyBed(bedTeam.getDefinition().getId())) return;
         removeBedBlocks(block, bedTeam.getDefinition().getBed());
         fire(MatchLifecycleEvent.Type.BED_DESTROYED, match, participant,
