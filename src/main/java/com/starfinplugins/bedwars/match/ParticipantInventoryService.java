@@ -53,7 +53,9 @@ public final class ParticipantInventoryService implements ManagedService, Listen
                 && event.getParticipant() != null) {
             Player player = Bukkit.getPlayer(event.getParticipant().getPlayerId());
             if (player != null && !snapshots.containsKey(player.getUniqueId())) {
-                snapshots.put(player.getUniqueId(), new Snapshot(player));
+                capture(player);
+                prepare(player);
+            } else if (player != null) {
                 prepare(player);
             }
         } else if (event.getType() == MatchLifecycleEvent.Type.SPAWN_OPENING) {
@@ -74,6 +76,17 @@ public final class ParticipantInventoryService implements ManagedService, Listen
                 if (player != null) restore(participant.getPlayerId(), player);
             }
         }
+    }
+
+    /** Called before the engine switches CREATIVE/SPECTATOR to SURVIVAL. */
+    public void capture(Player player) {
+        if (player != null && !snapshots.containsKey(player.getUniqueId())) {
+            snapshots.put(player.getUniqueId(), new Snapshot(player));
+        }
+    }
+
+    public void discardCapture(UUID playerId) {
+        snapshots.remove(playerId);
     }
 
     @EventHandler
@@ -104,6 +117,8 @@ public final class ParticipantInventoryService implements ManagedService, Listen
         player.setFireTicks(0);
         player.setFlying(false);
         player.setAllowFlight(false);
+        player.setFlySpeed(0.1f);
+        player.setWalkSpeed(0.2f);
         player.setExp(0.0f);
         player.setLevel(0);
         player.setTotalExperience(0);
@@ -130,6 +145,8 @@ public final class ParticipantInventoryService implements ManagedService, Listen
         player.setFireTicks(snapshot.fireTicks);
         player.setAllowFlight(snapshot.allowFlight);
         if (snapshot.allowFlight) player.setFlying(snapshot.flying);
+        player.setFlySpeed(snapshot.flySpeed);
+        player.setWalkSpeed(snapshot.walkSpeed);
         double health = Math.max(0.5, Math.min(snapshot.health, player.getMaxHealth()));
         player.setHealth(health);
     }
@@ -156,6 +173,8 @@ public final class ParticipantInventoryService implements ManagedService, Listen
         private final double health;
         private final boolean allowFlight;
         private final boolean flying;
+        private final float flySpeed;
+        private final float walkSpeed;
         private final Collection<PotionEffect> effects = new ArrayList<PotionEffect>();
 
         private Snapshot(Player player) {
@@ -172,6 +191,8 @@ public final class ParticipantInventoryService implements ManagedService, Listen
             health = player.getHealth();
             allowFlight = player.getAllowFlight();
             flying = player.isFlying();
+            flySpeed = player.getFlySpeed();
+            walkSpeed = player.getWalkSpeed();
             for (PotionEffect effect : player.getActivePotionEffects()) {
                 effects.add(new PotionEffect(effect.getType(), effect.getDuration(),
                     effect.getAmplifier(), effect.isAmbient()));

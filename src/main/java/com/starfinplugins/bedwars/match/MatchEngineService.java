@@ -90,10 +90,14 @@ public final class MatchEngineService implements ManagedService, Listener {
     private boolean started;
     private ReconnectService reconnect;
     private MatchEquipmentService equipment;
+    private ParticipantInventoryService participantInventory;
     private final Map<UUID, RecentAttacker> lastAttackers = new HashMap<UUID, RecentAttacker>();
 
     public void setReconnect(ReconnectService reconnect) { this.reconnect = reconnect; }
     public void setEquipment(MatchEquipmentService equipment) { this.equipment = equipment; }
+    public void setParticipantInventory(ParticipantInventoryService inventory) {
+        this.participantInventory = inventory;
+    }
 
     public MatchEngineService(Plugin plugin, ArenaService arenas, int respawnSeconds) {
         this(plugin, arenas, respawnSeconds, 10);
@@ -338,11 +342,15 @@ public final class MatchEngineService implements ManagedService, Listener {
         GameParticipant participant = match.getParticipant(player.getUniqueId());
         World world = matchWorlds.get(match.getId());
         Location spawn = arenas.toLocation(match.getArena().getLobby(), world);
+        if (participantInventory != null) participantInventory.capture(player);
         player.setGameMode(GameMode.SURVIVAL);
         if (!player.teleport(spawn)) {
             match.removeWaitingParticipant(player.getUniqueId());
             byPlayer.remove(player.getUniqueId());
             teleportToReturn(player);
+            if (participantInventory != null) {
+                participantInventory.discardCapture(player.getUniqueId());
+            }
             throw new IllegalStateException("O servidor recusou o teleporte para a arena.");
         }
         fire(MatchLifecycleEvent.Type.PLAYER_JOINED, match, participant, participant.getTeamId());
@@ -1794,9 +1802,10 @@ public final class MatchEngineService implements ManagedService, Listener {
         @Override
         public void complete(World world, Exception error) {
             loading.remove(arena.getId());
-            if (error != null) {
-                firstPlayer.sendMessage("§cFalha ao preparar arena: " + error.getMessage());
-                plugin.getLogger().warning("Falha ao preparar arena " + arena.getId() + ": " + error.getMessage());
+            if (error != null || world == null) {
+                String reason = error == null ? "instancia nao carregada" : error.getMessage();
+                firstPlayer.sendMessage("§cFalha ao preparar arena: " + reason);
+                plugin.getLogger().warning("Falha ao preparar arena " + arena.getId() + ": " + reason);
                 return;
             }
             if (!arena.isEnabled() || byArena.containsKey(arena.getId())) {

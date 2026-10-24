@@ -100,6 +100,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             menus.setSetupWizard(setupWizard);
             arenaService.setMatchEngine(matchEngine);
             participantInventory = new ParticipantInventoryService(this, matchEngine);
+            matchEngine.setParticipantInventory(participantInventory);
             generators = new ResourceGeneratorService(this, arenaService, matchEngine);
             generators.setMobGuard(mobGuard);
             presentation = new MatchPresentationService(this, matchEngine, generators);
