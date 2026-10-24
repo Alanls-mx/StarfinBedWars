@@ -181,6 +181,8 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     public MatchEngineService getMatchEngine() {
         return matchEngine;
     }
+
+    public MatchPointService getMatchPoint() { return matchPoint; }
     public ReconnectService getReconnect() { return reconnect; }
     public MatchChatService getMatchChat() { return matchChat; }
 
