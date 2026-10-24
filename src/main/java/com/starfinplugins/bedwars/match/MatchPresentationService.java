@@ -110,7 +110,27 @@ public final class MatchPresentationService implements ManagedService, Listener 
                     "&cContagem cancelada: aguardando mais jogadores."));
                 break;
             case STARTED:
-                // The engine broadcasts the unique start message. Avoid double chat.
+                // The engine owns the single start announcement. Presentation provides
+                // only the configurable onboarding tutorial, once per match start.
+                java.util.List<String> tutorial = plugin.getConfig()
+                    .getStringList("messages.start-tutorial");
+                if (tutorial.isEmpty()) {
+                    tutorial = java.util.Arrays.asList(
+                        "&8&m--------------------------------",
+                        "&e&lBED WARS &7- &fProteja sua cama e destrua as inimigas.",
+                        "&7Colete recursos, compre itens e melhore sua equipe.",
+                        "&8&m--------------------------------");
+                }
+                for (GameParticipant member : event.getMatch().getParticipantList()) {
+                    Player viewer = Bukkit.getPlayer(member.getPlayerId());
+                    if (viewer == null || !viewer.isOnline()
+                            || viewer.getWorld() != matches.getWorld(event.getMatch().getId())) continue;
+                    for (String line : tutorial) {
+                        viewer.sendMessage(ChatColor.translateAlternateColorCodes('&',
+                            MatchMessageTemplates.format(line,
+                                "arena", event.getMatch().getArena().getDisplayName())));
+                    }
+                }
                 break;
             case BED_DESTROYED:
                 notifyBedDestroyed(event);
