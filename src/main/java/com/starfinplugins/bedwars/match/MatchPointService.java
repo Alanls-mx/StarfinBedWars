@@ -112,8 +112,8 @@ public final class MatchPointService implements ManagedService, Listener {
         if (world == null || matches.getMatchForArena(match.getArena().getId()) != match) {
             return ForceResult.NO_WORLD;
         }
-        ArenaRegion bounds = match.getArena().getBounds();
-        if (bounds == null) bounds = match.getArena().getRegion(ArenaRegionType.MAIN);
+        ArenaRegion bounds = match.getArena().getRegion(ArenaRegionType.MAIN);
+        if (bounds == null) bounds = match.getArena().getBounds();
         if (bounds == null) return ForceResult.INVALID_ARENA;
 
         Active active = sessions.get(match.getId());
@@ -165,8 +165,8 @@ public final class MatchPointService implements ManagedService, Listener {
 
     private void activate(Active active, World world) {
         GameMatch match = active.match;
-        ArenaRegion bounds = match.getArena().getBounds();
-        if (bounds == null) bounds = match.getArena().getRegion(ArenaRegionType.MAIN);
+        ArenaRegion bounds = match.getArena().getRegion(ArenaRegionType.MAIN);
+        if (bounds == null) bounds = match.getArena().getBounds();
         if (bounds == null) {
             plugin.getLogger().warning("Match Point sem limites de arena: "
                 + match.getArena().getId());
@@ -186,10 +186,17 @@ public final class MatchPointService implements ManagedService, Listener {
         }
         int baseY = (count == 0 ? 85 : sumY / count)
             + plugin.getConfig().getInt("match-point.dragon-height-offset", 3);
-        active.path = new MatchPointPath(bounds,
-            match.getArena().getCeilingHeight(), baseY, islands);
+        active.route = new MatchPointPatrolRoute(bounds,
+            match.getArena().getCeilingHeight(), baseY,
+            plugin.getConfig().getInt("match-point.dragon-patrol-spacing", 40));
+        plugin.getLogger().info("Match Point: rota pos1/pos2 na arena "
+            + match.getArena().getId() + " entre X=" + bounds.getMinimumX()
+            + ".." + bounds.getMaximumX() + " Y=" + bounds.getMinimumY()
+            + ".." + bounds.getMaximumY() + " Z=" + bounds.getMinimumZ()
+            + ".." + bounds.getMaximumZ() + " (" + active.route.size()
+            + " pontos de voo).");
         try {
-            double[] point = active.path.at(0.0D);
+            double[] point = active.route.at(0);
             Location location = new Location(world, point[0], point[1], point[2]);
             Entity entity = mobGuard.spawnAuthorized(location, EntityType.ENDER_DRAGON);
             if (!(entity instanceof EnderDragon)) {
@@ -231,22 +238,20 @@ public final class MatchPointService implements ManagedService, Listener {
         // is examined, even if nobody is near it or the dragon has despawned.
         erodeEntireArena(active, world);
         EnderDragon dragon = active.dragon;
-        if (dragon == null || !dragon.isValid() || dragon.isDead() || active.path == null) return;
+        if (dragon == null || !dragon.isValid() || dragon.isDead() || active.route == null) return;
 
         // Move toward a sequence of waypoints using the dragon's OWN 1.8.8
         // flight AI. No periodic teleport, no forced rotation, no broken
         // history of body/head/tail positions.
-        double[] point = active.path.at(active.angle);
+        double[] point = active.route.at(active.waypointIndex);
         Location waypoint = new Location(world, point[0], point[1], point[2]);
-        double reach = Math.max(10.0D, Math.min(20.0D,
+        double reach = Math.max(8.0D, Math.min(24.0D,
             plugin.getConfig().getDouble("match-point.dragon-waypoint-reach", 14.0D)));
         if (dragon.getLocation().distanceSquared(waypoint) <= reach * reach
-                || ++active.waypointTicks > 160) {
-            double increment = Math.max(0.03D, Math.min(0.20D,
-                plugin.getConfig().getDouble("match-point.dragon-angular-speed", 0.065D)));
-            active.angle = (active.angle + increment * 4.0D) % (Math.PI * 2.0D);
+                || ++active.waypointTicks > 220) {
+            active.waypointIndex = (active.waypointIndex + 1) % active.route.size();
             active.waypointTicks = 0;
-            point = active.path.at(active.angle);
+            point = active.route.at(active.waypointIndex);
             waypoint = new Location(world, point[0], point[1], point[2]);
         }
         try {
@@ -273,8 +278,8 @@ public final class MatchPointService implements ManagedService, Listener {
      */
     private void destroyNearby(Active active, Location point) {
         if (ticks % 20L != 0L) return;
-        ArenaRegion bounds = active.match.getArena().getBounds();
-        if (bounds == null) bounds = active.match.getArena().getRegion(ArenaRegionType.MAIN);
+        ArenaRegion bounds = active.match.getArena().getRegion(ArenaRegionType.MAIN);
+        if (bounds == null) bounds = active.match.getArena().getBounds();
         if (bounds == null) return;
         int limit = Math.max(1, Math.min(35,
             plugin.getConfig().getInt("match-point.blocks-per-sweep", 18)));
@@ -431,9 +436,9 @@ public final class MatchPointService implements ManagedService, Listener {
     private static final class Active {
         private final GameMatch match;
         private boolean triggered;
-        private double angle;
+        private int waypointIndex;
         private int waypointTicks;
-        private MatchPointPath path;
+        private MatchPointPatrolRoute route;
         private EnderDragon dragon;
         private MatchPointErosionCursor erosion;
         private int lastErosionReport;
