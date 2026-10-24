@@ -91,7 +91,8 @@ public final class MatchPointService implements ManagedService, Listener {
     public void onLifecycle(MatchLifecycleEvent event) {
         final GameMatch match = event.getMatch();
         if (event.getType() == MatchLifecycleEvent.Type.STARTED) {
-            if (plugin.getConfig().getBoolean("match-point.enabled", true)) {
+            if (plugin.getConfig().getBoolean("match-point.enabled", true)
+                    && !sessions.containsKey(match.getId())) {
                 sessions.put(match.getId(), new Active(match));
             }
         } else if (event.getType() == MatchLifecycleEvent.Type.ENDED
@@ -168,22 +169,40 @@ public final class MatchPointService implements ManagedService, Listener {
                 continue;
             }
             World world = matches.getWorld(match.getId());
-            if (world == null) continue;
-            if (!active.triggered) {
-                // The flight controller runs every tick for smooth animation;
-                // Match Point timing only needs a check once per second.
-                if (ticks % 20L != 0L) continue;
-                long threshold = Math.max(1L, Math.min(120L,
-                    plugin.getConfig().getLong("match-point.after-minutes", 30L))) * 60000L;
-                if (match.getStartedAt() == null || System.currentTimeMillis()
-                        - match.getStartedAt().toEpochMilli() < threshold) continue;
-                ForceResult result = forceMatchPoint(match);
-                if (result == ForceResult.FAILED || result == ForceResult.INVALID_ARENA) {
-                    plugin.getLogger().warning("Match Point nao ativado em "
-                        + match.getArena().getId() + ": " + result);
+            if (world == null || matches.getMatchForArena(match.getArena().getId()) != match) {
+                removeDragon(active);
+                it.remove();
+                continue;
+            }
+            try {
+                if (!active.triggered) {
+                    // The flight controller runs every tick for smooth animation;
+                    // Match Point timing only needs a check once per second.
+                    if (ticks % 20L != 0L) continue;
+                    long threshold = Math.max(1L, Math.min(120L,
+                        plugin.getConfig().getLong("match-point.after-minutes", 30L))) * 60000L;
+                    if (match.getStartedAt() == null || System.currentTimeMillis()
+                            - match.getStartedAt().toEpochMilli() < threshold) continue;
+                    ForceResult result = forceMatchPoint(match);
+                    if (result == ForceResult.FAILED || result == ForceResult.INVALID_ARENA) {
+                        plugin.getLogger().warning("Match Point nao ativado em "
+                            + match.getArena().getId() + ": " + result);
+                    }
+                } else {
+                    advance(active, world);
+                    if (active.dragon == null || !active.dragon.isValid() || active.dragon.isDead()) {
+                        plugin.getLogger().warning("Match Point encerrado sem confirmar a meta em "
+                            + match.getArena().getId() + ": dragao indisponivel.");
+                        removeDragon(active);
+                        it.remove();
+                    }
                 }
-            } else {
-                advance(active, world);
+            } catch (RuntimeException failure) {
+                plugin.getLogger().log(java.util.logging.Level.SEVERE,
+                    "Match Point interrompido em " + match.getArena().getId()
+                        + "; outras partidas continuam. Meta nao confirmada.", failure);
+                removeDragon(active);
+                it.remove();
             }
         }
         if (ticks % 10L == 0L) syncBossBars();
@@ -202,7 +221,8 @@ public final class MatchPointService implements ManagedService, Listener {
             World world = matches.getWorld(active.match.getId());
             if (world == null) continue;
             for (Player player : world.getPlayers()) {
-                if (!player.isOnline()) continue;
+                if (!player.isOnline()
+                        || matches.getMatchForPlayer(player.getUniqueId()) != active.match) continue;
                 eligible.add(player.getUniqueId());
                 try {
                     bossBars.update(player, ChatColor.DARK_PURPLE + "" + ChatColor.BOLD + "MATCH POINT");
@@ -293,6 +313,12 @@ public final class MatchPointService implements ManagedService, Listener {
     private void advance(Active active, World world) {
         EnderDragon dragon = active.dragon;
         if (dragon == null || !dragon.isValid() || dragon.isDead() || active.route == null) return;
+        if (!ownsWorld(active, world) || dragon.getWorld() != world) {
+            plugin.getLogger().severe("Match Point interrompido: dragao fora da instancia de "
+                + active.match.getArena().getId());
+            removeDragon(active);
+            return;
+        }
 
         // Follow successive diagonal waypoints across MAIN, alternating the
         // two arms of an X instead of sweeping the map as a grid.
@@ -414,11 +440,10 @@ public final class MatchPointService implements ManagedService, Listener {
                     || ceilingY < floorY) continue;
             int cx = x >> 4, cz = z >> 4;
             if (!world.isChunkLoaded(cx, cz)) {
-                if (loadedChunks >= 2 || !world.loadChunk(cx, cz, false)) {
+                if (loadedChunks++ >= 2 || !loadExistingChunk(world, cx, cz)) {
                     unloadedChunks++;
                     continue;
                 }
-                loadedChunks++;
             }
             examinedColumns++;
             // getHighestBlockYAt was returning AIR above floating islands.
@@ -511,18 +536,18 @@ public final class MatchPointService implements ManagedService, Listener {
         Location lightningAt = null;
         int lightningCoreRemoved = 0;
         int loadedChunks = 0;
+        map.beginRemovalBatch();
         for (; done < cap; done++) {
             MatchPointMapIndex.Cell cell = map.consumeNearest(dragon.getX(), dragon.getZ());
             if (cell == null) break;
             if (!world.isChunkLoaded(cell.x >> 4, cell.z >> 4)) {
-                if (loadedChunks >= 2 || !world.loadChunk(cell.x >> 4, cell.z >> 4, false)) {
+                if (loadedChunks++ >= 2 || !loadExistingChunk(world, cell.x >> 4, cell.z >> 4)) {
                     // Retry next tick: a block we cannot inspect MUST NOT
                     // count toward the 80/100 percent goal.
                     map.retryLast(cell);
                     active.failedRemovals++;
-                    break;
+                    continue;
                 }
-                loadedChunks++;
             }
             Block block = world.getBlockAt(cell.x, cell.y, cell.z);
             boolean alreadyAir = block.getType() == Material.AIR;
@@ -542,7 +567,7 @@ public final class MatchPointService implements ManagedService, Listener {
                 // remains in its original indexed position.
                 map.retryLast(cell);
                 active.failedRemovals++;
-                break;
+                continue;
             }
         }
         active.scheduledRemoved += removed;
@@ -571,11 +596,12 @@ public final class MatchPointService implements ManagedService, Listener {
             long processed = map.getConsumed();
             int progress = (int) (100L * processed / map.getTotalBlocks());
             plugin.getLogger().info("Match Point [" + active.match.getArena().getId() + "]: "
-                + progress + "% de " + map.getTotalBlocks() + " blocos originais processados"
+                + progress + "% de " + map.getTotalBlocks() + " blocos indexados processados"
                 + " (meta " + target + "), " + active.scheduledRemoved
                 + " removidos/ja destruidos, " + active.failedRemovals
                 + " tentativas inacessiveis; " + active.lightningDestroyed
-                + " blocos atingidos diretamente por raios.");
+                + " blocos atingidos diretamente por raios; "
+                + map.getInaccessibleChunks() + " chunks fora da cobertura.");
             if (elapsed >= active.demolition.getCompleteMillis()
                     && processed < map.getTotalBlocks()) {
                 plugin.getLogger().warning("Match Point atrasado: aumente "
@@ -618,14 +644,31 @@ public final class MatchPointService implements ManagedService, Listener {
 
     /** Erase only disposable match-instance blocks, never bedrock. */
     private boolean eraseBlock(Active active, Block block) {
+        if (!ownsWorld(active, block.getWorld()) || active.area == null
+                || block.getX() < active.area.getMinimumX() || block.getX() > active.area.getMaximumX()
+                || block.getY() < active.area.getMinimumY() || block.getY() > active.area.getMaximumY()
+                || block.getZ() < active.area.getMinimumZ() || block.getZ() > active.area.getMaximumZ()) return false;
         Material material = block.getType();
         if (material == Material.AIR || material == Material.BEDROCK) return false;
-        matches.forgetMatchPointBlock(active.match, block);
         block.setType(Material.AIR, false);
-        return block.getType() == Material.AIR;
+        if (block.getType() != Material.AIR) return false;
+        matches.forgetMatchPointBlock(active.match, block);
+        return true;
+    }
+
+    private boolean ownsWorld(Active active, World world) {
+        return world != null && active.match.getState() == MatchState.IN_GAME
+            && matches.getWorld(active.match.getId()) == world
+            && matches.getMatchForArena(active.match.getArena().getId()) == active.match;
+    }
+
+    private boolean loadExistingChunk(World world, int x, int z) {
+        try { return world.loadChunk(x, z, false); }
+        catch (RuntimeException failure) { return false; }
     }
 
     private void damageNearby(Active active, Location center) {
+        if (!ownsWorld(active, center.getWorld())) return;
         if (ticks % 20L != 0L) return;
         double radius = Math.max(2.0D, Math.min(9.0D,
             plugin.getConfig().getDouble("match-point.dragon-damage-radius", 5.0D)));

@@ -3,6 +3,9 @@ package com.starfinplugins.bedwars.match;
 import com.starfinplugins.bedwars.domain.arena.ArenaRegion;
 import com.starfinplugins.bedwars.domain.arena.Position;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -33,6 +36,7 @@ public final class MatchPointMapIndex {
     private boolean finished;
     private Bucket preferredBucket;
     private int preferredCount;
+    private final Set<Bucket> deferred = new HashSet<Bucket>();
 
     public MatchPointMapIndex(ArenaRegion area) {
         if (area == null) throw new IllegalArgumentException("Area MAIN ausente.");
@@ -98,7 +102,6 @@ public final class MatchPointMapIndex {
             inspections++;
             if (--y < area.getMinimumY()) advanceColumn();
         }
-        if (finished) for (Bucket bucket : buckets.values()) bucket.shuffle();
         return finished;
     }
 
@@ -138,6 +141,9 @@ public final class MatchPointMapIndex {
      */
     private Cell lastConsumed;
 
+    /** Failed chunks become eligible again on the next bounded server tick. */
+    public void beginRemovalBatch() { deferred.clear(); }
+
     public Cell consumeNearest(double dragonX, double dragonZ) {
         if (!finished) return null;
         if (preferredBucket == null || preferredBucket.isEmpty() || preferredCount >= 64) {
@@ -145,7 +151,7 @@ public final class MatchPointMapIndex {
             preferredCount = 0;
             double best = Double.POSITIVE_INFINITY;
             for (Bucket bucket : buckets.values()) {
-                if (bucket.isEmpty()) continue;
+                if (bucket.isEmpty() || deferred.contains(bucket)) continue;
                 double dx = bucket.centerX() - dragonX;
                 double dz = bucket.centerZ() - dragonZ;
                 double distance = dx * dx + dz * dz;
@@ -165,8 +171,10 @@ public final class MatchPointMapIndex {
     /** Requeue an inaccessible block instead of counting it as destroyed. */
     public void retryLast(Cell cell) {
         if (cell == null || cell != lastConsumed || preferredBucket == null) return;
-        preferredBucket.rewind();
-        preferredCount--;
+        preferredBucket.restore(cell);
+        deferred.add(preferredBucket);
+        preferredBucket = null;
+        preferredCount = 0;
         consumed--;
         lastConsumed = null;
     }
@@ -215,22 +223,37 @@ public final class MatchPointMapIndex {
 
     private static final class Bucket {
         private final int cx, cz;
-        private final List<Cell> samples = new ArrayList<Cell>();
+        // Packed local X/Z and world Y: at most 256 KiB per full chunk,
+        // instead of one object and reference for every solid block.
+        private int[] samples = new int[64];
+        private final Random random;
         private long sumY;
         private int originalCount;
-        private int cursor;
-        private Bucket(int cx, int cz) { this.cx=cx; this.cz=cz; }
+        private int size;
+        private Bucket(int cx, int cz) {
+            this.cx=cx; this.cz=cz;
+            random = new Random(chunkKey(cx, cz));
+        }
+        private void append(int x, int y, int z) {
+            if (size == samples.length) samples = Arrays.copyOf(samples, size * 2);
+            samples[size++] = (y << 8) | ((z & 15) << 4) | (x & 15);
+        }
         private void add(int x, int y, int z) {
-            samples.add(new Cell(x,y,z));
+            append(x, y, z);
             sumY += y;
             originalCount++;
         }
-        private void shuffle() {
-            Collections.shuffle(samples, new Random(chunkKey(cx,cz)));
+        private boolean isEmpty() { return size == 0; }
+        private Cell poll() {
+            // Incremental Fisher-Yates selection: constant work per removal,
+            // no whole-map shuffle on the tick that finishes the survey.
+            int index = random.nextInt(size);
+            int packed = samples[index];
+            samples[index] = samples[--size];
+            return new Cell((cx << 4) + (packed & 15), packed >>> 8,
+                (cz << 4) + ((packed >>> 4) & 15));
         }
-        private boolean isEmpty() { return cursor == samples.size(); }
-        private Cell poll() { return samples.get(cursor++); }
-        private void rewind() { if (cursor > 0) cursor--; }
+        private void restore(Cell cell) { append(cell.x, cell.y, cell.z); }
         private double centerX() { return cx * 16.0D + 8.0D; }
         private double centerZ() { return cz * 16.0D + 8.0D; }
         private double averageY() { return originalCount == 0 ? 80.0D : sumY/(double)originalCount; }

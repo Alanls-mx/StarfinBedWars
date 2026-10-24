@@ -63,8 +63,53 @@ public class MatchPointMapIndexTest {
         assertEquals(1L,index.getConsumed());
         index.retryLast(cell);
         assertEquals(0L,index.getConsumed());
+        assertNull(index.consumeNearest(0,0));
+        index.beginRemovalBatch();
         assertNotNull(index.consumeNearest(0,0));
         assertEquals(1L,index.getConsumed());
+    }
+
+    @Test public void inaccessibleChunkDoesNotStarveOtherChunks() {
+        Map<String,Integer> blocks = new HashMap<String,Integer>();
+        blocks.put(key(-16,70,-16), 1);
+        blocks.put(key(16,70,16), 1);
+        MatchPointMapIndex index = new MatchPointMapIndex(
+            new ArenaRegion("map",-16,70,-16,16,70,16));
+        while (!index.survey(proxyWorld(blocks), 100)) { }
+        index.beginRemovalBatch();
+        MatchPointMapIndex.Cell blocked = index.consumeNearest(-16,-16);
+        assertEquals(-16, blocked.x);
+        assertEquals(-16, blocked.z);
+        index.retryLast(blocked);
+        index.retryLast(blocked);
+        assertEquals(0L, index.getConsumed());
+        MatchPointMapIndex.Cell accessible = index.consumeNearest(-16,-16);
+        assertEquals(16, accessible.x);
+        assertEquals(70, accessible.y);
+        assertEquals(1L, index.getConsumed());
+        assertNull(index.consumeNearest(-16,-16));
+        index.beginRemovalBatch();
+        assertEquals(-16, index.consumeNearest(0,0).x);
+        assertEquals(2L, index.getConsumed());
+        assertNull(index.consumeNearest(0,0));
+    }
+
+    @Test public void denseChunkConsumesEveryCoordinateExactlyOnce() {
+        Map<String,Integer> blocks = new HashMap<String,Integer>();
+        for (int x=-16; x<0; x++) for (int z=-16; z<0; z++) {
+            blocks.put(key(x,0,z),1);
+            blocks.put(key(x,255,z),1);
+        }
+        MatchPointMapIndex index = new MatchPointMapIndex(
+            new ArenaRegion("map",-16,0,-16,-1,255,-1));
+        while (!index.survey(proxyWorld(blocks), 300)) { }
+        java.util.Set<String> seen = new java.util.HashSet<String>();
+        MatchPointMapIndex.Cell cell;
+        while ((cell=index.consumeNearest(0,0)) != null) {
+            assertTrue(seen.add(key(cell.x,cell.y,cell.z)));
+        }
+        assertEquals(blocks.keySet(),seen);
+        assertEquals(512L,index.getConsumed());
     }
 
     private static String key(int x,int y,int z) { return x+":"+y+":"+z; }
