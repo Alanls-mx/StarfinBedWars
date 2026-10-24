@@ -115,3 +115,30 @@ A loja Starfin usa 54 slots e o slot 49 era o botao de Favoritos.
 7. Tentar quebrar cama da propria equipe com clique esquerdo e direito; confirmar aviso e bloco intacto.
 8. Confirmar que o chat de inicio nao esta duplicado e que tutorial/titles aparecem somente na fase correta.
 9. Confirmar migracao preservando `messages.own-bed` e outras mensagens personalizadas.
+
+## Correcao de regressao: clique nas categorias sem resultado
+
+Relato: a loja abre, mas clicar em Armaduras, Espadas e outras categorias nao altera os itens exibidos.
+
+Causa provavel identificada na revisao estatica: `refreshLater()` usava
+`player.getOpenInventory().getTopInventory() != menu.getInventory()`.
+Bukkit/Spigot pode expor wrappers diferentes de `Inventory` para a mesma
+janela; a comparacao de referencia causava `return` silencioso, descartando
+o clique mesmo com `InventoryClickEvent` processado.
+
+Mudancas:
+- A navegacao atualiza exclusivamente a instancia de `ClassicShopMenu`
+  associada ao clique, sem depender da igualdade de objetos `Inventory`.
+- A funcao auxiliar `ShopInventoryGuard` compara tamanho e `InventoryHolder`
+  para operacoes que exigem saber qual janela o jogador esta visualizando,
+  como fechar a loja; teste JUnit com wrappers diferentes.
+- Atualizacoes sao agendadas ao proximo tick e nao abrem nova janela.
+- Removido `player.updateInventory()` das atualizacoes das categorias;
+  atualizacoes dos slots da janela sao responsabilidade do Bukkit.
+- Quando `general.debug: true`, o log inclui `[Shop] Categoria clicada`
+  e `[Shop] Categoria exibida`. Excecoes de renderizacao sao registradas.
+
+**Pendente:** compilar com `mvn -B verify` e testar no cliente PaperSpigot
+1.8.8. Abrir Shop, clicar Armaduras, Espadas, Ferramentas, Blocos,
+Utilitarios e Especiais, editar favoritos, mudar pagina e comprar. Confirmar
+que a GUI muda sem fechar e que nao reaparece `Index: 49, Size: 45`.
