@@ -19,6 +19,7 @@ import com.starfinplugins.bedwars.upgrades.TeamUpgradeService;
 import com.starfinplugins.bedwars.world.ManagedMobGuard;
 import com.starfinplugins.bedwars.world.SafeLocationResolver;
 import com.starfinplugins.bedwars.shop.npc.ShopNpcFactoryV1_8_R3;
+import com.starfinplugins.bedwars.shop.special.SpecialItemService;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -822,7 +823,7 @@ public final class ShopService implements ManagedService, Listener {
         }
         ItemStack item = new ItemStack(definition.getMaterial(), definition.getAmount(), data);
         upgrades.applyItemUpgrade(match, participant, item);
-        return item;
+        return SpecialItemService.decoratePurchase(definition.getId(), item);
     }
 
     private boolean canFit(Player player, ItemStack product) {
