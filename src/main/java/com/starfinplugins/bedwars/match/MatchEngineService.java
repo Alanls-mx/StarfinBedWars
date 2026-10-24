@@ -85,6 +85,7 @@ public final class MatchEngineService implements ManagedService, Listener {
     private final Map<UUID, Long> fallProtectionUntil = new HashMap<UUID, Long>();
     /** setHealth(0) does not reliably report DamageCause.VOID on Spigot 1.8.8. */
     private final Map<UUID, UUID> forcedVoidDeaths = new HashMap<UUID, UUID>();
+    private final ArenaBoundaryWarnings boundaryWarnings = new ArenaBoundaryWarnings();
     private boolean started;
     private ReconnectService reconnect;
     private MatchEquipmentService equipment;
@@ -130,6 +131,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         respawnTasks.clear();
         fallProtectionUntil.clear();
         forcedVoidDeaths.clear();
+        boundaryWarnings.clear();
         for (GameMatch match : byArena.values()) {
             World world = matchWorlds.get(match.getId());
             if (world != null) {
@@ -555,6 +557,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         for (GameParticipant participant : match.getParticipantList()) {
             cancel(respawnTasks.remove(participant.getPlayerId()));
             fallProtectionUntil.remove(participant.getPlayerId());
+            boundaryWarnings.forget(participant.getPlayerId());
         }
         BukkitTask countdown = countdowns.remove(match.getArena().getId());
         cancel(countdown);
@@ -734,6 +737,7 @@ public final class MatchEngineService implements ManagedService, Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         final Player player = event.getPlayer();
+        boundaryWarnings.forget(player.getUniqueId());
         if (spectators.remove(player.getUniqueId()) != null) {
             returnLocations.remove(player.getUniqueId());
             returnGameModes.remove(player.getUniqueId());
@@ -1420,6 +1424,11 @@ public final class MatchEngineService implements ManagedService, Listener {
             if (!player.isDead() && player.getHealth() > 0.0D) player.setHealth(0.0D);
             return;
         }
+        if (event.getTo().getY() >= arena.getCeilingHeight() - 1.0D) {
+            warnBoundary(player, ArenaBoundaryWarnings.Type.HEIGHT,
+                "messages.boundary-height",
+                "&cVocê atingiu o limite de altura desta arena!");
+        }
         if (event.getTo().getY() >= arena.getCeilingHeight()) {
             Location capped = event.getTo().clone();
             capped.setY(arena.getCeilingHeight() - 0.1D);
@@ -1427,11 +1436,30 @@ public final class MatchEngineService implements ManagedService, Listener {
             return;
         }
         ArenaRegion bounds = arena.getBounds();
-        if (bounds != null && (event.getTo().getBlockX() < bounds.getMinimumX()
-                || event.getTo().getBlockX() > bounds.getMaximumX()
-                || event.getTo().getBlockZ() < bounds.getMinimumZ()
-                || event.getTo().getBlockZ() > bounds.getMaximumZ())) {
-            event.setTo(event.getFrom());
+        if (bounds != null) {
+            Location to = event.getTo();
+            boolean outside = to.getBlockX() < bounds.getMinimumX()
+                || to.getBlockX() > bounds.getMaximumX()
+                || to.getBlockZ() < bounds.getMinimumZ()
+                || to.getBlockZ() > bounds.getMaximumZ();
+            if (outside || ArenaBoundaryWarnings.nearHorizontalEdge(
+                    to.getX(), to.getZ(), bounds.getMinimumX(), bounds.getMaximumX(),
+                    bounds.getMinimumZ(), bounds.getMaximumZ(), 1.25D)) {
+                warnBoundary(player, ArenaBoundaryWarnings.Type.EDGE,
+                    "messages.boundary-edge",
+                    "&cVocê chegou ao limite da arena! Não é possível sair do mapa.");
+            }
+            if (outside) event.setTo(event.getFrom());
+        }
+    }
+
+    private void warnBoundary(Player player, ArenaBoundaryWarnings.Type type,
+                              String path, String defaultMessage) {
+        int seconds = Math.max(1, Math.min(15,
+            plugin.getConfig().getInt("messages.boundary-warning-cooldown-seconds", 4)));
+        if (boundaryWarnings.shouldWarn(player.getUniqueId(), type,
+                System.currentTimeMillis(), seconds * 1000L)) {
+            player.sendMessage(message(path, defaultMessage));
         }
     }
 
