@@ -398,6 +398,8 @@ com duas ilhas alinhadas.
 - `MatchPointPath` nao fica mais achatada com duas ilhas alinhadas:
   mantem trajeto eliptico amplo, distribui distancia nos dois eixos,
   respeita as bordas e reserva margem para o corpo e as asas do dragao.
+  Em mapas com ilhas nos quatro cantos, expande o raio da elipse para
+  passar perto dos spawns em vez de circular longe das ilhas.
 - Altura de voo baseada nos spawns das equipes, com variacao suave no
   eixo vertical dentro do teto configurado e dos limites do mapa.
 - `damageNearby` e `destroyNearby` usam a posicao REAL do dragao,
