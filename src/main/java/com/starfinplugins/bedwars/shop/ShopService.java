@@ -53,6 +53,8 @@ import org.bukkit.event.entity.EntityTargetEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
+import org.bukkit.event.EventPriority;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.SkullMeta;
@@ -73,6 +75,10 @@ public final class ShopService implements ManagedService, Listener {
     private final Map<UUID, Set<String>> spawnedKinds = new HashMap<UUID, Set<String>>();
     private final Map<UUID, Location> npcAnchors = new HashMap<UUID, Location>();
     private final Map<UUID, ArmorStand> npcBodies = new HashMap<UUID, ArmorStand>();
+    /** Entity groups keyed by match and logical shop kind for safe self-repair. */
+    private final Map<UUID, Map<String, List<Entity>>> shopGroups =
+        new HashMap<UUID, Map<String, List<Entity>>>();
+    private int maintenanceTicks;
     private ShopSettings settings;
     private ManagedMobGuard mobGuard;
     private MatchEquipmentService equipment;
@@ -114,6 +120,7 @@ public final class ShopService implements ManagedService, Listener {
         spawnedKinds.clear();
         npcAnchors.clear();
         npcBodies.clear();
+        shopGroups.clear();
         favorites.clear();
     }
 
@@ -192,7 +199,12 @@ public final class ShopService implements ManagedService, Listener {
     private void trySpawnShop(GameMatch match, World world, Position position, Position fallback,
                               String name,
                               String kind, List<Entity> created, Set<String> kinds) {
-        if (kinds.contains(kind)) return;
+        if (kinds.contains(kind)) {
+            Map<String, List<Entity>> groups = shopGroups.get(match.getId());
+            List<Entity> current = groups == null ? null : groups.get(kind);
+            if (isShopGroupHealthy(current)) return;
+            removeShopGroup(match.getId(), kind, created, kinds);
+        }
         if (position == null) {
             if (fallback == null) {
                 plugin.getLogger().warning("NPC sem posicao: arena=" + match.getArena().getId()
@@ -207,6 +219,7 @@ public final class ShopService implements ManagedService, Listener {
         int before = created.size();
         try {
             spawnShop(match, world, position, name, kind, created);
+            rememberShopGroup(match.getId(), kind, created, before);
             kinds.add(kind);
         } catch (RuntimeException error) {
             rollbackCreated(created, before);
@@ -218,6 +231,7 @@ public final class ShopService implements ManagedService, Listener {
             if (fallback != null) {
                 try {
                     spawnShop(match, world, fallback, name, kind, created);
+                    rememberShopGroup(match.getId(), kind, created, before);
                     kinds.add(kind);
                     plugin.getLogger().warning("NPC " + kind
                         + " criado perto do spawn da equipe apos falha no ponto configurado.");
@@ -229,6 +243,42 @@ public final class ShopService implements ManagedService, Listener {
                 }
             }
         }
+    }
+
+    private void rememberShopGroup(UUID matchId, String kind, List<Entity> all, int from) {
+        Map<String, List<Entity>> groups = shopGroups.get(matchId);
+        if (groups == null) {
+            groups = new HashMap<String, List<Entity>>();
+            shopGroups.put(matchId, groups);
+        }
+        groups.put(kind, new ArrayList<Entity>(all.subList(from, all.size())));
+    }
+
+    private boolean isShopGroupHealthy(List<Entity> group) {
+        if (group == null || group.isEmpty()) return false;
+        boolean foundVillager = false;
+        boolean foundBody = false;
+        for (Entity entity : group) {
+            if (entity == null || !entity.isValid() || entity.isDead()) return false;
+            if (entity instanceof Villager) foundVillager = true;
+            if (entity instanceof ArmorStand && !((ArmorStand) entity).isMarker()) foundBody = true;
+        }
+        return foundVillager && foundBody;
+    }
+
+    private void removeShopGroup(UUID matchId, String kind, List<Entity> all, Set<String> kinds) {
+        Map<String, List<Entity>> groups = shopGroups.get(matchId);
+        List<Entity> removed = groups == null ? null : groups.remove(kind);
+        if (removed != null) {
+            for (Entity entity : removed) {
+                all.remove(entity);
+                npcAnchors.remove(entity.getUniqueId());
+                npcBodies.remove(entity.getUniqueId());
+                if (mobGuard != null) mobGuard.forget(entity);
+                if (entity.isValid()) entity.remove();
+            }
+        }
+        kinds.remove(kind);
     }
 
     private void rollbackCreated(List<Entity> created, int before) {
@@ -372,6 +422,7 @@ public final class ShopService implements ManagedService, Listener {
 
     private void removeShops(UUID matchId) {
         spawnedKinds.remove(matchId);
+        shopGroups.remove(matchId);
         List<Entity> entities = shopEntities.remove(matchId);
         if (entities == null) return;
         for (Entity entity : entities) {
@@ -385,6 +436,14 @@ public final class ShopService implements ManagedService, Listener {
     }
 
     private void correctExternalDisplacement() {
+        // Rescan periodically so externally removed or chunk-unloaded NPCs are repaired.
+        if (++maintenanceTicks >= 10) {
+            maintenanceTicks = 0;
+            for (UUID matchId : new ArrayList<UUID>(shopEntities.keySet())) {
+                GameMatch live = matches.getMatch(matchId);
+                if (live != null && live.getState() == MatchState.IN_GAME) spawnShops(live);
+            }
+        }
         for (List<Entity> entities : shopEntities.values()) {
             for (Entity entity : entities) {
                 if (!(entity instanceof Villager) || !entity.isValid()) continue;
@@ -415,6 +474,15 @@ public final class ShopService implements ManagedService, Listener {
                     }
                 }
             }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void onShopArmorStandManipulate(PlayerArmorStandManipulateEvent event) {
+        if (ownedMetadata(event.getRightClicked()) != null) {
+            // These heads and armor pieces belong to the server-side shop display.
+            // Never let vanilla swap them into a player's inventory.
+            event.setCancelled(true);
         }
     }
 
