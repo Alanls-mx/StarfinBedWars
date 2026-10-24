@@ -620,7 +620,9 @@ public final class ShopService implements ManagedService, Listener {
         Player player = (Player) event.getWhoClicked();
         int slot = event.getRawSlot();
         if (slot <= 8 && menu.getCategoryAt(slot) != null) {
-            refreshLater(player, menu, menu.getCategoryAt(slot), 0, menu.isEditing());
+            ClassicShopMenu.Category selected = menu.getCategoryAt(slot);
+            debugShop("Categoria clicada: " + selected + " por " + player.getName());
+            refreshLater(player, menu, selected, 0, menu.isEditing());
             return;
         }
         if (slot == 45 && menu.getPage() > 0) {
@@ -708,6 +710,12 @@ public final class ShopService implements ManagedService, Listener {
      * passed to Player.openInventory(). Check stable InventoryHolder ownership
      * instead of Java object identity of Inventory wrappers.
      */
+    private void debugShop(String text) {
+        if (plugin.getConfig().getBoolean("general.debug", false)) {
+            plugin.getLogger().info("[Shop] " + text);
+        }
+    }
+
     private boolean isViewingMenu(Player player, ClassicShopMenu menu) {
         if (player == null || !player.isOnline() || player.getOpenInventory() == null) {
             return false;
@@ -734,6 +742,8 @@ public final class ShopService implements ManagedService, Listener {
                     // Paper/Spigot exposes a new Inventory wrapper for the same window.
                     menu.refresh(player, settings.getItems().values(), favoritesFor(playerId),
                         category, page, editing, categoryOrder(), categoryIcons());
+                    debugShop("Categoria exibida: " + category + " pagina " + menu.getPage()
+                        + " para " + player.getName() + " itens=" + menu.getEntries().size());
                     // Bukkit delivers item changes to viewers of the same inventory.
                     // Do not call updateInventory(): it resynchronizes the player view.
                 } catch (RuntimeException error) {
