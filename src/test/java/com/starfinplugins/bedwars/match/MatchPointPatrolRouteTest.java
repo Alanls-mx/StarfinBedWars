@@ -3,6 +3,8 @@ package com.starfinplugins.bedwars.match;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import com.starfinplugins.bedwars.domain.arena.ArenaRegion;
+import com.starfinplugins.bedwars.domain.arena.Position;
+import java.util.Arrays;
 import org.junit.Test;
 
 public class MatchPointPatrolRouteTest {
@@ -70,6 +72,29 @@ public class MatchPointPatrolRouteTest {
         assertTrue("Both diagonals must reach the middle of the map", sawCentralCrossing);
         assertTrue("Dragon needs alternating X crossings instead of one pass",
             diagonalDirectionChanges >= 3);
+    }
+
+    @Test public void alternatingXPassesNearTwoAlignedTeamIslands() {
+        ArenaRegion main = new ArenaRegion("world", -140, 50, -140, 140, 155, 140);
+        MatchPointPatrolRoute route = new MatchPointPatrolRoute(
+            main, 155, 106, 40, Arrays.asList(
+                new Position("world", -90, 103, 0, 0, 0),
+                new Position("world", 90, 103, 0, 0, 0)));
+        double nearestLeft = Double.POSITIVE_INFINITY;
+        double nearestRight = Double.POSITIVE_INFINITY;
+        boolean farNorth = false, farSouth = false;
+        for (int index = 0; index < route.size(); index++) {
+            double[] point = route.at(index);
+            nearestLeft = Math.min(nearestLeft,
+                Math.hypot(point[0] + 90.0D, point[2]));
+            nearestRight = Math.min(nearestRight,
+                Math.hypot(point[0] - 90.0D, point[2]));
+            if (point[2] < -100) farNorth = true;
+            if (point[2] > 100) farSouth = true;
+        }
+        assertTrue("Dragon should approach the first team's island", nearestLeft < 12.0D);
+        assertTrue("Dragon should approach the second team's island", nearestRight < 12.0D);
+        assertTrue("The same route must still cover the whole map", farNorth && farSouth);
     }
 
     @Test public void respectsTinyRegionsAndVerticalCeiling() {
