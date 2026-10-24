@@ -82,19 +82,44 @@ public class MatchPointPatrolRouteTest {
                 new Position("world", 90, 103, 0, 0, 0)));
         double nearestLeft = Double.POSITIVE_INFINITY;
         double nearestRight = Double.POSITIVE_INFINITY;
-        boolean farNorth = false, farSouth = false;
+        boolean visitedCenter = false;
+        double farthestNorthSouth = 0.0D;
         for (int index = 0; index < route.size(); index++) {
             double[] point = route.at(index);
             nearestLeft = Math.min(nearestLeft,
                 Math.hypot(point[0] + 90.0D, point[2]));
             nearestRight = Math.min(nearestRight,
                 Math.hypot(point[0] - 90.0D, point[2]));
-            if (point[2] < -100) farNorth = true;
-            if (point[2] > 100) farSouth = true;
+            farthestNorthSouth = Math.max(farthestNorthSouth, Math.abs(point[2]));
+            if (Math.abs(point[0]) < 10 && Math.abs(point[2]) < 10) visitedCenter = true;
         }
         assertTrue("Dragon should approach the first team's island", nearestLeft < 12.0D);
         assertTrue("Dragon should approach the second team's island", nearestRight < 12.0D);
-        assertTrue("The same route must still cover the whole map", farNorth && farSouth);
+        assertTrue("The dragon must fly through the center", visitedCenter);
+        assertTrue("Do not waste a two-team fight in empty map corners",
+            farthestNorthSouth < 30.0D);
+    }
+
+    @Test public void clusteredIslandsTakePriorityOverLargeEmptyBorder() {
+        ArenaRegion main = new ArenaRegion("world", -200, 45, -200, 200, 180, 200);
+        MatchPointPatrolRoute route = new MatchPointPatrolRoute(
+            main, 180, 110, 30, Arrays.asList(
+                new Position("world", -40, 103, -30, 0, 0),
+                new Position("world", 40, 103, 30, 0, 0),
+                new Position("world", -40, 103, 30, 0, 0),
+                new Position("world", 40, 103, -30, 0, 0)));
+        double maxX = 0, maxZ = 0;
+        boolean crossedMiddle = false;
+        for (int i = 0; i < route.size(); i++) {
+            double[] p = route.at(i);
+            maxX = Math.max(maxX, Math.abs(p[0]));
+            maxZ = Math.max(maxZ, Math.abs(p[2]));
+            if (Math.abs(p[0]) < 10 && Math.abs(p[2]) < 10) crossedMiddle = true;
+        }
+        assertTrue("Prioritize the center", crossedMiddle);
+        assertTrue("Route should approach platforms rather than outer border", maxX < 65);
+        assertTrue("Route should approach platforms rather than outer border", maxZ < 55);
+        assertTrue(route.hasIslands());
     }
 
     @Test public void respectsTinyRegionsAndVerticalCeiling() {
