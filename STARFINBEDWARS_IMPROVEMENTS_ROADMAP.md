@@ -419,3 +419,57 @@ naturalmente e visitar todas as ilhas, sem se contorcer. Observar
 destruicao proxima ao dragon, boss bar, danos aos jogadores,
 invulnerabilidade ao acertar a cabeca/asas/cauda, e retornar ao lobby.
 Testar mapas 2/4/8 equipes; nenhuma validacao grafica foi feita neste ambiente.
+
+## Match Point: destruicao GLOBAL progressiva e comemoracao maior
+
+Relato: o dragao voa corretamente, mas a destruicao local (`destroyNearby`,
+max. 18 blocos/s) nao garante que o mapa inteiro desapareca. Tambem foi
+solicitado prolongar um pouco o periodo de fireworks da vitoria.
+
+### Destruicao completa, independente de jogadores
+- Nova `MatchPointErosionCursor` percorre **todas as posicoes X/Y/Z** dentro
+  de `arena.getBounds()` (fallback MAIN) uma unica vez, agrupadas por
+  chunks, de cima para baixo e sem depender de jogadores online/proximos,
+  visao do cliente, IA, posição ou velocidade do EnderDragon.
+- A varredura comeca quando o Match Point e ativado (automaticamente aos
+  30 min ou via `/sbw matchpoint`), depois da criacao do dragao.
+- O dragao continua voando e destruindo blocos proximos, enquanto a
+  nova onda de destruicao global percorre o restante da arena.
+- Configuracao padrao: no maximo **3000 posicoes examinadas por tick** e
+  **40 blocos removidos por tick**, configuraveis em:
+  `match-point.global-erosion.scan-positions-per-tick` (250 a 8000) e
+  `match-point.global-erosion.max-blocks-per-tick` (1 a 120).
+- No maximo **um novo chunk carregado por tick** para evitar picos de
+  carga; chunks que nao puderem ser carregados (ou estiverem ausentes)
+  sao registrados no console e nao sao gerados a partir do nada.
+- Todos os materiais normais sao removidos sem drops, inclusive agua,
+  decoracoes e blocos de jogadores. `BEDROCK` permanece indestrutivel
+  intencionalmente; mundo template jamais e modificado.
+- Registros de blocos de jogadores/Ovo de Ponte sao removidos antes de
+  apagar cada bloco. A varredura termina automaticamente ao visitar toda
+  a regiao, ou e interrompida quando a partida termina. Proxima partida
+  restaura o mapa ao clonar novamente o template original.
+- Progresso 25/50/75/100% registrado nos logs por partida; o percentual
+  e sobre posicoes verificadas, nao uma promessa de quantidade de
+  blocos destruidos.
+- Testes unitarios adicionais verificam cobertura completa, coordenadas
+  negativas, atravessamento de chunks, progressao limitada entre ticks,
+  limites verticais e invalidacao de regioes.
+
+### Celebracao de vitoria estendida
+- Antes: 100 ticks / 5 segundos ate restaurar jogadores ao lobby.
+- Agora: **180 ticks / 9 segundos** para vitoria, configuravel por
+  `match.victory-celebration-seconds` (5 a 20).
+- Empate ou encerramento sem vencedor continua com os antigos 100 ticks.
+- Fogos de artificio ja existentes continuam ate o evento PLAYERS_RETURNED.
+- Migracao adiciona novos defaults sem sobrescrever personalizacoes.
+
+### Validacao obrigatoria e limites
+Nao houve build/teste ao vivo neste ambiente. Executar `mvn -B verify`
+com JDK 8, iniciar partida e `/sbw matchpoint`; observar o dragao
+percorrendo a arena e tambem os setores distantes sendo destruidos
+gradualmente. Testar arena de varias alturas, chunks nao carregados,
+grande volume de blocos, 1 e 2 jogadores ativos, jogadores longe do
+dragao e finalizacao durante a destruicao. Ao iniciar uma nova partida,
+confirmar mapa totalmente restaurado. Verificar celebracao com fireworks
+durante os novos 9 segundos de vitoria.
