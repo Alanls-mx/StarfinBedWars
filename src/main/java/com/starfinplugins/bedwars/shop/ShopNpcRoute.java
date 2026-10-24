@@ -4,17 +4,18 @@ import java.util.UUID;
 
 /**
  * Validated identification of a shop NPC, never inferred from the clicked
- * entity's appearance. Team-specific NPCs cannot be used by other teams.
+ * entity's appearance. The encoded team identifies the island where this NPC
+ * was placed; purchases and upgrades always belong to the visiting player.
  */
 public final class ShopNpcRoute {
     private final UUID matchId;
     private final String kind;
-    private final String teamId;
+    private final String islandTeamId;
 
-    private ShopNpcRoute(UUID matchId, String kind, String teamId) {
+    private ShopNpcRoute(UUID matchId, String kind, String islandTeamId) {
         this.matchId = matchId;
         this.kind = kind;
-        this.teamId = teamId;
+        this.islandTeamId = islandTeamId;
     }
 
     public static ShopNpcRoute parse(String metadata) {
@@ -36,9 +37,15 @@ public final class ShopNpcRoute {
 
     public UUID getMatchId() { return matchId; }
     public boolean isUpgrades() { return "upgrades".equals(kind); }
+    public String getIslandTeamId() { return islandTeamId; }
 
+    /**
+     * Any active team member can use any island shop within the SAME match.
+     * The NPC's islandTeamId must never be passed to upgrade/purchase services:
+     * those services must resolve ownership using the purchasing participant.
+     */
     public boolean canAccess(UUID activeMatchId, String playerTeamId) {
-        return matchId.equals(activeMatchId)
-            && (teamId == null || teamId.equals(playerTeamId));
+        return matchId.equals(activeMatchId) && playerTeamId != null
+            && !playerTeamId.trim().isEmpty();
     }
 }
