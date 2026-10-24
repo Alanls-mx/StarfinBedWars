@@ -48,6 +48,22 @@ public class MatchPointPathTest {
         }
     }
 
+    @Test public void fourCornerIslandsFallNearTheDragonsPatrol() {
+        ArenaRegion bounds = new ArenaRegion("world", -140, 0, -140, 140, 180, 140);
+        MatchPointPath path = new MatchPointPath(bounds, 180, 108, Arrays.asList(
+            new Position("world", -90, 105, -90, 0, 0),
+            new Position("world", 90, 105, -90, 0, 0),
+            new Position("world", 90, 105, 90, 0, 0),
+            new Position("world", -90, 105, 90, 0, 0)));
+        // At 45 degrees the old ellipse was at (63,63), far from the island
+        // at (90,90). The expanded loop now passes near both coordinates.
+        double[] northEast = path.at(Math.PI / 4.0D);
+        assertTrue(northEast[0] > 85.0D);
+        assertTrue(northEast[2] > 85.0D);
+        assertTrue(northEast[0] < 129.0D);
+        assertTrue(northEast[2] < 129.0D);
+    }
+
     @Test public void twoIslandsAlongZStillHaveHorizontalBreathingRoom() {
         ArenaRegion bounds = new ArenaRegion("world", -140, 0, -140, 140, 180, 140);
         MatchPointPath path = new MatchPointPath(bounds, 180, 108, Arrays.asList(
