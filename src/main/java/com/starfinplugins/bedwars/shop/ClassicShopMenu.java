@@ -48,10 +48,18 @@ public final class ClassicShopMenu implements InventoryHolder {
     private int page;
     private boolean editing;
     private int pageCount;
+    private final int descriptionLineLength;
 
     public ClassicShopMenu(Player player, Iterable<ShopItemDefinition> items, Set<String> favorites,
                            Category category, int requestedPage, boolean editing,
                            List<Category> order, Map<Category, Material> icons) {
+        this(player, items, favorites, category, requestedPage, editing, order, icons, 28);
+    }
+
+    public ClassicShopMenu(Player player, Iterable<ShopItemDefinition> items, Set<String> favorites,
+                           Category category, int requestedPage, boolean editing,
+                           List<Category> order, Map<Category, Material> icons, int descriptionLineLength) {
+        this.descriptionLineLength = Math.max(18, Math.min(40, descriptionLineLength));
         this.inventory = Bukkit.createInventory(this, 54,
             ChatColor.DARK_AQUA + "Starfin " + ChatColor.DARK_GRAY + "| "
                 + ChatColor.YELLOW + "Loja");
@@ -125,7 +133,7 @@ public final class ClassicShopMenu implements InventoryHolder {
             lore.add(" ");
             String description = definition.getDescription().isEmpty()
                 ? "Item para sua partida." : definition.getDescription();
-            lore.add(ChatColor.GRAY + ChatColor.translateAlternateColorCodes('&', description));
+            lore.addAll(ShopLoreFormatter.wrapDescription(description, descriptionLineLength));
             lore.add(ChatColor.GRAY + "Quantidade: " + ChatColor.WHITE + definition.getAmount());
             lore.add(ChatColor.GRAY + "Custo: " + ChatColor.GOLD + definition.getCost()
                 + " " + currencyLabel(definition.getCostType().name()));
