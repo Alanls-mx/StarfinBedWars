@@ -22,6 +22,7 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.EnderDragon;
+import org.bukkit.entity.EnderDragonPart;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
@@ -317,6 +318,11 @@ public final class MatchPointService implements ManagedService, Listener {
     }
 
     private boolean isOwnedDragon(Entity entity) {
+        // In 1.8.8 hits can target the head, wing or tail multipart entity,
+        // rather than the primary EnderDragon Bukkit entity.
+        if (entity instanceof EnderDragonPart) {
+            entity = ((EnderDragonPart) entity).getParent();
+        }
         if (!(entity instanceof EnderDragon)) return false;
         for (Active active : sessions.values()) {
             if (active.dragon != null && active.dragon.getUniqueId().equals(entity.getUniqueId())) return true;
