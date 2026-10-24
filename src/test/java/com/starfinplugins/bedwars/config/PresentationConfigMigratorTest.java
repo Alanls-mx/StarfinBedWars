@@ -38,6 +38,11 @@ public class PresentationConfigMigratorTest {
         assertTrue(updated.getBoolean("match-point.enabled"));
         assertEquals(30, updated.getInt("match-point.after-minutes"));
         assertEquals(18, updated.getInt("match-point.blocks-per-sweep"));
+        assertEquals(3000, updated.getInt(
+            "match-point.global-erosion.scan-positions-per-tick"));
+        assertEquals(40, updated.getInt(
+            "match-point.global-erosion.max-blocks-per-tick"));
+        assertEquals(9, updated.getInt("match.victory-celebration-seconds"));
         assertTrue(updated.getBoolean("visuals.victory.celebration.enabled"));
         assertEquals(4, updated.getInt("visuals.victory.celebration.fireworks-per-burst"));
         assertEquals(0.75D, updated.getDouble(
@@ -74,6 +79,27 @@ public class PresentationConfigMigratorTest {
         assertEquals("&7{player} sumiu.", updated.getString("messages.death.void"));
         assertEquals("&eA partida comeca em &6{time} &esegundos!",
             updated.getString("messages.lobby-countdown"));
+    }
+
+    @Test
+    public void preservesCustomGlobalErosionAndVictoryTime() throws Exception {
+        File config = folder.newFile("custom-erosion.yml");
+        Files.write(config.toPath(), ("match:\n"
+            + "  victory-celebration-seconds: 12\n"
+            + "match-point:\n"
+            + "  global-erosion:\n"
+            + "    max-blocks-per-tick: 15\n")
+            .getBytes(StandardCharsets.UTF_8));
+        YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
+            getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
+        assertTrue(PresentationConfigMigrator.mergeFile(config, defaults));
+        YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
+        assertEquals(12, updated.getInt("match.victory-celebration-seconds"));
+        assertEquals(15, updated.getInt(
+            "match-point.global-erosion.max-blocks-per-tick"));
+        assertEquals(3000, updated.getInt(
+            "match-point.global-erosion.scan-positions-per-tick"));
+        assertFalse(PresentationConfigMigrator.mergeFile(config, defaults));
     }
 
     @Test
