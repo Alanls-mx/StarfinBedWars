@@ -78,3 +78,40 @@ O codigo foi enviado via GitHub, mas ainda **nao foi compilado nem validado num 
 - Load test com diversas partidas simultaneas.
 
 Nao chamar esses elementos de completos ate serem efetivamente implementados e testados.
+
+## Correcao de clique 49/45 e mensagens (24/10/2026)
+
+Sintoma informado: PaperSpigot 1.8.8 `PlayerConnection.a` dispara
+`IndexOutOfBoundsException: Index: 49, Size: 45` quando o cliente manda
+`WindowClick` para um slot que nao existe no container ativo no servidor.
+A loja Starfin usa 54 slots e o slot 49 era o botao de Favoritos.
+
+### Mitigacao aplicada
+- `ClassicShopMenu` agora tem um unico inventario de 54 slots por sessao aberta.
+- Mudanca de categoria/pagina, favoritos, compra e atualizacao de preco sao realizadas com `refresh(...)` no MESMO inventario, sem novo `player.openInventory()`.
+- Atualizacao e agendada para o tick seguinte, confirmando que o jogador ainda visualiza aquela instancia do inventario.
+- Cliques rapidos sao agrupados: no maximo uma tarefa pendente de refresh por jogador; o ultimo pedido prevalece.
+- O botao Fechar confere que o inventario ainda e o mesmo antes de fechar.
+- O processamento invalido de `WindowClick` acontece dentro do NMS, antes dos eventos Bukkit: esta mitigacao reduz possiveis dessicronizacoes, mas ainda exige teste no cliente PaperSpigot 1.8.8. Se a excecao persistir mesmo sem reaberturas, investigar incompatibilidade de cliente/protocolo/fork do PaperSpigot, sem prometer protecao absoluta no nivel Bukkit.
+
+### Mensagens
+- `messages.*` e `visuals.lobby-countdown.*` adicionados a `config.yml`, migrados sem sobrescrever personalizacoes antigas.
+- Aviso ao tentar destruir cama da propria equipe: `Voce nao pode destruir sua propria cama!`.
+- Entrada com contador atual de jogadores e capacidade da arena; entrada/saida/reconnect configuraveis.
+- Contagem do lobby e abertura do spawn tratadas como fases distintas; evento `COUNTDOWN_STARTED` e Titles especificos de lobby e de spawn. Inicio real somente em `STARTED`, sem chat duplicado.
+- Morte em Void, inclusive quando acionada por `setHealth(0)` abaixo do limite `voidHeight`: flag por partida para nao depender de `getLastDamageCause`.
+- Mensagens configuraveis de quedas, fogo, lava, afogamento, projeteis, explosoes, combate, abate final, respawn e eliminacao definitiva.
+- Evento `PLAYER_DIED` para titulo de respawn, sem confundir com `PLAYER_ELIMINATED`.
+- Tutorial curto de inicio (configuravel) alem do unico broadcast do engine.
+- Testes puros de templates/roteamento de causas e regressao da migracao.
+
+### Validacao pendente (nao foi compilado/executado neste ambiente)
+1. Executar `mvn -B verify` (Java 8 / PaperSpigot 1.8.8).
+2. Abrir loja, editar favoritos (slot 49), trocar abas e comprar rapido por varios minutos; fechar e reabrir voluntariamente; verificar logs.
+3. Clicar no slot 49 apos trocar rapidamente categorias; comprovar que a excecao `Index: 49, Size: 45` nao ocorre.
+4. Iniciar lobby 2/8, 3/8; verificar valores corretos e contagens independente do spawn.
+5. Cair no Void pela altura de morte e verificar mensagem propria; repetir apos um golpe inimigo para atribuicao ao atacante.
+6. Testar morte por queda, explosao e combate; final kills com cama destruida.
+7. Tentar quebrar cama da propria equipe com clique esquerdo e direito; confirmar aviso e bloco intacto.
+8. Confirmar que o chat de inicio nao esta duplicado e que tutorial/titles aparecem somente na fase correta.
+9. Confirmar migracao preservando `messages.own-bed` e outras mensagens personalizadas.
