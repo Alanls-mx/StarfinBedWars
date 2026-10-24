@@ -35,6 +35,28 @@ public class MatchPointErosionCursorTest {
         assertEquals(null, cursor.peek());
     }
 
+    @Test public void skipsKnownEmptyChunkSectionsWithoutLosingLaterTerrain() {
+        MatchPointErosionCursor cursor = new MatchPointErosionCursor(
+            -1, 50, -1, -1, 155, -1);
+        assertEquals(155, cursor.peek().y);
+        // Sections Y=144..159 and Y=128..143 are entirely empty.
+        cursor.skipAirAbove(143);
+        assertEquals(143, cursor.peek().y);
+        assertEquals(12L, cursor.getVisited());
+        cursor.skipAirAbove(127);
+        assertEquals(127, cursor.peek().y);
+        assertEquals(28L, cursor.getVisited());
+        // The column containing terrain is still scanned, including
+        // transparent blocks that heightmaps can miss.
+        for (int y = 127; y >= 50; y--) {
+            assertEquals(y, cursor.peek().y);
+            cursor.advance();
+        }
+        assertEquals(106L, cursor.getTotal());
+        assertEquals(106L, cursor.getVisited());
+        assertFalse(cursor.hasNext());
+    }
+
     @Test public void canResumeAfterEachBoundedTickWithoutSkippingPositions() {
         MatchPointErosionCursor cursor = new MatchPointErosionCursor(0, 1, 0, 17, 2, 1);
         int ticks = 0;
