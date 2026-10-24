@@ -1134,6 +1134,31 @@ public final class MatchEngineService implements ManagedService, Listener {
             && Math.abs(block.getX() - x) + Math.abs(block.getZ() - z) == 1;
     }
 
+    /**
+     * Match Point: disable every remaining bed in this disposable world copy.
+     * The next game reloads an independent arena template, never this instance.
+     */
+    public int destroyAllBedsAtMatchPoint(GameMatch match) {
+        if (match == null || match.getState() != MatchState.IN_GAME) return 0;
+        World world = matchWorlds.get(match.getId());
+        if (world == null) return 0;
+        int destroyed = 0;
+        for (GameTeam team : match.getTeams().values()) {
+            if (!team.isBedAlive()) continue;
+            String id = team.getDefinition().getId();
+            if (!match.destroyBed(id)) continue;
+            Position saved = team.getDefinition().getBed();
+            if (saved != null) {
+                Block bed = world.getBlockAt((int) Math.floor(saved.getX()),
+                    (int) Math.floor(saved.getY()), (int) Math.floor(saved.getZ()));
+                if (bed.getType() == Material.BED_BLOCK) removeBedBlocks(bed, saved);
+            }
+            fire(MatchLifecycleEvent.Type.BED_DESTROYED, match, null, id);
+            destroyed++;
+        }
+        return destroyed;
+    }
+
     private void removeBedBlocks(Block brokenBlock, Position savedBed) {
         Block other = bedCounterpart(brokenBlock);
         if ((other == null || other.getType() != Material.BED_BLOCK) && savedBed != null) {
