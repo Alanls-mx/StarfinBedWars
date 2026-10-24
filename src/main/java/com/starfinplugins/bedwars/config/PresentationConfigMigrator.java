@@ -64,6 +64,8 @@ public final class PresentationConfigMigrator {
         "visuals.death.title", "visuals.death.subtitle",
         "special-items.bridge-egg.width", "special-items.bridge-egg.thickness",
         "special-items.bridge-egg.max-blocks", "special-items.bridge-egg.max-ticks",
+        "special-items.bridge-egg.decay-delay-seconds",
+        "special-items.bridge-egg.decay-interval-ticks",
         "special-items.defender-knockback.horizontal",
         "special-items.defender-knockback.vertical"
     };
