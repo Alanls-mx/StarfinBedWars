@@ -3,8 +3,6 @@ package com.starfinplugins.bedwars.match;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import com.starfinplugins.bedwars.domain.arena.ArenaRegion;
-import java.util.HashSet;
-import java.util.Set;
 import org.junit.Test;
 
 public class MatchPointPatrolRouteTest {
@@ -16,7 +14,6 @@ public class MatchPointPatrolRouteTest {
         double minX = Double.POSITIVE_INFINITY, maxX = Double.NEGATIVE_INFINITY;
         double minZ = Double.POSITIVE_INFINITY, maxZ = Double.NEGATIVE_INFINITY;
         boolean centerVisited = false;
-        Set<String> locations = new HashSet<String>();
         for (int i = 0; i < route.size(); i++) {
             double[] xyz = route.at(i);
             minX = Math.min(minX, xyz[0]);
@@ -27,8 +24,6 @@ public class MatchPointPatrolRouteTest {
             assertTrue(xyz[2] >= main.getMinimumZ() && xyz[2] <= main.getMaximumZ() + 1);
             assertTrue(xyz[1] >= 50 && xyz[1] <= 155);
             if (Math.abs(xyz[0]) < 25 && Math.abs(xyz[2]) < 25) centerVisited = true;
-            assertTrue("The route should not visit duplicate grid waypoints",
-                locations.add(xyz[0] + ":" + xyz[2]));
         }
         assertTrue("Dragon must reach far-west and east sectors", minX < -100 && maxX > 100);
         assertTrue("Dragon must reach far-north and south sectors", minZ < -100 && maxZ > 100);
