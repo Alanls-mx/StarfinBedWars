@@ -112,7 +112,9 @@ public class PresentationConfigMigratorTest {
         File config = folder.newFile("custom-messages.yml");
         Files.write(config.toPath(), ("messages:\n"
             + "  own-bed: '&4Minha mensagem personalizada'\n"
-            + "  death:\n    void: '&7{player} sumiu.'\n")
+            + "  death:\n    void: '&7{player} sumiu.'\n"
+            + "  shop:\n    purchased: '&bComprei {item}.'\n"
+            + "  upgrades:\n    insufficient: '&4Sem diamantes!'\n")
             .getBytes(StandardCharsets.UTF_8));
         YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
             getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
@@ -120,6 +122,9 @@ public class PresentationConfigMigratorTest {
         YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
         assertEquals("&4Minha mensagem personalizada", updated.getString("messages.own-bed"));
         assertEquals("&7{player} sumiu.", updated.getString("messages.death.void"));
+        assertEquals("&bComprei {item}.", updated.getString("messages.shop.purchased"));
+        assertEquals("&4Sem diamantes!", updated.getString("messages.upgrades.insufficient"));
+        assertEquals("&cRecursos insuficientes.", updated.getString("messages.shop.insufficient"));
         assertEquals("&eA partida comeca em &6{time} &esegundos!",
             updated.getString("messages.lobby-countdown"));
     }
@@ -179,7 +184,7 @@ public class PresentationConfigMigratorTest {
     }
 
     @Test
-    public void preservesExplicitLegacyBrandingToo() throws Exception {
+    public void migratesOldTabBrandWhenFooterCustomized() throws Exception {
         File config = folder.newFile("legacy.yml");
         Files.write(config.toPath(), ("tab:\n  header: '&b&lSTARFIN BEDWARS\\n&fstarfinplugins.com.br'\n"
             + "  footer: '&eStarfinPlugins'\n"
@@ -189,8 +194,8 @@ public class PresentationConfigMigratorTest {
             getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
         assertTrue(PresentationConfigMigrator.mergeFile(config, defaults));
         YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
-        assertEquals("&eStarfinPlugins", updated.getString("tab.footer"));
-        assertEquals("&b&lSTARFIN BEDWARS\\n&fstarfinplugins.com.br", updated.getString("tab.header"));
+        assertEquals("{footer}", updated.getString("tab.footer"));
+        assertEquals("&b&lSTARFIN BEDWARS\\n{footer}", updated.getString("tab.header"));
         assertEquals("&ewww.meuserver.com.br", updated.getString("scoreboard.footer"));
     }
 

@@ -295,6 +295,32 @@ visuals:
 # Mensagens originais Starfin inspiradas na organizacao do BedWars1058.
 # Placeholders: {player}, {on}, {max}, {time}, {arena}, {killer}.
 messages:
+  # Mensagens da loja. {item} usa o nome configurado em shop.yml.
+  # Reaplique a cor apos placeholders com nome colorido, se desejar.
+  shop:
+    unavailable: '&cA partida nao esta disponivel para compras.'
+    special-disabled: '&cItens especiais estao desabilitados.'
+    already-owned: '&eVoce ja possui este nivel de equipamento ou superior.'
+    inventory-full: '&cLibere espaco no inventario antes de comprar.'
+    insufficient: '&cRecursos insuficientes.'
+    delivery-failed: '&cCompra cancelada: nao foi possivel entregar o item.'
+    purchased: '&aComprado: &f{item}&a.'
+  upgrades:
+    unavailable: '&cA partida nao esta disponivel.'
+    max-level: '&cEsta melhoria ja esta no nivel maximo.'
+    forge-max: '&cOs geradores da equipe ja estao no nivel maximo.'
+    insufficient: '&cDiamantes insuficientes.'
+    forge-failed: '&cNao foi possivel melhorar os geradores.'
+    already-owned: '&cEsta melhoria ja foi comprada.'
+    purchased: '&aMelhoria comprada: &f{upgrade} {level}&a.'
+    queue-full: '&cA fila de armadilhas da equipe esta cheia.'
+    trap-failed: '&cNao foi possivel adicionar a armadilha.'
+    trap-purchased: '&aArmadilha adicionada a fila da equipe.'
+    names:
+      sharpness: 'Afiacao'
+      protection: 'Protecao'
+      forge: 'Forja'
+      heal_pool: 'Poco de cura'
   player-joined: '&7{player} &eentrou (&b{on}&e/&b{max}&e)!'
   player-left: '&7{player} &csaiu da partida.'
   you-joined: '&aVoce entrou no mapa &e{arena}&a.'

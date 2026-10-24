@@ -50,6 +50,17 @@ public final class PresentationConfigMigrator {
         "visuals.lobby-countdown.subtitle", "visuals.lobby-countdown.cancelled",
         "visuals.lobby-countdown.sound", "visuals.lobby-countdown.sound-enabled",
         "messages.player-joined", "messages.player-left", "messages.you-joined",
+        "messages.shop.unavailable", "messages.shop.special-disabled",
+        "messages.shop.already-owned", "messages.shop.inventory-full",
+        "messages.shop.insufficient", "messages.shop.delivery-failed",
+        "messages.shop.purchased",
+        "messages.upgrades.unavailable", "messages.upgrades.max-level",
+        "messages.upgrades.forge-max", "messages.upgrades.insufficient",
+        "messages.upgrades.forge-failed", "messages.upgrades.already-owned",
+        "messages.upgrades.purchased", "messages.upgrades.queue-full",
+        "messages.upgrades.trap-failed", "messages.upgrades.trap-purchased",
+        "messages.upgrades.names.sharpness", "messages.upgrades.names.protection",
+        "messages.upgrades.names.forge", "messages.upgrades.names.heal_pool",
         "messages.reconnected", "messages.lobby-ready", "messages.lobby-countdown",
         "messages.spawn-preparing", "messages.spawn-countdown",
         "messages.countdown-cancelled", "messages.match-started", "messages.own-bed",
@@ -136,6 +147,22 @@ public final class PresentationConfigMigrator {
             if (!defaults.contains(path)) continue;
             current.set(path, defaults.get(path));
             changed = true;
+        }
+        // Migrate the exact old TAB brand only when the operator has set a
+        // different scoreboard footer and clearly expects that shared brand.
+        // Every other explicit value, including respawn delay, stays intact.
+        String configuredFooter = current.getString("scoreboard.footer");
+        if (configuredFooter != null
+                && !configuredFooter.equals(defaults.getString("scoreboard.footer"))) {
+            if ("&eStarfinPlugins".equals(current.getString("tab.footer"))) {
+                current.set("tab.footer", "{footer}");
+                changed = true;
+            }
+            if ("&b&lSTARFIN BEDWARS\\n&fstarfinplugins.com.br"
+                    .equals(current.getString("tab.header"))) {
+                current.set("tab.header", "&b&lSTARFIN BEDWARS\\n{footer}");
+                changed = true;
+            }
         }
         if (!changed) return false;
         byte[] original = Files.readAllBytes(file.toPath());

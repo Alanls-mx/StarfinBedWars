@@ -1,6 +1,7 @@
 package com.starfinplugins.bedwars.shop;
 
 import com.starfinplugins.bedwars.arena.ArenaService;
+import com.starfinplugins.bedwars.config.PlayerFeedback;
 import com.starfinplugins.bedwars.domain.arena.Position;
 import com.starfinplugins.bedwars.domain.arena.TeamDefinition;
 import com.starfinplugins.bedwars.domain.economy.ResourceType;
@@ -837,45 +838,51 @@ public final class ShopService implements ManagedService, Listener {
                 || participant.getState() != ParticipantState.CONNECTED
                 || player.getWorld() != matches.getWorld(match.getId())) {
             player.closeInventory();
-            player.sendMessage(ChatColor.RED + "A partida nao esta disponivel para compras.");
+            feedback(player, "unavailable", "&cA partida nao esta disponivel para compras.");
             return;
         }
         if (SpecialItemType.byId(definition.getId()) != null
                 && !plugin.getConfig().getBoolean("special-items.enabled", true)) {
-            player.sendMessage(ChatColor.RED + "Itens especiais estao desabilitados.");
+            feedback(player, "special-disabled", "&cItens especiais estao desabilitados.");
             return;
         }
         ItemStack product = createProduct(definition, match, participant);
         boolean permanent = equipment != null && equipment.isPermanent(product.getType());
         if (permanent && !equipment.canImprove(participant, product.getType())) {
-            player.sendMessage(ChatColor.YELLOW + "Voce ja possui este nivel de equipamento ou superior.");
+            feedback(player, "already-owned", "&eVoce ja possui este nivel de equipamento ou superior.");
             return;
         }
         if (!permanent && !canFit(player, product)) {
-            player.sendMessage(ChatColor.RED + "Libere espaco no inventario antes de comprar.");
+            feedback(player, "inventory-full", "&cLibere espaco no inventario antes de comprar.");
             return;
         }
         ItemStack[] backup = InventoryEconomy.snapshot(player);
         if (!InventoryEconomy.charge(player, definition.getCostType(), definition.getCost())) {
-            player.sendMessage(ChatColor.RED + "Recursos insuficientes.");
+            feedback(player, "insufficient", "&cRecursos insuficientes.");
             return;
         }
         if (permanent) {
             equipment.purchased(player, match, participant, product.getType());
             Bukkit.getPluginManager().callEvent(new ShopPurchaseEvent(match, player.getUniqueId(), definition));
-            player.sendMessage(ChatColor.GREEN + "Comprado: " + definition.getDisplayName() + ".");
+            feedback(player, "purchased", "&aComprado: &f{item}&a.",
+                "item", definition.getDisplayName());
             purchaseSound(player);
             return;
         }
         Map<Integer, ItemStack> leftovers = player.getInventory().addItem(product);
         if (!leftovers.isEmpty()) {
             InventoryEconomy.restore(player, backup);
-            player.sendMessage(ChatColor.RED + "Compra cancelada: nao foi possivel entregar o item.");
+            feedback(player, "delivery-failed", "&cCompra cancelada: nao foi possivel entregar o item.");
             return;
         }
         Bukkit.getPluginManager().callEvent(new ShopPurchaseEvent(match, player.getUniqueId(), definition));
-        player.sendMessage(ChatColor.GREEN + "Comprado: " + definition.getDisplayName() + ".");
+        feedback(player, "purchased", "&aComprado: &f{item}&a.",
+                "item", definition.getDisplayName());
         purchaseSound(player);
+    }
+
+    private void feedback(Player player, String key, String fallback, String... tokens) {
+        PlayerFeedback.send(plugin, player, "messages.shop." + key, fallback, tokens);
     }
 
     private void purchaseSound(Player player) {
