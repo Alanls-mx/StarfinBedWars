@@ -253,3 +253,34 @@ ponta; tentar quebrar a ponte e reconstruir la no mesmo lugar antes do
 decaimento; verificar que a nova la permanece. Testar projeteis que colidem
 cedo, player sai do chunk e fim da partida durante o efeito. Essa verificacao
 no servidor ainda nao ocorreu nesta rodada.
+
+## Avisos de limites de arena e descricao curta da loja (24/10/2026)
+
+A imagem do cliente Minecraft 1.8.8 mostrou tooltip de item extrapolando
+a tela porque `ClassicShopMenu.refresh` colocava a descricao inteira em
+uma unica linha de lore.
+
+- `ShopLoreFormatter` divide descricoes em linhas com maximo de 28 caracteres
+  visiveis por padrao, ignorando caracteres de cor, respeitando quebras de
+  linha explicitas e preservando as cores nos trechos seguintes.
+- `shop.description-line-length` no config.yml controla a largura (18 a 40).
+  Nao altera custo, comportamento ou descricoes armazenadas em shop.yml.
+- No `MatchEngineService.onMove`, ao aproximar-se do teto configurado da
+  arena, aparece mensagem de altura.
+- Ao aproximar-se dos limites horizontais X/Z de `ArenaRegion bounds`, aparece
+  aviso informando que nao pode fugir do mapa; o bloqueio de movimento
+  anterior permanece inalterado.
+- `ArenaBoundaryWarnings` controla intervalos independentes por jogador e
+  tipo de limite. Configurar em `messages.boundary-warning-cooldown-seconds`
+  (padrao 4, aceito 1 a 15).
+- Mensagens configuraveis `messages.boundary-height` e
+  `messages.boundary-edge` migradas sem sobrescrever personalizacoes antigas.
+  Os estados de cooldown sao descartados quando jogador desconecta, partida
+  termina ou o plugin desliga.
+- Testes adicionados para quebra de textos longos, cores, quebra de palavras,
+  proximidade de limites X/Z, supressao de spam e migracao.
+
+**Validacao pendente:** compilar `mvn -B verify` no JDK 8 e testar
+tooltips no cliente 1.8.8 em diferentes escalas de GUI; testar subida
+ate o teto, tentativa de sair pelas bordas da regiao configurada e
+confirmar que nenhum aviso fica repetindo continuamente a cada movimento.
