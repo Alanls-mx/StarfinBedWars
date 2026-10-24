@@ -32,6 +32,8 @@ public class PresentationConfigMigratorTest {
         assertEquals(3, updated.getInt("special-items.bridge-egg.width"));
         assertEquals(2, updated.getInt("special-items.bridge-egg.thickness"));
         assertEquals(480, updated.getInt("special-items.bridge-egg.max-blocks"));
+        assertEquals(5, updated.getInt("special-items.bridge-egg.decay-delay-seconds"));
+        assertEquals(3, updated.getInt("special-items.bridge-egg.decay-interval-ticks"));
         assertEquals(0.75D, updated.getDouble(
             "special-items.defender-knockback.horizontal"), 0.0D);
         assertEquals(0.85D, updated.getDouble(
@@ -82,7 +84,7 @@ public class PresentationConfigMigratorTest {
     public void preservesCustomBridgeAndDefenderBalancing() throws Exception {
         File config = folder.newFile("custom-specials.yml");
         Files.write(config.toPath(), ("special-items:\n"
-            + "  bridge-egg:\n    width: 5\n    thickness: 1\n"
+            + "  bridge-egg:\n    width: 5\n    thickness: 1\n    decay-delay-seconds: 8\n"
             + "  defender-knockback:\n    horizontal: 0.90\n")
             .getBytes(StandardCharsets.UTF_8));
         YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
@@ -91,6 +93,8 @@ public class PresentationConfigMigratorTest {
         YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
         assertEquals(5, updated.getInt("special-items.bridge-egg.width"));
         assertEquals(1, updated.getInt("special-items.bridge-egg.thickness"));
+        assertEquals(8, updated.getInt("special-items.bridge-egg.decay-delay-seconds"));
+        assertEquals(3, updated.getInt("special-items.bridge-egg.decay-interval-ticks"));
         assertEquals(0.90D, updated.getDouble(
             "special-items.defender-knockback.horizontal"), 0.0D);
         assertEquals(0.85D, updated.getDouble(
