@@ -1,0 +1,15 @@
+maximum-queued-traps: 3
+upgrades:
+  sharpness:
+    - 4
+  protection:
+    - 2
+    - 4
+    - 8
+    - 16
+  forge:
+    - 2
+    - 4
+    - 6
+  heal-pool:
+    - 3

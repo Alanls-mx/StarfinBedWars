@@ -1,0 +1,7 @@
+reconnect:
+  enabled: true
+  mode: AUTOMATIC
+  grace-seconds: 120
+  combat:
+    tag-seconds: 15
+    disconnect-counts-as-death: true

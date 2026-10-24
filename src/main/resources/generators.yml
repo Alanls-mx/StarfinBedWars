@@ -1,0 +1,61 @@
+resources:
+  iron:
+    enabled: true
+    levels:
+      1:
+        interval-ticks: 80
+        amount: 1
+        max-dropped: 48
+      2:
+        interval-ticks: 30
+        amount: 1
+        max-dropped: 64
+      3:
+        interval-ticks: 20
+        amount: 2
+        max-dropped: 96
+  gold:
+    enabled: true
+    levels:
+      1:
+        interval-ticks: 300
+        amount: 1
+        max-dropped: 16
+      2:
+        interval-ticks: 140
+        amount: 1
+        max-dropped: 24
+      3:
+        interval-ticks: 100
+        amount: 1
+        max-dropped: 32
+  diamond:
+    enabled: true
+    levels:
+      1:
+        interval-ticks: 600
+        amount: 1
+        max-dropped: 4
+      2:
+        interval-ticks: 480
+        amount: 1
+        max-dropped: 4
+      3:
+        interval-ticks: 360
+        amount: 1
+        max-dropped: 4
+  emerald:
+    enabled: true
+    levels:
+      1:
+        interval-ticks: 1200
+        amount: 1
+        max-dropped: 4
+      2:
+        interval-ticks: 900
+        amount: 1
+        max-dropped: 4
+      3:
+        interval-ticks: 600
+        amount: 1
+        max-dropped: 4

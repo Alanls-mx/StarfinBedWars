@@ -1,0 +1,20 @@
+events:
+  enabled: true
+  notify: true
+  schedule:
+    1:
+      time-seconds: 360
+      type: DIAMOND_UPGRADE
+      level: 2
+    2:
+      time-seconds: 720
+      type: EMERALD_UPGRADE
+      level: 2
+    3:
+      time-seconds: 1080
+      type: DIAMOND_UPGRADE
+      level: 3
+    4:
+      time-seconds: 1440
+      type: EMERALD_UPGRADE
+      level: 3

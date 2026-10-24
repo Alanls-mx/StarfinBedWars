@@ -1,0 +1,40 @@
+name: StarfinBedWars
+version: 1.0.0-SNAPSHOT
+main: com.starfinplugins.bedwars.StarfinBedWarsPlugin
+author: StarfinPlugins
+website: https://starfinplugins.com.br
+description: Premium BedWars foundation for Spigot 1.8.8
+softdepend:
+  - WorldEdit
+commands:
+  starfinbedwars:
+    description: StarfinBedWars administration and status
+    usage: /starfinbedwars <help|version|status|menu|arena|world|join|spectate|leave|chat>
+    aliases:
+      - sbw
+  reconnect:
+    description: Retorna a partida BedWars pendente
+    usage: /reconnect
+permissions:
+  starfinbedwars.admin:
+    description: Administrate StarfinBedWars
+    default: op
+    children:
+      starfinbedwars.command.status: true
+      starfinbedwars.command.arena: true
+      starfinbedwars.command.world: true
+  starfinbedwars.command.status:
+    description: View StarfinBedWars status
+    default: op
+  starfinbedwars.command.arena:
+    description: Configure BedWars arenas
+    default: op
+  starfinbedwars.command.world:
+    description: Manage StarfinBedWars worlds
+    default: op
+  starfinbedwars.command.reconnect.admin:
+    description: Inspect and invalidate reconnect sessions
+    default: op
+  starfinbedwars.chat.color:
+    description: Permite usar codigos de cor com & nas mensagens da partida
+    default: op

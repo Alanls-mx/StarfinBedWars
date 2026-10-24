@@ -1,0 +1,177 @@
+# StarfinBedWars
+
+Plugin de BedWars para **Java 8** e **Spigot 1.8.8**. Esta versao implementa arenas em instancias isoladas, engine casual, reconnect local, assistente de configuracao, geradores de recursos, loja classica, NPCs de loja, equipamentos persistentes, upgrades de equipe e armadilhas.
+
+Para o historico dos prompts e o inventario anterior, consulte `STARFINBEDWARS_PROJECT_STATUS.md`. As correcoes do Prompt 6.1 estao em `STARFINBEDWARS_VISUAL_AND_GAMEPLAY_FIXES.md`; a entrega do Prompt 6.2 esta em `STARFINBEDWARS_INVENTORY_AND_VISUALS.md`.
+
+## Requisitos e build
+
+- JDK 8 para compilar e executar.
+- Maven 3.6 ou superior.
+- Servidor Spigot 1.8.8.
+- O artefato local `org.spigotmc:spigot:1.8.8-R0.1-SNAPSHOT`, produzido pelo BuildTools, e necessario para compilar os adaptadores NPC e Title `v1_8_R3`.
+- O BedWars nao depende do StarfinCore. A API do StarfinMinigames ainda nao esta disponivel neste workspace.
+
+```text
+mvn clean verify
+```
+
+O JAR e `target/StarfinBedWars-1.0.0-SNAPSHOT.jar`. A API Spigot e `provided` e nao e empacotada.
+
+## Instalar e configurar
+
+1. Coloque o JAR em `plugins/` e inicie o servidor.
+2. Prepare um mapa BedWars como uma pasta de mundo filha do diretorio de mundos, com `level.dat`.
+3. Descarregue esse mundo antes de importar: a engine recusa copiar um mundo ativo para evitar snapshots inconsistentes.
+4. Siga `STARFINBEDWARS_ARENA_GUIDE.md` para importar, editar uma copia isolada, selecionar regioes, publicar, validar e habilitar.
+5. Para configuracao interativa de equipes e geradores, consulte `STARFINBEDWARS_SETUP_WIZARD_GUIDE.md`.
+
+A configuracao existente preserva seus valores. Na primeira inicializacao desta versao, as novas chaves de apresentacao ausentes sao adicionadas a `config.yml`; o original fica em `config.yml.pre-presentation.bak`.
+
+| Chave | Padrao | Uso |
+|---|---:|---|
+| `general.debug` | `false` | Diagnostico geral reservado. |
+| `match.respawn-seconds` | `3` | Tempo em modo espectador apos morte com cama ativa, antes de voltar ao respawn da equipe; intervalo 0-30. |
+| `match.spawn-opening-seconds` | `10` | Tempo independente no spawn fechado, depois do countdown do lobby; intervalo 1-60. |
+| `arena-bounds.default-width` | `280` | Largura horizontal padrao dos limites automaticos. |
+| `arena-bounds.default-depth` | `280` | Comprimento horizontal padrao dos limites automaticos. |
+| `arena-bounds.default-up-height` | `50` | Altura acima do centro automatico. |
+| `arena-bounds.default-down-depth` | `50` | Profundidade abaixo do centro automatico. |
+| `arena-bounds.maximum-dimension` | `1000` | Limite por dimensao horizontal; o volume tambem respeita `worlds.maximum-region-blocks` (25 milhoes por padrao). |
+| `bed-alert.*` | textos e som em portugues | Broadcast unico por cama, title e som para a equipe atingida. |
+| `shop-hologram.*` | titulos e subtitulos em portugues | Textos e altura dos hologramas de loja. |
+| `shop-npc.items-skin`, `shop-npc.upgrades-skin` | `AlanLS_`, `Lurreisper` | Nome da conta usado na cabeca com skin dos NPCs; tambem pode ser alterado por comando. No Minecraft 1.8, o visual e um corpo de armor stand com a cabeca do jogador, e a textura depende da disponibilidade da skin dessa conta no cliente. |
+| `bed-hologram.*` | habilitado | Texto e altura do indicador sobre a cama; muda quando ela e destruida. |
+| `purchase-sounds.*` | `NOTE_PLING`, `LEVEL_UP` | Sons de compra da loja e das melhorias. |
+| `match-chat.format` | tags, nome e mensagem | Formato dos canais de chat na partida. |
+| `tab.header`, `tab.footer` | marca configurada | Cabecalho e rodape do TAB na partida; `{footer}` usa `scoreboard.footer`, ou pode ser substituido por texto literal. |
+| `tab.enabled`, `tab.team-prefix`, `tab.team-prefixes.*`, `tab.show-spectators`, `tab.spectator-prefix` | habilitado, prefixos por equipe | Exibicao e identificacao dos jogadores no TAB. |
+| `scoreboard.title`, `scoreboard.footer` | `BED WARS`, marca | Titulo e rodape do placar da partida. Para usar seu dominio, altere `scoreboard.footer`; o TAB e os layouts com `{footer}` exibem esse texto. |
+| `scoreboard.enabled`, `scoreboard.preset` | habilitado, `CLASSIC` | Controla a sidebar e o modelo visual. |
+| `scoreboard.layouts.lobby`, `scoreboard.layouts.in-game`, `scoreboard.layouts.ending` | linhas classicas | Linhas por fase, na ordem definida no arquivo; aceitam cores `&` e placeholders documentados no `config.yml`. |
+| `scoreboard.team-line`, `scoreboard.own-marker`, `scoreboard.eliminated-display` | formato classico | Aparencia das linhas de equipes. |
+| `scoreboard.team-status` | `BED` | Indicador de equipes: `BED`, `ALIVE`, `TEXT` ou `COMPACT`. |
+| `shop-npc.fallback-to-team-spawn` | `true` | Cria NPCs perto do spawn quando a arena nao tem pontos de loja salvos. |
+| `chests.ender-mode` | `MATCH_SHARED` | Escopo do bau do fim: `MATCH_SHARED`, `TEAM_SHARED` ou `PLAYER_PRIVATE`. |
+| `equipment.armor-mode` | `CLASSIC` | Armadura `CLASSIC` ou `INVERTED`, fixada por partida. |
+| `equipment.sword-minimum`, `equipment.tool-minimum` | `WOOD` | Piso do downgrade de equipamentos adquiridos: `WOOD` ou `STONE`. |
+| `shop.category-order`, `shop.category-icons.*` | ordem e icones classicos | Abas da loja de seis linhas. |
+| `starfinbedwars.chat.color` | `op` | Permite codigos `&` no chat da partida. Sem essa permissao, os codigos aparecem literalmente. |
+| `visuals.*` | titulos, sons e particulas | Contagem real de abertura, inicio e resultado da partida. |
+
+O reconnect usa `reconnect.yml`: habilitacao, modo `AUTOMATIC` ou `CONFIRMATION`, prazo Casual de 120 segundos e combat tag de 15 segundos. Consulte `STARFINBEDWARS_RECONNECT_GUIDE.md`. Chaves antigas `match.disconnect-grace-seconds` e `integrations.starfin-core.*` em instalacoes existentes nao sao mais utilizadas e podem ser removidas.
+
+Os arquivos `generators.yml`, `shop.yml`, `upgrades.yml`, `traps.yml` e `worlds.yml` sao criados na primeira inicializacao. Eles definem niveis/limites de geradores, itens e Quick Buy, custos de melhorias, efeitos/limites das armadilhas e politicas de mundos/regioes. Intervalos antigos padrao do nivel 1 de ferro (40 ticks) e ouro (200 ticks) sao atualizados para 80 e 300 ticks no primeiro startup desta versao; valores personalizados permanecem, e o original fica em `generators.yml.pre-slow-lv1.bak`. O catalogo da loja acrescenta TNT, escadas, obsidiana, perola, pocao de velocidade e balde de agua quando os respectivos IDs e slots estao livres; preserva os precos existentes e cria `shop.yml.pre-extended-catalog.bak`. Valores invalidos impedem a inicializacao do respectivo servico, em vez de habilitar funcionalidades com defaults implicitos. `WorldEdit` 6.x e opcional e nao e incluído como dependencia.
+
+Na loja, a primeira linha seleciona a categoria e os itens abaixo mudam para o submenu escolhido. As melhorias seguem o mesmo desenho, com abas Equipe e Armadilhas. Os itens e precos sao definidos nos respectivos arquivos YAML. A referencia historica enviada ate agora cobre a navegacao por categorias; uma comparacao exata dos itens e precos da antiga RedeSky depende das capturas ou lista que o usuario ainda vai enviar.
+
+## Comandos
+
+| Comando | Permissao | Descricao |
+|---|---|---|
+| `/sbw help`, `/sbw version`, `/sbw status` | status exige `starfinbedwars.command.status` | Ajuda, versao e estado do plugin. |
+| `/sbw help <setup\|arena\|world\|player>` | nenhuma | Ajuda contextual por categoria. |
+| `/sbw menu` | nenhuma | Abre a lista paginada de arenas habilitadas. |
+| `/sbw arena list` | nenhuma | Lista arenas configuradas e habilitadas/desabilitadas. |
+| `/sbw arena menu` | `starfinbedwars.command.arena` | Abre o painel paginado; clicar em uma arena inicia edicao isolada. |
+| `/sbw arena create <id> <mundo-descarregado>` | `starfinbedwars.command.arena` | Cria o template e, quando chamado por um jogador fora de partida, inicia a edicao isolada automaticamente. |
+| `/sbw arena import <id> <mundo-descarregado>` | `starfinbedwars.command.arena` | Copia assincronamente um mundo descarregado para um template. |
+| `/sbw arena loadsource <arena>` | `starfinbedwars.command.arena` | Carrega o mundo-fonte para consulta; edicoes devem ser feitas na copia temporaria. |
+| `/sbw arena tp <arena>` | `starfinbedwars.command.arena` | Visita o mundo-fonte sem entrar na copia de partida. |
+| `/sbw arena edit <arena>` | `starfinbedwars.command.arena` | Inicia uma copia de edicao; arenas habilitadas podem ser editadas fora de partidas. |
+| `/sbw arena edit <publish\|cancel> <arena>` | `starfinbedwars.command.arena` | Publica o template validado ou descarta a instancia dessa arena. |
+| `/sbw arena exit` | `starfinbedwars.command.arena` | Encerra as sessoes de edicao do administrador e restaura o ponto de retorno. |
+| `/sbw arena region <arena> <main\|protection\|waiting> <wand\|worldedit\|clear>` | `starfinbedwars.command.arena` | Persiste regioes; WorldEdit 6.x e opcional. |
+| `/sbw arena team <arena> <id> <nome> <cor-hex> <capacidade>` | `starfinbedwars.command.arena` | Cria/atualiza equipe; capacidade de 1 a 100. |
+| `/sbw arena removeteam <arena> <id>` | `starfinbedwars.command.arena` | Remove equipe se restarem pelo menos duas. |
+| `/sbw arena set <arena> lobby\|spectator\|editspawn\|spawn\|respawn\|bed [equipe]` | `starfinbedwars.command.arena` | Salva pontos na copia de edicao; `respawn` exige piso seguro e `bed` exige mirar em um bloco de cama. |
+
+| `/sbw arena generator add <arena> <iron\|gold\|diamond\|emerald> [equipe]` | `starfinbedwars.command.arena` | Cria gerador na copia de edicao. Ferro/Ouro precisam de equipe para validar. |
+| `/sbw arena generator list <arena>` | `starfinbedwars.command.arena` | Lista geradores configurados. |
+| `/sbw arena generator remove <arena> <id>` | `starfinbedwars.command.arena` | Remove gerador persistido. |
+| `/sbw arena generator setteam <arena> <gerador> <equipe>` | `starfinbedwars.command.arena` | Associa gerador de Ferro/Ouro a uma equipe. |
+| `/sbw arena shop <arena> <items\|upgrades>` | `starfinbedwars.command.arena` | Salva posicao da loja na copia temporaria de edicao. |
+| `/sbw npc skin <items\|upgrades> <nome-do-jogador>` | `starfinbedwars.command.arena` | Define e salva a skin da cabeca do NPC, atualizando os NPCs ativos. |
+| `/sbw setup mode <solo\|equipe>` | `starfinbedwars.command.arena` | Seleciona o formato depois que POS1/POS2 e os limites da arena forem confirmados. |
+| `/sbw setup team-size <2\|3\|4>` | `starfinbedwars.command.arena` | Define a capacidade das equipes antes de cria-las; exige limites confirmados. |
+| `/sbw create teams <quantidade>` | `starfinbedwars.command.arena` | Cria equipes e inicia o assistente por etapas; exige limites confirmados. |
+| `/sbw setup pause` | `starfinbedwars.command.arena` | Salva e pausa o passo atual do assistente. |
+| `/sbw setup resume <arena>` | `starfinbedwars.command.arena` | Retoma um rascunho apos entrar novamente na copia de edicao. |
+| `/sbw setup cancel <arena>` | `starfinbedwars.command.arena` | Remove o rascunho; configuracoes ja aplicadas permanecem. |
+| `/sbw setup undo` | `starfinbedwars.command.arena` | Desfaz a ultima alteracao aplicada pelo assistente; a plataforma tambem restaura blocos que nao foram alterados depois. |
+| `/sbw setup status`, `/sbw next` | `starfinbedwars.command.arena` | Mostra o passo atual e repete sua instrucao contextual. |
+| `/sbw setarena <center here\|pos1\|pos2\|upoversize\|upheight\|uplow\|tp\|preview\|confirm\|cancel>` | `starfinbedwars.command.arena` | Prepara limites automaticos ou selecao manual; previews sao virtuais e os limites so sao salvos ao confirmar. |
+| `/sbw arena min <arena> <jogadores>` | `starfinbedwars.command.arena` | Define o minimo de jogadores. |
+| `/sbw arena countdown <arena> <segundos>` | `starfinbedwars.command.arena` | Configura countdown entre 1 e 600 segundos. |
+| `/sbw arena validate\|enable\|disable <arena>` | `starfinbedwars.command.arena` | Valida e controla a disponibilidade de novas partidas. |
+| `/sbw world <list\|create\|import\|info\|tp\|delete\|confirm-delete>` | `starfinbedwars.command.world` | Gerencia Void worlds e registra mundos externos sem alteracao destrutiva. |
+| `/sbw join <arena>` | nenhuma | Entra na fila/countdown e depois na partida. |
+| `/sbw spectate <arena>` | nenhuma | Assiste uma partida em andamento. |
+| `/sbw leave` | nenhuma | Sai da partida ou do modo espectador. |
+| `/sbw chat <global\|team\|spectator>` | nenhuma | Escolhe um canal da propria partida; espectadores usam apenas o canal de espectadores. |
+| `/reconnect`, `/sbw reconnect` | nenhuma | Tenta retornar a partida Casual local pendente. |
+| `/sbw reconnect status` | nenhuma | Exibe arena, equipe, prazo e estado da propria sessao. |
+| `/sbw reconnect sessions`, `/sbw reconnect inspect <uuid>` | `starfinbedwars.command.reconnect.admin` | Consulta sessoes ativas. |
+| `/sbw reconnect invalidate <uuid> confirm` | `starfinbedwars.command.reconnect.admin` | Invalida uma sessao, registra auditoria e remove a vaga ativa. |
+
+O assistente de setup pede um ponto de respawn separado para cada equipe logo apos criar a sala inicial. Configure-o na base, fora da sala temporaria, sobre piso solido e com dois blocos livres acima. O yaw salvo define a direcao de frente; o pitch e zerado no spawn e no respawn, inclusive para arenas antigas que foram configuradas olhando para baixo. Arenas antigas precisam desse ponto em cada equipe antes de serem validadas e ativadas novamente.
+
+As definicoes de arena ficam em `plugins/StarfinBedWars/arenas/<id>.yml`. A cada gravacao, o plugin valida o YAML e mantem a versao mais recente em `<id>.yml.bak`; ao iniciar, restaura automaticamente o arquivo principal se ele estiver ausente e registra a recuperacao no log. A primeira inicializacao desta versao tambem cria backup de arquivos de arena anteriores. Se o arquivo principal existir mas estiver invalido, ele e preservado para diagnostico. Os blocos alterados em uma copia de edicao so entram no template apos `/sbw arena edit publish <id>`; uma sessao de edicao nao publicada ainda e descartada ao sair ou desligar o servidor.
+
+Durante partidas, geradores entregam itens fisicos conforme `generators.yml`. O NPC de itens abre a loja classica de seis linhas, com categorias e favoritos salvos por jogador em `shop-favorites.yml`. O pagamento usa os recursos do inventario. O NPC de melhorias abre as opcoes configuradas em `upgrades.yml` e `traps.yml`. Upgrades e armadilhas pertencem a equipe da partida; armadilhas disparam quando um inimigo entra na area da cama. O plugin restaura inventario, armadura, experiencia, efeitos e atributos salvos ao sair ou encerrar a instancia. Na morte, Ferro, Ouro, Diamante e Esmeralda passam ao assassino valido, ou caem no local se nao houver assassino. O equipamento persistente e reconstruido no respawn e as demais posses da partida sao perdidas.
+
+Durante uma partida, cada jogador recebe uma scoreboard propria com dados da sua `GameMatch`. As linhas do preset `CLASSIC` sao configuraveis por fase em `scoreboard.layouts`; o proximo upgrade temporizado e o estado das equipes sao atualizados na partida. O TAB aceita cabecalho, rodape, prefixos e visibilidade de espectadores em `config.yml`; ao sair, o scoreboard anterior e restaurado. Os upgrades centrais seguem `generator-events.yml` por partida (padrao: Diamante II em 6 min, Esmeralda II em 12 min, Diamante III em 18 min e Esmeralda III em 24 min). O countdown do lobby e o countdown de abertura sao independentes: ao fim do lobby, os jogadores vao para seus spawns ainda fechados; apos `match.spawn-opening-seconds`, as estruturas sao removidas e a partida comeca. O inventario externo e salvo e limpo ao entrar no lobby, e restaurado ao sair. O painel administrativo e de entrada usam menus paginados e encaminham as acoes aos servicos existentes.
+
+Durante `IN_GAME`, participantes conectados podem colocar e quebrar blocos colocados pelos jogadores na regiao principal da arena; espectadores e jogadores em fases pre-jogo nao podem construir. Os blocos originais do mapa continuam protegidos, e a cama inimiga configurada pode ser quebrada. Camas nao podem ser usadas para dormir; encantamento, bigorna, crafting, fornalha, alquimia e outros mecanismos do mapa nao abrem ou acionam. Baus normais e do fim continuam utilizaveis. Com cama propria ativa, o jogador reaparece no `respawn` separado da equipe em estado protegido e volta ao modo de sobrevivencia apos `match.respawn-seconds`. A queda e temporariamente protegida ao abrir as estruturas de spawn e apos o respawn.
+
+Geradores de equipe produzem ferro a cada 4 segundos e ouro a cada 15 segundos no nivel inicial (intervalos acelerados por upgrades). A esmeralda de equipe fica desativada ate o primeiro Forge; geradores centrais de esmeralda nao dependem de Forge. Nenhum gerador da partida produz antes da abertura dos spawns; o primeiro recurso aguarda o intervalo completo apos a abertura. Itens soltos copiados do template sao removidos durante a espera. Os intervalos continuam configuraveis em `generators.yml`.
+
+Geradores centrais respeitam limite efetivo de quatro unidades no chao, inclusive quando um `generators.yml` antigo ainda declara um limite maior. O tempo do ciclo continua passando enquanto estao cheios. Recursos com regiao configurada sao produzidos somente em pontos validos dessa regiao; itens que escapam dela sao reposicionados a cada segundo. Novos geradores centrais do assistente usam o bloco clicado como ancora e registram uma pequena regiao acima dele.
+
+Configure e confirme POS1/POS2 antes de escolher o modo ou criar equipes: `/sbw setarena center here` para calcular automaticamente ou `/sbw setarena pos1` e `/sbw setarena pos2` para marcar manualmente, depois `/sbw setarena confirm`. O plugin bloqueia as etapas seguintes enquanto os limites nao estiverem salvos. Depois, siga modo, capacidade de equipe e criacao das equipes nessa ordem. Depois de informar o nome de cada time, o assistente apresenta as 16 cores como opcoes clicaveis no chat; a escolha aplica tambem a cor de bloco correspondente, sem exigir codigo `&`. Apos configurar cama, spawn, respawn e lojas de cada time, marque uma vez POS1 e POS2 da regiao do gerador para criar juntos os geradores de Iron, Gold e Esmeralda daquele time. Ao final, digite `diamond` ou `emerald` e clique com o botao direito no bloco de cada gerador central; o minerio nasce sobre esse bloco, enquanto o holograma fica acima apenas para informar o nivel e o ciclo. O `/sbw setup status` exibe a etapa e instrucao reais. O assistente salva equipes, cores de bloco, lojas por equipe, regioes de geradores, limites e blocos das estruturas de spawn no schema YAML v7, mantendo leitura de arenas v1–v6. Solo usa footprint 3x3 com interior 1x1; Equipe usa 5x5 com interior 3x3. As estruturas registradas somem somente na copia isolada quando a partida inicia; o estado `STARTING` cancela dano antes do teleporte. Rascunhos e historico de Undo sobrevivem a reinicios, mas o clone temporario nao: reabra o editor para retomar; alteracoes de bloco nao publicadas no clone antigo nao sao recuperadas. O lobby deve ser configurado separadamente e o wizard nao habilita a arena.
+
+Ao concluir o setup, valide e publique a copia antes de habilitar: `/sbw arena validate <arena>`, `/sbw arena edit publish <arena>`, depois `/sbw arena enable <arena>`. Geradores centrais mostram em jogo um bloco flutuante com nivel, recurso e contagem regressiva.
+
+`starfinbedwars.admin`, `starfinbedwars.command.arena` e `starfinbedwars.command.world` sao concedidas a operadores por padrao. Os comandos que exigem jogador nao funcionam pelo console.
+
+## Seguranca e limites atuais
+
+- O mundo-fonte nunca e usado como instancia de jogo; cada partida recebe uma copia identificada por UUID.
+- Edicoes de mapas acontecem em copias temporarias; publicar substitui o template de forma transacional e nao altera o mundo-fonte.
+- Mundos importados sao somente registrados, nao sao alterados nem elegiveis para exclusao. Somente mundos Void criados pelo plugin podem ser removidos apos confirmacao e validacao de marcador.
+- Copia de arquivos e assincrona; carga/descarga de mundos e operacoes Bukkit ocorrem na thread principal.
+- Instancias de jogo/edicao exigem nome gerado e marcador de propriedade validado; mundos administrativos exigem registro, tipo permitido e confirmacao. Se a descarga falhar, o diretorio nao e apagado e a arena permanece bloqueada.
+- `uid.dat`, `session.lock`, `playerdata`, `stats` e `advancements` nao sao copiados para a instancia.
+- Colocacao e permitida somente a participantes conectados durante `IN_GAME` e dentro da regiao principal. Blocos colocados nessa partida podem ser quebrados; os blocos originais do mapa permanecem protegidos, exceto pela cama inimiga configurada. Explosoes nao alteram blocos; as mudancas permitidas ocorrem apenas na copia isolada da partida, removida ao final.
+- Arenas invalidadas no startup ficam desativadas; nada e corrigido automaticamente no arquivo de origem.
+- O mundo-fonte pode ser carregado para consulta. `/sbw arena edit <id>` cria uma copia temporaria; somente `/sbw arena edit publish <id>` atualiza o template, preservando o mundo original.
+
+Ainda nao implementados: estatisticas/progressao, ranked, temporadas, torneios, recuperacao de partidas apos reinicios, StarfinParty, cosméticos, conquistas e BungeeCord. O modo Maluca nao esta disponivel; a capacidade dinamica das equipes nao fixa o jogo em quatro jogadores por equipe.
+
+Os NPCs de loja usam villager registrado no protocolo 1.8 com objetivos de caminho desativados; o clique abre a loja BedWars. Quando pontos de loja nao foram salvos, o fallback cria NPCs perto dos spawns; configure os pontos pelo setup para posiciona-los nas bancadas. Textos por idioma individual e integracao com StarfinMinigames dependem de uma API compartilhada disponivel. Em 23/10/2026, uma partida completa com dois clientes de protocolo 1.8.8 em PaperSpigot 1.8.8 confirmou entrada, lobby limpo, NPCs e menus, geradores de equipe e centrais, evolucao temporizada, protecao de armadura, respawn separado, quebra da cama inimiga, eliminacao, vitoria, restauracao do inventario e carregamento da arena apos reinicio. Em 24/10/2026, outra partida no servidor isolado confirmou os hologramas centrais e de loja, a abertura dos NPCs de itens e melhorias, a personalizacao da sidebar e do TAB, o fallback dos NPCs sem posicao salva e a quebra de la colocada com preservacao da pedra original. Uma validacao adicional do protocolo confirmou os NPCs como `Villager` visivel, o texto de dominio personalizado no TAB, a cor preservada ao dividir linhas da sidebar e a migracao dos intervalos iniciais dos geradores. O assistente de setup foi testado com varinha unica no quinto slot, menu por clique no ar e pausa pelo menu. Veja `STARFINBEDWARS_DEVELOPMENT_STATUS.md` para o escopo exato do teste; um servidor de producao com outros plugins ainda exige verificacao propria.
+
+O StarfinMinigames nao foi encontrado localmente nem como repositorio acessivel nesta auditoria. Nenhuma API compartilhada e presumida pela implementacao atual.
+
+## Organizacao
+
+```text
+src/main/java/com/starfinplugins/bedwars/
+├── arena/       # persistencia, validacao e instancias de mundo
+├── command/     # comandos administrativos e de jogador
+├── config/      # configuracao tipada
+├── domain/      # modelos Bukkit-independentes de arena e partida
+├── economy/     # transacoes de inventario e geradores fisicos
+├── event/       # eventos de ciclo de vida da partida
+├── integration/ # adaptadores opcionais, isolados do dominio
+│   └── worldedit/ # adaptador opcional sem dependencia de compilacao
+├── match/       # engine e listeners Bukkit
+├── reconnect/   # sessoes, snapshots, politica e metadados locais
+├── menu/        # menus paginados de jogo e administracao
+├── shop/        # catalogo, NPCs e Quick Buy
+├── upgrades/    # upgrades e armadilhas de equipe
+├── service/     # ciclo de vida dos servicos
+├── setup/       # assistente interativo e mapeamento de cores 1.8
+└── world/       # geracao Void e gerenciamento administrativo de mundos
+```
+
+O relatorio historico da auditoria do StarfinCore permanece em `STARFINBEDWARS_ARCHITECTURE_ANALYSIS.md`; o progresso e as verificacoes estao em `STARFINBEDWARS_DEVELOPMENT_STATUS.md`.

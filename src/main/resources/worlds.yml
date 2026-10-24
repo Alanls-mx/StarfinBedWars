@@ -1,0 +1,12 @@
+worlds:
+  void-generator:
+    enabled: true
+
+  allow-import: true
+  allow-managed-deletion: true
+  maximum-region-blocks: 25000000
+
+  platform:
+    material: STONE
+    height: 64
+    radius: 4

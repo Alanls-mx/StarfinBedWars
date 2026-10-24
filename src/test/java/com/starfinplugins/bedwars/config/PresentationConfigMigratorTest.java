@@ -1,0 +1,51 @@
+package com.starfinplugins.bedwars.config;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import java.io.File;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+
+public class PresentationConfigMigratorTest {
+    @Rule public TemporaryFolder folder = new TemporaryFolder();
+
+    @Test
+    public void addsLayoutsAndKeepsConfiguredTitleWithOriginalBackup() throws Exception {
+        File config = folder.newFile("config.yml");
+        String original = "config-version: 1\nscoreboard:\n  title: '&aMinha arena'\n";
+        Files.write(config.toPath(), original.getBytes(StandardCharsets.UTF_8));
+        YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
+            getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
+        assertTrue(PresentationConfigMigrator.mergeFile(config, defaults));
+        YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
+        assertEquals("&aMinha arena", updated.getString("scoreboard.title"));
+        assertTrue(updated.getStringList("scoreboard.layouts.in-game").contains("{teams}"));
+        assertEquals(original, new String(Files.readAllBytes(
+            new File(folder.getRoot(), "config.yml.pre-presentation.bak").toPath()),
+            StandardCharsets.UTF_8));
+        assertFalse(PresentationConfigMigrator.mergeFile(config, defaults));
+    }
+
+    @Test
+    public void replacesOnlyLegacyTabFooterWithSharedBrand() throws Exception {
+        File config = folder.newFile("legacy.yml");
+        Files.write(config.toPath(), ("tab:\n  header: '&b&lSTARFIN BEDWARS\\n&fstarfinplugins.com.br'\n"
+            + "  footer: '&eStarfinPlugins'\n"
+            + "scoreboard:\n  footer: '&ewww.meuserver.com.br'\n")
+            .getBytes(StandardCharsets.UTF_8));
+        YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
+            getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
+        assertTrue(PresentationConfigMigrator.mergeFile(config, defaults));
+        YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
+        assertEquals("{footer}", updated.getString("tab.footer"));
+        assertEquals("&b&lSTARFIN BEDWARS\\n{footer}", updated.getString("tab.header"));
+        assertEquals("&ewww.meuserver.com.br", updated.getString("scoreboard.footer"));
+    }
+}

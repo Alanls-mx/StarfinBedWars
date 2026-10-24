@@ -1,0 +1,155 @@
+config-version: 1
+
+general:
+  debug: false
+
+match:
+  respawn-seconds: 3
+  spawn-opening-seconds: 10
+
+arena-bounds:
+  default-width: 280
+  default-depth: 280
+  default-up-height: 50
+  default-down-depth: 50
+  maximum-dimension: 1000
+
+bed-alert:
+  broadcast: '&cA cama da equipe {team} foi destruida por {player}!'
+  broadcast-unknown: '&cA cama da equipe {team} foi destruida!'
+  title: '&cCAMA DESTRUIDA!'
+  subtitle: '&eVoce nao podera mais renascer!'
+  sound: WITHER_DEATH
+  volume: 0.7
+  pitch: 1.0
+
+shop-hologram:
+  items-title: '&e&lLOJA'
+  items-subtitle: '&7Clique para comprar'
+  upgrades-title: '&e&lMELHORIAS'
+  upgrades-subtitle: '&7Clique para abrir'
+  height: 2.25
+  line-spacing: 0.24
+
+bed-hologram:
+  enabled: true
+  height: 1.2
+  intact: '{color}&l{team} &fCama'
+  destroyed: '{color}&l{team} &cCama destruida'
+
+purchase-sounds:
+  shop: NOTE_PLING
+  upgrade: LEVEL_UP
+  volume: 0.8
+  pitch: 1.25
+
+shop-npc:
+  fallback-to-team-spawn: true # Usa um ponto seguro proximo ao spawn se a loja do time nao tiver posicao valida.
+  items-skin: AlanLS_
+  upgrades-skin: Lurreisper
+
+match-chat:
+  format: '{channel}{tag}{player} &7> &f{message}'
+
+tab:
+  enabled: true
+  # Placeholders: {arena}, {mode}, {players}, {max}, {footer}. Use \n para novas linhas.
+  header: '&b&lSTARFIN BEDWARS\n{footer}'
+  footer: '{footer}' # Usa scoreboard.footer; voce tambem pode escrever o texto diretamente aqui.
+  team-prefixes: true
+  team-prefix: '[{initial}] ' # {initial}, {team}; cor da equipe aplicada automaticamente.
+  show-spectators: true
+  spectator-prefix: '&7[S] '
+
+scoreboard:
+  enabled: true
+  preset: CLASSIC # CLASSIC or LEGACY
+  title: '&e&lBED WARS'
+  footer: '&estarfinplugins&f.com.br'
+  eliminated-display: ZERO # ZERO, TEXT or HIDE
+  team-status: BED # BED, ALIVE, TEXT or COMPACT
+  own-marker: '&e *'
+  team-line: '{team_color}&l{team_initial} &f{team_name} {status}{own_marker}'
+  # Cada entrada vira uma linha; use '' para espaco. Maximo de 15 linhas e 32 caracteres por linha no Minecraft 1.8.
+  # Placeholders comuns: {date}, {arena_id}, {arena}, {footer}.
+  # {footer} usa scoreboard.footer. Para um dominio proprio, altere scoreboard.footer,
+  # ou substitua {footer} por um texto literal em cada layout.
+  layouts:
+    lobby:
+      - '{date}  &8{arena_id}'
+      - '&7Mapa: &a{arena}'
+      - '&7Jogadores: &a{players}&7/{max}'
+      - ''
+      - '&e{countdown_title}'
+      - '&a{countdown}'
+      - ''
+      - '&7Modo: &a{mode}'
+      - ''
+      - '{footer}'
+    in-game:
+      - '{date}  &8{arena_id}'
+      - ''
+      - '{next_upgrade_title}'
+      - '{next_upgrade}'
+      - ''
+      - '{teams}' # Expande uma linha por equipe, usando team-line.
+      - '{spectating}'
+      - ''
+      - '{footer}'
+    ending:
+      - '{date}  &8{arena_id}'
+      - ''
+      - '&ePartida encerrada'
+      - '&fVencedor: &a{winner}'
+      - '{result}'
+      - ''
+      - '{footer}'
+
+chests:
+  ender-mode: MATCH_SHARED
+
+equipment:
+  armor-mode: CLASSIC
+  sword-minimum: WOOD
+  tool-minimum: WOOD
+
+shop:
+  category-order: [FAVORITES, SWORDS, ARMOR, TOOLS, BLOCKS, BOWS, POTIONS, UTILITIES, SPECIAL]
+  category-icons:
+    FAVORITES: NETHER_STAR
+    SWORDS: IRON_SWORD
+    ARMOR: DIAMOND_CHESTPLATE
+    TOOLS: IRON_PICKAXE
+    BLOCKS: WOOL
+    BOWS: BOW
+    POTIONS: POTION
+    UTILITIES: TNT
+    SPECIAL: BLAZE_POWDER
+
+visuals:
+  countdown:
+    start-at: 5
+    subtitle: '&ePrepare-se!'
+    sound: NOTE_PLING
+    sound-enabled: true
+    sound-volume: 0.7
+    sound-pitch: 1.0
+    particles: 3
+  start:
+    title: '&e&lBED WARS'
+    subtitle: '&fProteja sua cama e elimine as equipes inimigas!'
+    sound: LEVEL_UP
+    sound-enabled: true
+    particles: 0
+  victory:
+    title: '&a&lVITORIA!'
+    subtitle: '&fSeu time venceu!'
+    sound: FIREWORK_LAUNCH
+    sound-enabled: true
+    particles: 6
+  defeat:
+    title: '&c&lDERROTA!'
+    subtitle: '&7Sua equipe foi eliminada!'
+  draw:
+    title: '&ePartida encerrada'
+    subtitle: '&7Sem equipe vencedora'

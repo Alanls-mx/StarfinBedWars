@@ -1,0 +1,308 @@
+items:
+  tnt:
+    name: "TNT"
+    description: "Explosivo para abrir defesas."
+    material: TNT
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 4
+    slot: 15
+    quick-buy: true
+  ladder:
+    name: "Escadas"
+    description: "Acesso rapido a pontos altos."
+    material: LADDER
+    data: 0
+    amount: 8
+    resource: IRON
+    cost: 4
+    slot: 16
+    quick-buy: true
+  obsidian:
+    name: "Obsidiana"
+    description: "Defesa resistente para a cama."
+    material: OBSIDIAN
+    data: 0
+    amount: 4
+    resource: EMERALD
+    cost: 4
+    slot: 17
+    quick-buy: false
+  ender-pearl:
+    name: "Perola do Fim"
+    description: "Teleporte para outras ilhas."
+    material: ENDER_PEARL
+    data: 0
+    amount: 1
+    resource: EMERALD
+    cost: 4
+    slot: 18
+    quick-buy: true
+  speed-potion:
+    name: "Pocao de Velocidade"
+    description: "Mais velocidade durante o ataque."
+    material: POTION
+    data: 8194
+    amount: 1
+    resource: EMERALD
+    cost: 1
+    slot: 24
+    quick-buy: false
+  water-bucket:
+    name: "Balde de Agua"
+    description: "Use agua para defesa ou passagem."
+    material: WATER_BUCKET
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 3
+    slot: 25
+    quick-buy: false
+  wool:
+    name: "Wool"
+    description: "Blocos da cor de sua equipe para proteger a cama."
+    material: WOOL
+    data: 0
+    amount: 16
+    resource: IRON
+    cost: 4
+    slot: 10
+    quick-buy: true
+  sandstone:
+    name: "Sandstone"
+    material: SANDSTONE
+    data: 0
+    amount: 12
+    resource: IRON
+    cost: 12
+    slot: 11
+    quick-buy: true
+  stone-sword:
+    name: "Stone Sword"
+    material: STONE_SWORD
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 10
+    slot: 12
+    quick-buy: true
+  iron-sword:
+    name: "Iron Sword"
+    material: IRON_SWORD
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 7
+    slot: 13
+    quick-buy: true
+  diamond-sword:
+    name: "Diamond Sword"
+    material: DIAMOND_SWORD
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 4
+    slot: 14
+    quick-buy: true
+  iron-pickaxe:
+    name: "Iron Pickaxe"
+    material: IRON_PICKAXE
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 10
+    slot: 19
+    quick-buy: true
+  iron-axe:
+    name: "Iron Axe"
+    material: IRON_AXE
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 10
+    slot: 20
+    quick-buy: true
+  shears:
+    name: "Shears"
+    material: SHEARS
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 20
+    slot: 21
+    quick-buy: true
+  bow:
+    name: "Bow"
+    material: BOW
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 12
+    slot: 22
+    quick-buy: true
+  arrows:
+    name: "Arrows"
+    material: ARROW
+    data: 0
+    amount: 8
+    resource: GOLD
+    cost: 2
+    slot: 23
+    quick-buy: true
+  golden-apple:
+    name: "Golden Apple"
+    material: GOLDEN_APPLE
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 3
+    slot: 28
+    quick-buy: true
+  leather-helmet:
+    name: "Leather Helmet"
+    material: LEATHER_HELMET
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 2
+    slot: 29
+    quick-buy: true
+  leather-chestplate:
+    name: "Leather Chestplate"
+    material: LEATHER_CHESTPLATE
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 4
+    slot: 30
+    quick-buy: true
+  leather-leggings:
+    name: "Leather Leggings"
+    material: LEATHER_LEGGINGS
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 3
+    slot: 31
+    quick-buy: true
+  leather-boots:
+    name: "Leather Boots"
+    material: LEATHER_BOOTS
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 2
+    slot: 32
+    quick-buy: true
+  chainmail-helmet:
+    name: "Chainmail Helmet"
+    material: CHAINMAIL_HELMET
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 20
+    slot: 33
+    quick-buy: true
+  chainmail-chestplate:
+    name: "Chainmail Chestplate"
+    material: CHAINMAIL_CHESTPLATE
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 30
+    slot: 34
+    quick-buy: true
+  chainmail-leggings:
+    name: "Chainmail Armor"
+    description: "Melhora permanente de armadura nesta partida."
+    material: CHAINMAIL_LEGGINGS
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 24
+    slot: 35
+    quick-buy: true
+  chainmail-boots:
+    name: "Chainmail Boots"
+    material: CHAINMAIL_BOOTS
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 20
+    slot: 36
+    quick-buy: true
+  iron-helmet:
+    name: "Iron Helmet"
+    material: IRON_HELMET
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 8
+    slot: 37
+    quick-buy: true
+  iron-chestplate:
+    name: "Iron Chestplate"
+    material: IRON_CHESTPLATE
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 12
+    slot: 38
+    quick-buy: true
+  iron-leggings:
+    name: "Iron Armor"
+    description: "Melhora permanente de armadura nesta partida."
+    material: IRON_LEGGINGS
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 10
+    slot: 39
+    quick-buy: true
+  iron-boots:
+    name: "Iron Boots"
+    material: IRON_BOOTS
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 8
+    slot: 40
+    quick-buy: true
+  diamond-helmet:
+    name: "Diamond Helmet"
+    material: DIAMOND_HELMET
+    data: 0
+    amount: 1
+    resource: EMERALD
+    cost: 2
+    slot: 41
+    quick-buy: true
+  diamond-chestplate:
+    name: "Diamond Chestplate"
+    material: DIAMOND_CHESTPLATE
+    data: 0
+    amount: 1
+    resource: EMERALD
+    cost: 4
+    slot: 42
+    quick-buy: true
+  diamond-leggings:
+    name: "Diamond Armor"
+    description: "Melhora permanente de armadura nesta partida."
+    material: DIAMOND_LEGGINGS
+    data: 0
+    amount: 1
+    resource: EMERALD
+    cost: 3
+    slot: 43
+    quick-buy: true
+  diamond-boots:
+    name: "Diamond Boots"
+    material: DIAMOND_BOOTS
+    data: 0
+    amount: 1
+    resource: EMERALD
+    cost: 2
+    slot: 44
+    quick-buy: true
