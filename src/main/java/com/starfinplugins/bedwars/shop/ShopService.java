@@ -550,20 +550,12 @@ public final class ShopService implements ManagedService, Listener {
     }
 
     private void requestShopMenu(final Player player, final Entity clicked, String data) {
-        final String[] parts = data.split("\\|", 2);
-        if (parts.length != 2) return;
-        final UUID matchId;
-        try {
-            matchId = UUID.fromString(parts[0]);
-        } catch (IllegalArgumentException invalid) {
-            return;
-        }
-        final String[] kind = parts[1].split(":", 2);
-        if (kind.length == 0 || (!"items".equals(kind[0]) && !"upgrades".equals(kind[0]))) return;
+        final ShopNpcRoute route = ShopNpcRoute.parse(data);
+        if (route == null) return;
+        final UUID matchId = route.getMatchId();
 
         GameMatch match = matches.getMatchForPlayer(player.getUniqueId());
-        if (match == null || !match.getId().equals(matchId)
-                || match.getState() != MatchState.IN_GAME) {
+        if (match == null || match.getState() != MatchState.IN_GAME) {
             player.sendMessage(ChatColor.RED + "Esta loja nao pertence a sua partida ativa.");
             return;
         }
@@ -572,12 +564,12 @@ public final class ShopService implements ManagedService, Listener {
                 || player.getWorld() != matches.getWorld(matchId)
                 || clicked.getWorld() != player.getWorld()
                 || clicked.getLocation().distanceSquared(player.getLocation()) > 36.0D
-                || (kind.length == 2 && !kind[1].equals(participant.getTeamId()))) {
+                || !route.canAccess(match.getId(), participant.getTeamId())) {
             player.sendMessage(ChatColor.RED + "Voce nao pode utilizar esta loja agora.");
             return;
         }
         if (!pendingOpen.add(player.getUniqueId())) return;
-        final boolean upgradesMenu = "upgrades".equals(kind[0]);
+        final boolean upgradesMenu = route.isUpgrades();
 
         // Do not open inventory within the armor stand interaction packet: in 1.8
         // the vanilla equipment/merchant processing can immediately close it.
@@ -592,7 +584,7 @@ public final class ShopService implements ManagedService, Listener {
                 GameParticipant currentParticipant = current.getParticipant(player.getUniqueId());
                 if (currentParticipant == null
                         || currentParticipant.getState() != ParticipantState.CONNECTED
-                        || (kind.length == 2 && !kind[1].equals(currentParticipant.getTeamId()))) return;
+                        || !route.canAccess(current.getId(), currentParticipant.getTeamId())) return;
                 try {
                     if (upgradesMenu) upgrades.openShop(player, current, currentParticipant.getTeamId());
                     else openMenu(player, ClassicShopMenu.Category.FAVORITES, 0, false);
