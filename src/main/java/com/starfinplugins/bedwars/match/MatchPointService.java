@@ -157,16 +157,6 @@ public final class MatchPointService implements ManagedService, Listener {
 
     private void activate(Active active, World world) {
         GameMatch match = active.match;
-        matches.destroyAllBedsAtMatchPoint(match);
-        for (GameParticipant participant : match.getParticipantList()) {
-            Player player = Bukkit.getPlayer(participant.getPlayerId());
-            if (player != null && player.isOnline() && player.getWorld() == world) {
-                player.sendMessage(ChatColor.translateAlternateColorCodes('&',
-                    plugin.getConfig().getString("match-point.message",
-                        "&5&lMATCH POINT! &cTodas as camas foram destruidas! "
-                        + "&dUm dragao esta destruindo a arena!")));
-            }
-        }
         ArenaRegion bounds = match.getArena().getBounds();
         if (bounds == null) bounds = match.getArena().getRegion(ArenaRegionType.MAIN);
         if (bounds == null) {
@@ -206,6 +196,21 @@ public final class MatchPointService implements ManagedService, Listener {
         } catch (RuntimeException failure) {
             plugin.getLogger().warning("Match Point: nao foi possivel iniciar dragao: "
                 + failure.getMessage());
+            removeDragon(active);
+            return;
+        }
+        // Only alter the match when the Dragon actually exists. A failed
+        // test command must not irreversibly break beds without a Match Point.
+        if (active.dragon == null || !active.dragon.isValid()) return;
+        matches.destroyAllBedsAtMatchPoint(match);
+        for (GameParticipant participant : match.getParticipantList()) {
+            Player player = Bukkit.getPlayer(participant.getPlayerId());
+            if (player != null && player.isOnline() && player.getWorld() == world) {
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&',
+                    plugin.getConfig().getString("match-point.message",
+                        "&5&lMATCH POINT! &cTodas as camas foram destruídas! "
+                        + "&dO dragão está destruindo a arena!")));
+            }
         }
     }
 
