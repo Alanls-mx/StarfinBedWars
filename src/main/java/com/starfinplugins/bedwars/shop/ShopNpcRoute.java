@@ -48,4 +48,9 @@ public final class ShopNpcRoute {
         return matchId.equals(activeMatchId) && playerTeamId != null
             && !playerTeamId.trim().isEmpty();
     }
+
+    /** Always target the purchaser's own team, never the island NPC's team. */
+    public String getPurchasingTeamId(UUID activeMatchId, String playerTeamId) {
+        return canAccess(activeMatchId, playerTeamId) ? playerTeamId : null;
+    }
 }
