@@ -5,6 +5,9 @@ import com.starfinplugins.bedwars.domain.arena.Position;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.BitSet;
+import java.util.TreeSet;
+import java.util.NavigableSet;
 import java.util.Set;
 import java.util.Collections;
 import java.util.Comparator;
@@ -34,8 +37,17 @@ public final class MatchPointMapIndex {
     private long totalBlocks;
     private long consumed;
     private boolean finished;
-    private Bucket preferredBucket;
-    private int preferredCount;
+    private Bucket lastBucket;
+    private final NavigableSet<Bucket> ready = new TreeSet<Bucket>(new Comparator<Bucket>() {
+        @Override public int compare(Bucket a, Bucket b) {
+            // Compare fractions exactly. Small islands must not disappear before
+            // larger islands have received the same proportional damage.
+            long left = (long) (a.originalCount - a.remaining) * b.originalCount;
+            long right = (long) (b.originalCount - b.remaining) * a.originalCount;
+            int progress = Long.compare(left, right);
+            return progress != 0 ? progress : Long.compare(chunkKey(a.cx,a.cz), chunkKey(b.cx,b.cz));
+        }
+    });
     private final Set<Bucket> deferred = new HashSet<Bucket>();
 
     public MatchPointMapIndex(ArenaRegion area) {
@@ -118,6 +130,8 @@ public final class MatchPointMapIndex {
         nextChunk();
     }
     private void nextChunk() {
+        Bucket completed = buckets.get(chunkKey(chunkX, chunkZ));
+        if (completed != null && !completed.isEmpty()) ready.add(completed);
         snapshot = null;
         if (++chunkX > lastChunkX) {
             chunkX = firstChunkX;
@@ -135,48 +149,64 @@ public final class MatchPointMapIndex {
     public long getTotalBlocks() { return totalBlocks; }
     public long getConsumed() { return consumed; }
 
-    /**
-     * Batch up to 64 blocks from the nearest occupied chunk before searching
-     * again. This avoids an O(number of chunks) search for EVERY removed block.
-     */
     private Cell lastConsumed;
 
     /** Failed chunks become eligible again on the next bounded server tick. */
-    public void beginRemovalBatch() { deferred.clear(); }
-
-    public Cell consumeNearest(double dragonX, double dragonZ) {
-        if (!finished) return null;
-        if (preferredBucket == null || preferredBucket.isEmpty() || preferredCount >= 64) {
-            preferredBucket = null;
-            preferredCount = 0;
-            double best = Double.POSITIVE_INFINITY;
-            for (Bucket bucket : buckets.values()) {
-                if (bucket.isEmpty() || deferred.contains(bucket)) continue;
-                double dx = bucket.centerX() - dragonX;
-                double dz = bucket.centerZ() - dragonZ;
-                double distance = dx * dx + dz * dz;
-                if (distance < best) {
-                    best = distance;
-                    preferredBucket = bucket;
-                }
-            }
-        }
-        if (preferredBucket == null) return null;
-        preferredCount++;
-        consumed++;
-        lastConsumed = preferredBucket.poll();
-        return lastConsumed;
+    public void beginRemovalBatch() {
+        ready.addAll(deferred);
+        deferred.clear();
     }
 
-    /** Requeue an inaccessible block instead of counting it as destroyed. */
+    /** Select the least-damaged built region, proportional to its real baseline. */
+    public Cell consumeBalanced() {
+        if (!finished || ready.isEmpty()) return null;
+        // A local blast can leave stale array slots. If cleaning 64 entries
+        // does not reach a live one, let other regions advance this tick.
+        for (int checked = 0; checked < 8 && !ready.isEmpty(); checked++) {
+            Bucket bucket = ready.pollFirst();
+            Cell cell = bucket.poll();
+            if (cell == null) {
+                if (!bucket.isEmpty()) deferred.add(bucket);
+                continue;
+            }
+            consumed++;
+            if (!bucket.isEmpty()) ready.add(bucket);
+            lastBucket = bucket;
+            lastConsumed = cell;
+            return cell;
+        }
+        lastBucket = null;
+        lastConsumed = null;
+        return null;
+    }
+
+    /** Requeue an inaccessible block without inflating the destruction ratio. */
     public void retryLast(Cell cell) {
-        if (cell == null || cell != lastConsumed || preferredBucket == null) return;
-        preferredBucket.restore(cell);
-        deferred.add(preferredBucket);
-        preferredBucket = null;
-        preferredCount = 0;
+        if (cell == null || cell != lastConsumed || lastBucket == null) return;
+        ready.remove(lastBucket);
+        lastBucket.restore(cell);
+        deferred.add(lastBucket);
         consumed--;
         lastConsumed = null;
+    }
+
+    /** Local dragon/lightning impacts share the global AND regional schedule. */
+    public boolean canConsumeAt(int x, int y, int z, long globalTarget) {
+        if (!finished || consumed >= globalTarget || totalBlocks == 0 || y < 0 || y > 255) return false;
+        Bucket bucket = buckets.get(chunkKey(x >> 4, z >> 4));
+        if (bucket == null || deferred.contains(bucket) || !bucket.contains(x,y,z)) return false;
+        long regionalTarget = (globalTarget * bucket.originalCount + totalBlocks - 1) / totalBlocks;
+        return bucket.originalCount - bucket.remaining < regionalTarget;
+    }
+
+    /** Called only after a real removal (or observation that it is already AIR). */
+    public void consumeAt(int x, int y, int z) {
+        Bucket bucket = buckets.get(chunkKey(x >> 4,z >> 4));
+        if (bucket == null || !bucket.contains(x,y,z)) return;
+        ready.remove(bucket);
+        bucket.consume(x,y,z);
+        consumed++;
+        if (!bucket.isEmpty() && !deferred.contains(bucket)) ready.add(bucket);
     }
 
     /**
@@ -230,6 +260,8 @@ public final class MatchPointMapIndex {
         private long sumY;
         private int originalCount;
         private int size;
+        private int remaining;
+        private final BitSet live = new BitSet();
         private Bucket(int cx, int cz) {
             this.cx=cx; this.cz=cz;
             random = new Random(chunkKey(cx, cz));
@@ -242,18 +274,39 @@ public final class MatchPointMapIndex {
             append(x, y, z);
             sumY += y;
             originalCount++;
+            remaining++;
+            live.set(pack(x,y,z));
         }
-        private boolean isEmpty() { return size == 0; }
+        private static int pack(int x, int y, int z) {
+            return (y << 8) | ((z & 15) << 4) | (x & 15);
+        }
+        private boolean contains(int x,int y,int z) { return live.get(pack(x,y,z)); }
+        private void consume(int x,int y,int z) {
+            live.clear(pack(x,y,z));
+            remaining--;
+        }
+        private boolean isEmpty() { return remaining == 0; }
         private Cell poll() {
             // Incremental Fisher-Yates selection: constant work per removal,
             // no whole-map shuffle on the tick that finishes the survey.
-            int index = random.nextInt(size);
-            int packed = samples[index];
-            samples[index] = samples[--size];
-            return new Cell((cx << 4) + (packed & 15), packed >>> 8,
-                (cz << 4) + ((packed >>> 4) & 15));
+            // Local impacts can leave stale array entries. Bound their cleanup too.
+            for (int skipped=0; size>0 && skipped<64; skipped++) {
+                int index = random.nextInt(size);
+                int packed = samples[index];
+                samples[index] = samples[--size];
+                if (!live.get(packed)) continue;
+                live.clear(packed);
+                remaining--;
+                return new Cell((cx << 4) + (packed & 15), packed >>> 8,
+                    (cz << 4) + ((packed >>> 4) & 15));
+            }
+            return null;
         }
-        private void restore(Cell cell) { append(cell.x, cell.y, cell.z); }
+        private void restore(Cell cell) {
+            append(cell.x, cell.y, cell.z);
+            live.set(pack(cell.x,cell.y,cell.z));
+            remaining++;
+        }
         private double centerX() { return cx * 16.0D + 8.0D; }
         private double centerZ() { return cz * 16.0D + 8.0D; }
         private double averageY() { return originalCount == 0 ? 80.0D : sumY/(double)originalCount; }

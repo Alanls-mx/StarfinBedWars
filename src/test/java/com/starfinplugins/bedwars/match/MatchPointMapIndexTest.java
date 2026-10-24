@@ -42,14 +42,14 @@ public class MatchPointMapIndexTest {
         int seen = 0;
         boolean center = false;
         for (int i=0;i<4;i++) {
-            MatchPointMapIndex.Cell cell = index.consumeNearest(25,25);
+            MatchPointMapIndex.Cell cell = index.consumeBalanced();
             assertNotNull(cell);
             if (cell.x >= 24 && cell.x <= 26 && cell.z >=24) center = true;
             seen++;
         }
         assertTrue("Neutral center structures must be eligible",center);
         assertEquals(seen,index.getConsumed());
-        assertNull(index.consumeNearest(25,25));
+        assertNull(index.consumeBalanced());
     }
 
     @Test public void inaccessibleBlockCanBeRetriedWithoutInflatingPercent() {
@@ -58,14 +58,14 @@ public class MatchPointMapIndexTest {
         MatchPointMapIndex index = new MatchPointMapIndex(
             new ArenaRegion("map",0,68,0,0,72,0));
         for (int i=0;i<5 && !index.isFinished();i++) index.survey(proxyWorld(blocks),100);
-        MatchPointMapIndex.Cell cell = index.consumeNearest(0,0);
+        MatchPointMapIndex.Cell cell = index.consumeBalanced();
         assertNotNull(cell);
         assertEquals(1L,index.getConsumed());
         index.retryLast(cell);
         assertEquals(0L,index.getConsumed());
-        assertNull(index.consumeNearest(0,0));
+        assertNull(index.consumeBalanced());
         index.beginRemovalBatch();
-        assertNotNull(index.consumeNearest(0,0));
+        assertNotNull(index.consumeBalanced());
         assertEquals(1L,index.getConsumed());
     }
 
@@ -77,21 +77,21 @@ public class MatchPointMapIndexTest {
             new ArenaRegion("map",-16,70,-16,16,70,16));
         while (!index.survey(proxyWorld(blocks), 100)) { }
         index.beginRemovalBatch();
-        MatchPointMapIndex.Cell blocked = index.consumeNearest(-16,-16);
+        MatchPointMapIndex.Cell blocked = index.consumeBalanced();
         assertEquals(-16, blocked.x);
         assertEquals(-16, blocked.z);
         index.retryLast(blocked);
         index.retryLast(blocked);
         assertEquals(0L, index.getConsumed());
-        MatchPointMapIndex.Cell accessible = index.consumeNearest(-16,-16);
+        MatchPointMapIndex.Cell accessible = index.consumeBalanced();
         assertEquals(16, accessible.x);
         assertEquals(70, accessible.y);
         assertEquals(1L, index.getConsumed());
-        assertNull(index.consumeNearest(-16,-16));
+        assertNull(index.consumeBalanced());
         index.beginRemovalBatch();
-        assertEquals(-16, index.consumeNearest(0,0).x);
+        assertEquals(-16, index.consumeBalanced().x);
         assertEquals(2L, index.getConsumed());
-        assertNull(index.consumeNearest(0,0));
+        assertNull(index.consumeBalanced());
     }
 
     @Test public void denseChunkConsumesEveryCoordinateExactlyOnce() {
@@ -105,11 +105,55 @@ public class MatchPointMapIndexTest {
         while (!index.survey(proxyWorld(blocks), 300)) { }
         java.util.Set<String> seen = new java.util.HashSet<String>();
         MatchPointMapIndex.Cell cell;
-        while ((cell=index.consumeNearest(0,0)) != null) {
+        while ((cell=index.consumeBalanced()) != null) {
             assertTrue(seen.add(key(cell.x,cell.y,cell.z)));
         }
         assertEquals(blocks.keySet(),seen);
         assertEquals(512L,index.getConsumed());
+    }
+
+    @Test public void balancesDifferentSizedIslandsByPercentage() {
+        Map<String,Integer> blocks = new HashMap<String,Integer>();
+        for(int y=1;y<=100;y++) blocks.put(key(0,y,0),1);
+        for(int y=1;y<=20;y++) blocks.put(key(32,y,0),1);
+        MatchPointMapIndex index = new MatchPointMapIndex(new ArenaRegion("map",0,0,0,32,100,0));
+        while (!index.survey(proxyWorld(blocks),300)) { }
+        int large=0,small=0;
+        for(int i=0;i<60;i++) {
+            MatchPointMapIndex.Cell cell=index.consumeBalanced();
+            assertNotNull(cell);
+            if(cell.x==0)large++; else small++;
+        }
+        assertEquals(50,large);
+        assertEquals(10,small);
+    }
+
+    @Test public void overlappingDragonAndLightningCannotExhaustOneIsland() {
+        Map<String,Integer> blocks = new HashMap<String,Integer>();
+        for(int x : new int[]{0,32,64,96}) for(int y=1;y<=100;y++) blocks.put(key(x,y,0),1);
+        MatchPointMapIndex index = new MatchPointMapIndex(new ArenaRegion("map",0,0,0,96,100,0));
+        while (!index.survey(proxyWorld(blocks),300)) { }
+        long target=200; // Half of the map, shared by ALL damage sources.
+        int local=0;
+        for(int y=1;y<=100;y++) {
+            if(index.canConsumeAt(0,y,0,target)) {index.consumeAt(0,y,0);local++;}
+        }
+        assertEquals(50,local);
+        assertTrue(!index.canConsumeAt(0,80,0,target));
+        index.consumeAt(0,1,0); // Same block cannot be charged twice.
+        assertEquals(50L,index.getConsumed());
+        Map<Integer,Integer> other=new HashMap<Integer,Integer>();
+        while(index.getConsumed()<target) {
+            MatchPointMapIndex.Cell cell=index.consumeBalanced();
+            assertNotNull(cell);
+            assertTrue("Locally damaged island must wait for others",cell.x!=0);
+            other.put(cell.x,other.getOrDefault(cell.x,0)+1);
+        }
+        for(int x:new int[]{32,64,96})assertEquals(Integer.valueOf(50),other.get(x));
+        assertTrue(!index.canConsumeAt(32,100,0,target));
+        int ticks=0;
+        while(index.getConsumed()<index.getTotalBlocks() && ticks++<1000) index.consumeBalanced();
+        assertEquals(400L,index.getConsumed());
     }
 
     private static String key(int x,int y,int z) { return x+":"+y+":"+z; }

@@ -387,7 +387,6 @@ public final class MatchPointService implements ManagedService, Listener {
             }
         }
         if (active.mapIndex != null && active.mapIndex.isFinished()) {
-            destroyNearby(active, actual);
             advanceDemolition(active, world, actual);
         }
         damageNearby(active, actual);
@@ -525,7 +524,10 @@ public final class MatchPointService implements ManagedService, Listener {
         if (missing <= 0) return;
         int limit = Math.max(10, Math.min(1400, plugin.getConfig()
             .getInt("match-point.demolition.max-blocks-per-tick", 220)));
-        int cap = (int) Math.min(missing, limit);
+        active.removalTarget = Math.min(target, map.getConsumed() + limit);
+        map.beginRemovalBatch();
+        destroyNearby(active, dragon);
+        int cap = (int) (active.removalTarget - map.getConsumed());
 
         int done = 0, removed = 0;
         boolean lightningEnabled = plugin.getConfig().getBoolean(
@@ -536,9 +538,8 @@ public final class MatchPointService implements ManagedService, Listener {
         Location lightningAt = null;
         int lightningCoreRemoved = 0;
         int loadedChunks = 0;
-        map.beginRemovalBatch();
-        for (; done < cap; done++) {
-            MatchPointMapIndex.Cell cell = map.consumeNearest(dragon.getX(), dragon.getZ());
+        for (; done < cap && map.getConsumed() < active.removalTarget; done++) {
+            MatchPointMapIndex.Cell cell = map.consumeBalanced();
             if (cell == null) break;
             if (!world.isChunkLoaded(cell.x >> 4, cell.z >> 4)) {
                 if (loadedChunks++ >= 2 || !loadExistingChunk(world, cell.x >> 4, cell.z >> 4)) {
@@ -551,12 +552,12 @@ public final class MatchPointService implements ManagedService, Listener {
             }
             Block block = world.getBlockAt(cell.x, cell.y, cell.z);
             boolean alreadyAir = block.getType() == Material.AIR;
-            if (alreadyAir || eraseBlock(active, block)) {
+            if (alreadyAir || eraseScheduledBlock(active, block)) {
                 removed++;
                 if (lightningDue && lightningAt == null && !alreadyAir) {
                     lightningAt = new Location(world, cell.x + 0.5D,
                         cell.y + 1.0D, cell.z + 0.5D);
-                    lightningCoreRemoved = 1;
+                    lightningCoreRemoved = 1 + breakLightningBlocks(active, world, lightningAt);
                 }
                 if (active.waveAt == null && !alreadyAir) {
                     active.waveAt = new Location(world, cell.x + 0.5D,
@@ -575,7 +576,7 @@ public final class MatchPointService implements ManagedService, Listener {
             // Lightning is visual-only as an entity (no vanilla fire/damage),
             // but the plugin breaks REAL blocks under the strike. These
             // original coordinates later count as AIR in the index.
-            int broken = breakLightningBlocks(active, world, lightningAt);
+            int broken = 0;
             // The initial strike block was already removed by this tick's
             // scheduled quota. Even if all neighbors were empty, the bolt
             // still corresponds to a REAL block that disappeared.
@@ -644,6 +645,14 @@ public final class MatchPointService implements ManagedService, Listener {
 
     /** Erase only disposable match-instance blocks, never bedrock. */
     private boolean eraseBlock(Active active, Block block) {
+        MatchPointMapIndex map = active.mapIndex;
+        if (map == null || !map.canConsumeAt(block.getX(), block.getY(), block.getZ(), active.removalTarget)) return false;
+        if (!eraseScheduledBlock(active, block)) return false;
+        map.consumeAt(block.getX(), block.getY(), block.getZ());
+        return true;
+    }
+
+    private boolean eraseScheduledBlock(Active active, Block block) {
         if (!ownsWorld(active, block.getWorld()) || active.area == null
                 || block.getX() < active.area.getMinimumX() || block.getX() > active.area.getMaximumX()
                 || block.getY() < active.area.getMinimumY() || block.getY() > active.area.getMaximumY()
@@ -744,6 +753,7 @@ public final class MatchPointService implements ManagedService, Listener {
         private MatchPointDemolitionSchedule demolition;
         private long startedAtMillis;
         private long scheduledRemoved;
+        private long removalTarget;
         private long failedRemovals;
         private long lastLightningTick;
         private long lightningDestroyed;
