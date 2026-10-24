@@ -27,6 +27,17 @@ public class BridgeEggDecayQueueTest {
         assertNull(bridge.pollOldest());
     }
 
+    @Test public void peekingUnavailableChunkDoesNotDiscardASection() {
+        BridgeEggDecayQueue<Integer> queue = new BridgeEggDecayQueue<Integer>();
+        queue.addSlice(Arrays.asList(1, 2, 3));
+        queue.addSlice(Arrays.asList(4, 5, 6));
+        assertEquals(Arrays.asList(1, 2, 3), queue.peekOldest());
+        assertEquals(Arrays.asList(1, 2, 3), queue.peekOldest());
+        assertEquals(2, queue.size());
+        assertEquals(Arrays.asList(1, 2, 3), queue.pollOldest());
+        assertEquals(Arrays.asList(4, 5, 6), queue.pollOldest());
+    }
+
     @Test public void ignoresUnbuiltSectionsAndCopiesInput() {
         BridgeEggDecayQueue<Integer> bridge = new BridgeEggDecayQueue<Integer>();
         bridge.addSlice(null);
