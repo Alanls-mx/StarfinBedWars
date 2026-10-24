@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.LinkedHashSet;
 import java.util.EnumMap;
@@ -79,6 +80,8 @@ public final class ShopService implements ManagedService, Listener {
     private final Map<UUID, Map<String, List<Entity>>> shopGroups =
         new HashMap<UUID, Map<String, List<Entity>>>();
     private int maintenanceTicks;
+    /** Debounce superclass and armor-manipulation packets in the same server tick. */
+    private final Set<UUID> pendingOpen = new HashSet<UUID>();
     private ShopSettings settings;
     private ManagedMobGuard mobGuard;
     private MatchEquipmentService equipment;
@@ -121,6 +124,8 @@ public final class ShopService implements ManagedService, Listener {
         npcAnchors.clear();
         npcBodies.clear();
         shopGroups.clear();
+        pendingOpen.clear();
+        maintenanceTicks = 0;
         favorites.clear();
     }
 
@@ -258,10 +263,20 @@ public final class ShopService implements ManagedService, Listener {
         if (group == null || group.isEmpty()) return false;
         boolean foundVillager = false;
         boolean foundBody = false;
+        String expectedOwnership = null;
         for (Entity entity : group) {
             if (entity == null || !entity.isValid() || entity.isDead()) return false;
+            String owner = ownedMetadata(entity);
+            if (owner == null) return false; // alive but unregistered entities are unclickable
+            if (expectedOwnership == null) expectedOwnership = owner;
+            else if (!expectedOwnership.equals(owner)) return false;
             if (entity instanceof Villager) foundVillager = true;
-            if (entity instanceof ArmorStand && !((ArmorStand) entity).isMarker()) foundBody = true;
+            if (entity instanceof ArmorStand && !((ArmorStand) entity).isMarker()) {
+                ArmorStand body = (ArmorStand) entity;
+                if (body.getHelmet() == null || body.getChestplate() == null
+                        || body.getLeggings() == null) return false;
+                foundBody = true;
+            }
         }
         return foundVillager && foundBody;
     }
@@ -478,46 +493,103 @@ public final class ShopService implements ManagedService, Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    /**
+     * ArmorStand equipment packets may not produce the same superclass event on
+     * every 1.8.8 server. Cancel the swap and route the click explicitly.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onShopArmorStandManipulate(PlayerArmorStandManipulateEvent event) {
-        if (ownedMetadata(event.getRightClicked()) != null) {
-            // These heads and armor pieces belong to the server-side shop display.
-            // Never let vanilla swap them into a player's inventory.
-            event.setCancelled(true);
-        }
+        String data = shopClickData(event.getRightClicked());
+        if (data == null) return;
+        event.setCancelled(true);
+        requestShopMenu(event.getPlayer(), event.getRightClicked(), data);
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onShopClick(PlayerInteractEntityEvent event) {
-        Entity clicked = event.getRightClicked();
-        String shopData = ownedMetadata(clicked);
-        if (shopData == null) return;
+        String data = shopClickData(event.getRightClicked());
+        if (data == null) return;
         event.setCancelled(true);
-        String[] shopParts = shopData.split("\\|", 2);
-        if (shopParts.length != 2) return;
-        Player player = event.getPlayer();
+        requestShopMenu(event.getPlayer(), event.getRightClicked(), data);
+    }
+
+    /**
+     * Resolve clickability from the active entity registry as well as metadata.
+     * On chunk reloads a live entity can lose Bukkit metadata without losing
+     * its identity. Only entities registered to this service are recovered.
+     */
+    private String shopClickData(Entity clicked) {
+        if (clicked == null) return null;
+        String tagged = ownedMetadata(clicked);
+        if (tagged != null) return tagged;
+        for (Map.Entry<UUID, Map<String, List<Entity>>> match : shopGroups.entrySet()) {
+            for (Map.Entry<String, List<Entity>> group : match.getValue().entrySet()) {
+                for (Entity entity : group.getValue()) {
+                    if (entity != null && entity.getUniqueId().equals(clicked.getUniqueId())
+                            && clicked.getWorld() == matches.getWorld(match.getKey())) {
+                        return match.getKey().toString() + "|" + group.getKey();
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private void requestShopMenu(final Player player, final Entity clicked, String data) {
+        final String[] parts = data.split("\\|", 2);
+        if (parts.length != 2) return;
+        final UUID matchId;
+        try {
+            matchId = UUID.fromString(parts[0]);
+        } catch (IllegalArgumentException invalid) {
+            return;
+        }
+        final String[] kind = parts[1].split(":", 2);
+        if (kind.length == 0 || (!"items".equals(kind[0]) && !"upgrades".equals(kind[0]))) return;
+
         GameMatch match = matches.getMatchForPlayer(player.getUniqueId());
-        if (match == null || !match.getId().toString().equals(shopParts[0])
+        if (match == null || !match.getId().equals(matchId)
                 || match.getState() != MatchState.IN_GAME) {
-            player.sendMessage(ChatColor.RED + "Esta loja pertence a uma partida encerrada.");
+            player.sendMessage(ChatColor.RED + "Esta loja nao pertence a sua partida ativa.");
             return;
         }
         GameParticipant participant = match.getParticipant(player.getUniqueId());
         if (participant == null || participant.getState() != ParticipantState.CONNECTED
-                || player.getWorld() != matches.getWorld(match.getId())) {
-            player.sendMessage(ChatColor.RED + "Voce nao pode usar esta loja agora.");
+                || player.getWorld() != matches.getWorld(matchId)
+                || clicked.getWorld() != player.getWorld()
+                || clicked.getLocation().distanceSquared(player.getLocation()) > 36.0D
+                || (kind.length == 2 && !kind[1].equals(participant.getTeamId()))) {
+            player.sendMessage(ChatColor.RED + "Voce nao pode utilizar esta loja agora.");
             return;
         }
-        String[] shopKind = shopParts[1].split(":", 2);
-        if (shopKind.length == 2 && !shopKind[1].equals(participant.getTeamId())) {
-            player.sendMessage(ChatColor.RED + "Esta loja pertence a outra equipe.");
-            return;
-        }
-        if (shopKind[0].startsWith("upgrades")) {
-            upgrades.openShop(player, match, participant.getTeamId());
-            return;
-        }
-        openMenu(player, ClassicShopMenu.Category.FAVORITES, 0, false);
+        if (!pendingOpen.add(player.getUniqueId())) return;
+        final boolean upgradesMenu = "upgrades".equals(kind[0]);
+
+        // Do not open inventory within the armor stand interaction packet: in 1.8
+        // the vanilla equipment/merchant processing can immediately close it.
+        Bukkit.getScheduler().runTask(plugin, new Runnable() {
+            @Override public void run() {
+                pendingOpen.remove(player.getUniqueId());
+                if (!player.isOnline()) return;
+                GameMatch current = matches.getMatchForPlayer(player.getUniqueId());
+                if (current == null || !current.getId().equals(matchId)
+                        || current.getState() != MatchState.IN_GAME
+                        || player.getWorld() != matches.getWorld(matchId)) return;
+                GameParticipant currentParticipant = current.getParticipant(player.getUniqueId());
+                if (currentParticipant == null
+                        || currentParticipant.getState() != ParticipantState.CONNECTED
+                        || (kind.length == 2 && !kind[1].equals(currentParticipant.getTeamId()))) return;
+                try {
+                    if (upgradesMenu) upgrades.openShop(player, current, currentParticipant.getTeamId());
+                    else openMenu(player, ClassicShopMenu.Category.FAVORITES, 0, false);
+                } catch (RuntimeException error) {
+                    plugin.getLogger().log(java.util.logging.Level.SEVERE,
+                        "Falha ao abrir " + (upgradesMenu ? "Upgrades" : "Shop")
+                            + " para " + player.getUniqueId() + " na partida " + matchId, error);
+                    player.sendMessage(ChatColor.RED + "Falha ao abrir a loja. Avise um administrador.");
+                }
+            }
+        });
     }
 
     @EventHandler
