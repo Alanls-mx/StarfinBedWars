@@ -41,6 +41,20 @@ public final class MatchPointErosionCursor {
         return finished ? null : new Cell(x, y, z);
     }
 
+    /**
+     * Skip empty air above the column's actual surface, without iterating
+     * through dozens/hundreds of empty blocks. Those coordinates still count
+     * toward the visited total for correct progress reporting.
+     */
+    public void skipAirAbove(int highestNonAirY) {
+        if (finished) return;
+        int toY = Math.max(minY, Math.min(y, highestNonAirY));
+        if (toY < y) {
+            visited += y - toY;
+            y = toY;
+        }
+    }
+
     public void advance() {
         if (finished) return;
         visited++;
