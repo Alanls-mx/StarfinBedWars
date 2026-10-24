@@ -34,6 +34,12 @@ public class PresentationConfigMigratorTest {
         assertEquals(480, updated.getInt("special-items.bridge-egg.max-blocks"));
         assertEquals(5, updated.getInt("special-items.bridge-egg.decay-delay-seconds"));
         assertEquals(3, updated.getInt("special-items.bridge-egg.decay-interval-ticks"));
+        assertTrue(updated.getBoolean("special-items.defender-persistent"));
+        assertTrue(updated.getBoolean("match-point.enabled"));
+        assertEquals(30, updated.getInt("match-point.after-minutes"));
+        assertEquals(18, updated.getInt("match-point.blocks-per-sweep"));
+        assertTrue(updated.getBoolean("visuals.victory.celebration.enabled"));
+        assertEquals(4, updated.getInt("visuals.victory.celebration.fireworks-per-burst"));
         assertEquals(0.75D, updated.getDouble(
             "special-items.defender-knockback.horizontal"), 0.0D);
         assertEquals(0.85D, updated.getDouble(
