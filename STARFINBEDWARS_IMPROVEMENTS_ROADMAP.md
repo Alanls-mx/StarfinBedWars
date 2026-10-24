@@ -552,3 +552,56 @@ do erro. Nao alegar sucesso do build ate `mvn -B verify` concluir.
   iniciar partida, usar `/sbw matchpoint` e acompanhar no console
   quantidade de blocos removidos. Testar 2, 4 e 8 ilhas, vidro,
   construcoes fora da vista dos jogadores, restauracao posterior.
+
+## DEFINICAO CORRIGIDA: voo em X, destruicao normal estilo TNT e barra permanente
+
+### Interpretacao final do pedido (substitui as propostas de varredura e explosao em X)
+- **O X e a trajetoria do dragao**, NAO o formato dos buracos. O dragao
+  percorre os limites MAIN (pos1/pos2) cruzando de um canto ao canto
+  oposto; na sequencia percorre a outra diagonal e alterna a direcao
+  e a largura da passagem nas proximas voltas.
+- `MatchPointPatrolRoute` agora monta trajetos diagonais interpolados
+  com waypoints proximos (padrao maximo de 40 blocos entre pontos), sem
+  teleportes repetidos, incluindo tres voltas com insets diferentes.
+  Isso substitui o zigue-zague em grade anterior.
+- **Destruicao e localizada** sob a passagem real do EnderDragon, em
+  crateras aproximadamente circulares estilo TNT. `MatchPointBlastFootprint`
+  devolve offsets ordenados pela distancia do centro, incluindo os
+  eixos e diagonais — NAO o desenho em X da antiga classe removida.
+- Defaults mais lentos: 1 impacto a cada **40 ticks (2 segundos)**,
+  **ate 8 blocos** no total e **1 camada** de profundidade por coluna,
+  raio **3 blocos**. Outro impacto requer deslocamento >= **5 blocos**,
+  evitando cavar um buraco enorme se o dragao estiver preso.
+- A antiga varredura global que removia rapidamente blocos por toda a
+  regiao foi **retirada do servico e eliminada do projeto**, incluindo
+  `MatchPointErosionCursor` e seu teste. As opcoes antigas
+  `match-point.global-erosion.*` ou `match-point.blocks-per-sweep`
+  salvas em configuracoes legadas ficam inertes; o migrador nao destrói
+  valores personalizados antigos.
+- Qualquer destruicao so pode modificar o mundo temporario da GameMatch.
+  Nao destrói o template; outra partida inicia numa nova copia limpa.
+
+### Barra MATCH POINT independente do campo de visao do dragao
+- A barra nativa de vida do dragao no Minecraft 1.8.8 depende do tracking
+  do mob no cliente (desaparece ao olhar ou andar para longe).
+- Novo `MatchPointBossBarV1_8_R3`: entidade Wither invisivel,
+  **somente em pacotes para cada cliente** (sem spawn real no mundo).
+  A entidade fake e mantida a 25 blocos abaixo do jogador e atualizada
+  a cada 10 ticks; a barra MATCH POINT nao depende de estar olhando
+  para o dragao ou da distancia de renderizacao.
+- As entidades fake sao removidas ao sair da partida, desativar a
+  funcionalidade, trocar de mundo, morrer/renascer, desconectar ou
+  desativar o plugin. `match-point.bossbar-enabled: true`.
+- O dragao real continua invulneravel e usando a IA NMS para voar.
+- Testes: `MatchPointPatrolRouteTest` para diagonais alternadas e
+  cruzamentos centrais; `MatchPointBlastFootprintTest` verifica cratera
+  circular de 29 posicoes (raio 3), incluindo offsets fora do X;
+  `PresentationConfigMigratorTest` verifica defaults e preservacao
+  de configuracoes customizadas.
+
+**Teste real ainda obrigatorio:** compilar `mvn -B verify` com Java 8
+e executar em PaperSpigot 1.8.8. Iniciar Match Point via
+`/sbw matchpoint`, conferir voo em X alternado por toda a MAIN, crateras
+pequenas e lentas apenas perto do dragao, bossbar ao olhar para outro
+lado / em partes distantes da arena, respawn e troca de mundo. Confirmar
+retorno ao lobby e instancia nova intacta. Nenhum JAR compilado nesta sessao.
