@@ -205,6 +205,9 @@ visuals:
     sound: FIREWORK_LAUNCH
     sound-enabled: true
     particles: 6
+  death:
+    title: '&c&lVOCE MORREU!'
+    subtitle: '&eRenascendo em &c{time} &esegundos.'
   defeat:
     title: '&c&lDERROTA!'
     subtitle: '&7Sua equipe foi eliminada!'
@@ -226,6 +229,14 @@ messages:
   countdown-cancelled: '&cContagem cancelada! Aguardando mais jogadores.'
   match-started: '&a&lA PARTIDA COMECOU! &7Proteja sua cama e elimine as equipes adversarias!'
   own-bed: '&cVoce nao pode destruir sua propria cama!'
+  respawn-countdown: '&eVoce renascera em &c{time} &esegundos.'
+  respawned: '&aVoce renasceu!'
+  you-eliminated: '&cVoce foi eliminado! Sua cama ja foi destruida.'
+  start-tutorial:
+    - '&8&m--------------------------------'
+    - '&e&lBED WARS &7- &fProteja sua cama e destrua as inimigas.'
+    - '&7Colete recursos, compre itens e melhore sua equipe.'
+    - '&8&m--------------------------------'
   death:
     void: '&7{player} &7caiu no void.'
     void-killer: '&7{player} &7foi derrubado no void por &e{killer}&7.'
