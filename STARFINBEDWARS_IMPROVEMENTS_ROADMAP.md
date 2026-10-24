@@ -142,3 +142,44 @@ Mudancas:
 1.8.8. Abrir Shop, clicar Armaduras, Espadas, Ferramentas, Blocos,
 Utilitarios e Especiais, editar favoritos, mudar pagina e comprar. Confirmar
 que a GUI muda sem fechar e que nao reaparece `Index: 49, Size: 45`.
+
+## Balanceamento do Ovo de Ponte e Defensor de Sonhos
+
+Solicitado: a ponte feita pelo Ovo de Ponte era fina e o Iron Golem recebia
+recuo excessivo durante combates.
+
+### Ovo de Ponte
+- Padrao novo: **3 blocos de largura e 2 camadas de espessura** (3x2 por segmento),
+  com la da cor da equipe.
+- A secao transversal segue o eixo perpendicular ao deslocamento do ovo, com
+  preenchimento de lacunas curtas entre os ticks (ate 6 blocos).
+- Limites configuraveis: `special-items.bridge-egg.width` (1, 3, 5),
+  `thickness` (1-2), `max-blocks` (padrao 480), `max-ticks` (padrao 70).
+- Blocos so sao colocados em AIR, em chunks carregados e dentro da regiao MAIN
+  da instancia da GameMatch, usando `MatchEngineService.placeSpecialBlock`.
+  O mundo template nunca e substituido, e a equipe continua dona dos blocos.
+- Geometria movida para `BridgeEggShape`, com testes de orientacao, largura,
+  espessura, limites e imutabilidade.
+
+### Iron Golem (Dream Defender)
+- Somente o Iron Golem registrado em `SpecialItemService.mobs` recebe
+  amortecimento do knockback; Villagers de Shop, monstros naturais e outros
+  plugins nao sao afetados.
+- Reducao padrao: horizontal `0.75` (25% menor), vertical `0.85` (15% menor).
+  Multiplicadores na faixa 0.0 a 1.0, `1.0` restaura o comportamento vanilla.
+- Amortecimento aplicado no tick seguinte ao dano corpo a corpo, projetil ou
+  explosao, preservando o dano e a IA do golem. Eventos de dano cancelados nao
+  agendam o amortecimento.
+- Uma tarefa pendente por golem, cancelada ao morrer, ao acabar a partida ou
+  ao desativar o plugin.
+
+### Configuracao / compatibilidade
+As novas opcoes foram adicionadas ao `config.yml` e ao migrador sem sobrescrever
+valores personalizados. Foram adicionados testes do novo comportamento.
+
+**Ainda falta homologar em PaperSpigot 1.8.8:** `mvn -B verify`,
+jogar o Ovo de Ponte nos eixos X/Z/diagonais, testar nas bordas da arena,
+confirmar que todos os blocos sao isolados por GameMatch e apagam quando a
+instancia e removida. Comparar recuo de Defender com `0.75/0.85` e
+`1.0/1.0`, inclusive Fireball e golpes de jogador. Nao declarar desempenho
+ou balanceamento final como comprovados antes desses testes.
