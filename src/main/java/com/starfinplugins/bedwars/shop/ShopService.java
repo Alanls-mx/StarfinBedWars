@@ -617,24 +617,29 @@ public final class ShopService implements ManagedService, Listener {
         Player player = (Player) event.getWhoClicked();
         int slot = event.getRawSlot();
         if (slot <= 8 && menu.getCategoryAt(slot) != null) {
-            reopenLater(player, menu.getCategoryAt(slot), 0, menu.isEditing());
+            refreshLater(player, menu, menu.getCategoryAt(slot), 0, menu.isEditing());
             return;
         }
         if (slot == 45 && menu.getPage() > 0) {
-            reopenLater(player, menu.getCategory(), menu.getPage() - 1, menu.isEditing());
+            refreshLater(player, menu, menu.getCategory(), menu.getPage() - 1, menu.isEditing());
             return;
         }
         if (slot == 53 && menu.getPage() + 1 < menu.getPageCount()) {
-            reopenLater(player, menu.getCategory(), menu.getPage() + 1, menu.isEditing());
+            refreshLater(player, menu, menu.getCategory(), menu.getPage() + 1, menu.isEditing());
             return;
         }
         if (slot == 49) {
-            reopenLater(player, menu.getCategory(), menu.getPage(), !menu.isEditing());
+            refreshLater(player, menu, menu.getCategory(), menu.getPage(), !menu.isEditing());
             return;
         }
         if (slot == 50) {
             Bukkit.getScheduler().runTask(plugin, new Runnable() {
-                @Override public void run() { if (player.isOnline()) player.closeInventory(); }
+                @Override public void run() {
+                    if (player.isOnline() && player.getOpenInventory() != null
+                            && player.getOpenInventory().getTopInventory() == menu.getInventory()) {
+                        player.closeInventory();
+                    }
+                }
             });
             return;
         }
@@ -642,13 +647,13 @@ public final class ShopService implements ManagedService, Listener {
         if (definition == null) return;
         if (menu.isEditing()) {
             toggleFavorite(player, definition.getId());
-            reopenLater(player, menu.getCategory(), menu.getPage(), true);
+            refreshLater(player, menu, menu.getCategory(), menu.getPage(), true);
             return;
         }
         purchase(player, definition);
         if (player.getOpenInventory() != null
                 && player.getOpenInventory().getTopInventory().getHolder() == menu) {
-            reopenLater(player, menu.getCategory(), menu.getPage(), false);
+            refreshLater(player, menu, menu.getCategory(), menu.getPage(), false);
         }
     }
 
@@ -696,11 +701,18 @@ public final class ShopService implements ManagedService, Listener {
         return icons;
     }
 
-    private void reopenLater(final Player player, final ClassicShopMenu.Category category,
-                             final int page, final boolean editing) {
+    /** Refresh contents on the existing 54-slot window; NEVER replace the
+     * container while Bukkit is processing the prior WindowClick packet. */
+    private void refreshLater(final Player player, final ClassicShopMenu menu,
+                              final ClassicShopMenu.Category category,
+                              final int page, final boolean editing) {
         Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override public void run() {
-                if (player.isOnline()) openMenu(player, category, page, editing);
+                if (!player.isOnline() || player.getOpenInventory() == null
+                        || player.getOpenInventory().getTopInventory() != menu.getInventory()) return;
+                menu.refresh(player, settings.getItems().values(), favoritesFor(player.getUniqueId()),
+                    category, page, editing, categoryOrder(), categoryIcons());
+                player.updateInventory();
             }
         });
     }
