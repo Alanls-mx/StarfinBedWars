@@ -61,7 +61,11 @@ public final class PresentationConfigMigrator {
         "messages.death.generic", "messages.death.generic-killer",
         "messages.respawn-countdown", "messages.respawned",
         "messages.you-eliminated", "messages.start-tutorial",
-        "visuals.death.title", "visuals.death.subtitle"
+        "visuals.death.title", "visuals.death.subtitle",
+        "special-items.bridge-egg.width", "special-items.bridge-egg.thickness",
+        "special-items.bridge-egg.max-blocks", "special-items.bridge-egg.max-ticks",
+        "special-items.defender-knockback.horizontal",
+        "special-items.defender-knockback.vertical"
     };
 
     private PresentationConfigMigrator() { }
