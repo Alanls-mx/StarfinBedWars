@@ -35,6 +35,18 @@ special-items:
     horizontal: 0.75
     vertical: 0.85
 
+# Match Point inicia com 30 minutos de partida: camas quebram e um dragao
+# invulneravel destroi estruturas apenas na instancia temporaria do mapa.
+match-point:
+  enabled: true
+  after-minutes: 30
+  message: '&5&lMATCH POINT! &cTodas as camas foram destruídas! &dO dragão chegou!'
+  dragon-height-offset: 3
+  dragon-angular-speed: 0.065
+  blocks-per-sweep: 18
+  dragon-damage-radius: 5.0
+  dragon-damage: 5.0
+
 arena-bounds:
   default-width: 280
   default-depth: 280
@@ -228,6 +240,11 @@ visuals:
     sound: FIREWORK_LAUNCH
     sound-enabled: true
     particles: 6
+    celebration:
+      enabled: true
+      fireworks-per-burst: 4
+      interval-ticks: 10
+      radius: 6
   death:
     title: '&c&lVOCE MORREU!'
     subtitle: '&eRenascendo em &c{time} &esegundos.'
