@@ -638,8 +638,7 @@ public final class ShopService implements ManagedService, Listener {
         if (slot == 50) {
             Bukkit.getScheduler().runTask(plugin, new Runnable() {
                 @Override public void run() {
-                    if (player.isOnline() && player.getOpenInventory() != null
-                            && player.getOpenInventory().getTopInventory() == menu.getInventory()) {
+                    if (isViewingMenu(player, menu)) {
                         player.closeInventory();
                     }
                 }
@@ -704,6 +703,19 @@ public final class ShopService implements ManagedService, Listener {
         return icons;
     }
 
+    /**
+     * Bukkit may return an Inventory wrapper distinct from the one originally
+     * passed to Player.openInventory(). Check stable InventoryHolder ownership
+     * instead of Java object identity of Inventory wrappers.
+     */
+    private boolean isViewingMenu(Player player, ClassicShopMenu menu) {
+        if (player == null || !player.isOnline() || player.getOpenInventory() == null) {
+            return false;
+        }
+        Inventory active = player.getOpenInventory().getTopInventory();
+        return active != null && active.getSize() == 54 && active.getHolder() == menu;
+    }
+
     /** Refresh contents on the existing 54-slot window; NEVER replace the
      * container while Bukkit is processing the prior WindowClick packet. */
     private void refreshLater(final Player player, final ClassicShopMenu menu,
@@ -715,11 +727,19 @@ public final class ShopService implements ManagedService, Listener {
         BukkitTask task = Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override public void run() {
                 pendingShopRefresh.remove(playerId);
-                if (!player.isOnline() || player.getOpenInventory() == null
-                        || player.getOpenInventory().getTopInventory() != menu.getInventory()) return;
-                menu.refresh(player, settings.getItems().values(), favoritesFor(playerId),
-                    category, page, editing, categoryOrder(), categoryIcons());
-                player.updateInventory();
+                if (!isViewingMenu(player, menu)) return;
+                try {
+                    menu.refresh(player, settings.getItems().values(), favoritesFor(playerId),
+                        category, page, editing, categoryOrder(), categoryIcons());
+                    // Content changes are delivered by Bukkit for the already-open window.
+                    // updateInventory() here can cause another inventory resync on 1.8 clients.
+                } catch (RuntimeException error) {
+                    plugin.getLogger().log(java.util.logging.Level.SEVERE,
+                        "Falha ao atualizar categoria " + category + " da loja para "
+                            + player.getUniqueId(), error);
+                    player.sendMessage(ChatColor.RED
+                        + "Nao foi possivel atualizar a loja. Avise um administrador.");
+                }
             }
         });
         pendingShopRefresh.put(playerId, task);
