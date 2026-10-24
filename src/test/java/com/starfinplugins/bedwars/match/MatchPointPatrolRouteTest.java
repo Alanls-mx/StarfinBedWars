@@ -37,7 +37,7 @@ public class MatchPointPatrolRouteTest {
         assertEquals(route.at(0)[2], route.at(route.size())[2], 0.0001D);
     }
 
-    @Test public void serpentineRouteDoesNotTeleportBetweenEachRow() {
+    @Test public void diagonalXRouteDoesNotJumpBetweenWaypoints() {
         ArenaRegion main = new ArenaRegion("world", 0, 30, 0, 90, 140, 90);
         MatchPointPatrolRoute route = new MatchPointPatrolRoute(main, 140, 90, 24);
         for (int i = 1; i < route.size(); i++) {
@@ -46,6 +46,35 @@ public class MatchPointPatrolRouteTest {
             assertTrue("Consecutive waypoints need short manageable turns",
                 dx * dx + dz * dz <= 24.1D * 24.1D);
         }
+    }
+
+    @Test public void crossesBothDiagonalsAndAlternatesTheOrderOfTheX() {
+        ArenaRegion main = new ArenaRegion("world", -140, 50, -140, 140, 155, 140);
+        MatchPointPatrolRoute route = new MatchPointPatrolRoute(main, 155, 100, 40);
+        boolean northwestToSoutheast = false;
+        boolean northeastToSouthwest = false;
+        boolean sawCentralCrossing = false;
+        int diagonalDirectionChanges = 0;
+        int lastDirection = 0;
+        for (int i = 1; i < route.size(); i++) {
+            double[] before = route.at(i - 1), after = route.at(i);
+            double dx = after[0] - before[0];
+            double dz = after[2] - before[2];
+            if (Math.abs(dx) < 0.01D || Math.abs(dz) < 0.01D) continue;
+            int direction = dx * dz > 0 ? 1 : -1;
+            if (direction > 0) northwestToSoutheast = true;
+            else northeastToSouthwest = true;
+            if (lastDirection != 0 && direction != lastDirection) diagonalDirectionChanges++;
+            lastDirection = direction;
+            if (Math.abs(after[0]) <= 25 && Math.abs(after[2]) <= 25) {
+                sawCentralCrossing = true;
+            }
+        }
+        assertTrue("Dragon must cross one arm of an X", northwestToSoutheast);
+        assertTrue("Dragon must cross the other arm of an X", northeastToSouthwest);
+        assertTrue("Both diagonals must reach the middle of the map", sawCentralCrossing);
+        assertTrue("Dragon needs alternating X crossings instead of one pass",
+            diagonalDirectionChanges >= 3);
     }
 
     @Test public void respectsTinyRegionsAndVerticalCeiling() {
