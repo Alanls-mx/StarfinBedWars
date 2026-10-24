@@ -494,14 +494,12 @@ public final class MatchPointService implements ManagedService, Listener {
             .getInt("match-point.demolition.max-blocks-per-tick", 220)));
         int cap = (int) Math.min(missing, limit);
 
-        int done = 0, strikes = 0, removed = 0;
+        int done = 0, removed = 0;
         boolean lightningEnabled = plugin.getConfig().getBoolean(
             "match-point.lightning.enabled", true);
         int lightningInterval = Math.max(20, Math.min(600, plugin.getConfig()
             .getInt("match-point.lightning.interval-ticks", 60)));
         boolean lightningDue = lightningEnabled && ticks - active.lastLightningTick >= lightningInterval;
-        int strikeBudget = lightningDue ? Math.min(cap, Math.max(1, Math.min(120,
-            plugin.getConfig().getInt("match-point.lightning.max-blocks-per-strike", 24)))) : 0;
         Location lightningAt = null;
         int loadedChunks = 0;
         for (; done < cap; done++) {
@@ -509,11 +507,11 @@ public final class MatchPointService implements ManagedService, Listener {
             if (cell == null) break;
             if (!world.isChunkLoaded(cell.x >> 4, cell.z >> 4)) {
                 if (loadedChunks >= 2 || !world.loadChunk(cell.x >> 4, cell.z >> 4, false)) {
-                    // This coordinate belonged to a surveyed world chunk.
-                    // Report inaccessible chunks rather than fabricating
-                    // completed block destruction for a skipped location.
+                    // Retry next tick: a block we cannot inspect MUST NOT
+                    // count toward the 80/100 percent goal.
+                    map.retryLast(cell);
                     active.failedRemovals++;
-                    continue;
+                    break;
                 }
                 loadedChunks++;
             }
@@ -521,7 +519,7 @@ public final class MatchPointService implements ManagedService, Listener {
             boolean alreadyAir = block.getType() == Material.AIR;
             if (alreadyAir || eraseBlock(active, block)) {
                 removed++;
-                if (lightningDue && done < strikeBudget && lightningAt == null && !alreadyAir) {
+                if (lightningDue && lightningAt == null && !alreadyAir) {
                     lightningAt = new Location(world, cell.x + 0.5D,
                         cell.y + 1.0D, cell.z + 0.5D);
                 }
@@ -533,10 +531,14 @@ public final class MatchPointService implements ManagedService, Listener {
         }
         active.scheduledRemoved += removed;
         if (lightningDue && lightningAt != null) {
-            // strikeLightningEffect never creates real lightning/fire and
-            // does not inflict uncontrolled vanilla damage on players.
-            world.strikeLightningEffect(lightningAt);
-            strikes++;
+            // Lightning is visual-only as an entity (no vanilla fire/damage),
+            // but the plugin breaks REAL blocks under the strike. These
+            // original coordinates later count as AIR in the index.
+            int broken = breakLightningBlocks(active, world, lightningAt);
+            if (broken > 0) {
+                world.strikeLightningEffect(lightningAt);
+                active.lightningDestroyed += broken;
+            }
             active.lastLightningTick = ticks;
         }
         if (ticks % 20L == 0L && active.waveAt != null) {
@@ -553,7 +555,8 @@ public final class MatchPointService implements ManagedService, Listener {
                 + progress + "% de " + map.getTotalBlocks() + " blocos originais processados"
                 + " (meta " + target + "), " + active.scheduledRemoved
                 + " removidos/ja destruidos, " + active.failedRemovals
-                + " inacessiveis; raios nesta verificacao=" + strikes + ".");
+                + " tentativas inacessiveis; " + active.lightningDestroyed
+                + " blocos atingidos diretamente por raios.");
             if (elapsed >= active.demolition.getCompleteMillis()
                     && processed < map.getTotalBlocks()) {
                 plugin.getLogger().warning("Match Point atrasado: aumente "
@@ -561,6 +564,37 @@ public final class MatchPointService implements ManagedService, Listener {
             }
             if (processed == map.getTotalBlocks()) active.completionLogged = true;
         }
+    }
+
+    /**
+     * A real destructive lightning strike: the bolt itself is visual-only,
+     * while the plugin breaks a small circular patch of real island blocks.
+     * All changes happen inside the cloned instance and MAIN pos1/pos2.
+     */
+    private int breakLightningBlocks(Active active, World world, Location strike) {
+        int limit = Math.max(1, Math.min(120, plugin.getConfig()
+            .getInt("match-point.lightning.max-blocks-per-strike", 24)));
+        int radius = Math.max(1, Math.min(6, plugin.getConfig()
+            .getInt("match-point.lightning.radius", 3)));
+        int broken = 0;
+        ArenaRegion area = active.area;
+        for (MatchPointBlastFootprint.Offset offset : MatchPointBlastFootprint.offsets(radius)) {
+            if (broken >= limit) break;
+            final int x = strike.getBlockX() + offset.x;
+            final int z = strike.getBlockZ() + offset.z;
+            if (x < area.getMinimumX() || x > area.getMaximumX()
+                    || z < area.getMinimumZ() || z > area.getMaximumZ()
+                    || !world.isChunkLoaded(x >> 4, z >> 4)) continue;
+            int y = Math.min(area.getMaximumY(), Math.min(255, strike.getBlockY() + 3));
+            int bottom = Math.max(area.getMinimumY(), strike.getBlockY() - 8);
+            for (; y >= bottom; y--) {
+                Block block = world.getBlockAt(x, y, z);
+                if (block.getType() == Material.AIR || block.getType() == Material.BEDROCK) continue;
+                if (eraseBlock(active, block)) broken++;
+                break;
+            }
+        }
+        return broken;
     }
 
     /** Erase only disposable match-instance blocks, never bedrock. */
@@ -650,6 +684,7 @@ public final class MatchPointService implements ManagedService, Listener {
         private long scheduledRemoved;
         private long failedRemovals;
         private long lastLightningTick;
+        private long lightningDestroyed;
         private long lastProgressLog;
         private Location waveAt;
         private boolean completionLogged;
