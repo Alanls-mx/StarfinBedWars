@@ -83,22 +83,34 @@ public final class MatchPresentationService implements ManagedService, Listener 
         Player actor = participant == null ? null : Bukkit.getPlayer(participant.getPlayerId());
         switch (event.getType()) {
             case PLAYER_JOINED:
-                notifyMatch(event.getMatch(), ChatColor.GREEN + name(actor) + " entrou na partida.",
-                    participant == null ? null : participant.getPlayerId());
-                if (actor != null) actor.sendMessage(ChatColor.GREEN + "Voce entrou em "
-                    + event.getMatch().getArena().getDisplayName() + ".");
+                notifyMatch(event.getMatch(), message("messages.player-joined",
+                    "&7{player} &eentrou (&b{on}&e/&b{max}&e)!",
+                    "player", name(actor),
+                    "on", Integer.toString(event.getMatch().getConnectedCount()),
+                    "max", Integer.toString(event.getMatch().getArena().getMaximumPlayers())));
+                if (actor != null) actor.sendMessage(message("messages.you-joined",
+                    "&aVoce entrou no mapa &e{arena}&a.",
+                    "arena", event.getMatch().getArena().getDisplayName()));
                 break;
             case PLAYER_LEFT:
-                notifyMatch(event.getMatch(), ChatColor.YELLOW + name(actor) + " saiu da partida.");
+                notifyMatch(event.getMatch(), message("messages.player-left",
+                    "&7{player} &csaiu da partida.",
+                    "player", name(actor)));
                 break;
             case PLAYER_RECONNECTED:
-                if (actor != null) actor.sendMessage(ChatColor.GREEN + "Reconexao a partida concluida.");
+                if (actor != null) actor.sendMessage(message("messages.reconnected",
+                    "&aVoce retornou a partida!"));
+                break;
+            case COUNTDOWN_STARTED:
+                notifyMatch(event.getMatch(), message("messages.lobby-ready",
+                    "&aJogadores suficientes! &ePreparando inicio da partida."));
                 break;
             case COUNTDOWN_CANCELLED:
-                notifyMatch(event.getMatch(), ChatColor.RED + "Contagem cancelada: faltam jogadores.");
+                notifyMatch(event.getMatch(), message("messages.countdown-cancelled",
+                    "&cContagem cancelada: aguardando mais jogadores."));
                 break;
             case STARTED:
-                notifyMatch(event.getMatch(), ChatColor.GOLD + "A partida comecou!");
+                // The engine broadcasts the unique start message. Avoid double chat.
                 break;
             case BED_DESTROYED:
                 notifyBedDestroyed(event);
@@ -624,6 +636,11 @@ public final class MatchPresentationService implements ManagedService, Listener 
         Scoreboard previous = previousBoards.remove(id);
         activeBoards.remove(id);
         if (previous != null) player.setScoreboard(previous);
+    }
+
+    private String message(String path, String fallback, String... tokens) {
+        return ChatColor.translateAlternateColorCodes('&',
+            MatchMessageTemplates.format(plugin.getConfig().getString(path, fallback), tokens));
     }
 
     private void notifyMatch(GameMatch match, String message) {
