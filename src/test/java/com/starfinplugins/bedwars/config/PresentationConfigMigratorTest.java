@@ -26,6 +26,9 @@ public class PresentationConfigMigratorTest {
         assertTrue(PresentationConfigMigrator.mergeFile(config, defaults));
         YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
         assertEquals("&aMinha arena", updated.getString("scoreboard.title"));
+        assertTrue(updated.getBoolean("tab.skins.enabled"));
+        assertEquals("", updated.getString("tab.skins.fallback-player"));
+        assertTrue(updated.getBoolean("tab.lobby.enabled"));
         assertTrue(updated.getStringList("scoreboard.layouts.in-game").contains("{teams}"));
         assertEquals("OWN_TEAM", updated.getString("bed-hologram.visibility"));
         assertEquals(4, updated.getInt("generator-holograms.orbit.icon-count"));

@@ -39,6 +39,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
     private final Plugin plugin;
     private final MatchEngineService matches;
     private final ResourceGeneratorService generators;
+    private final TabSkinService skins;
     private final Map<UUID, Scoreboard> previousBoards = new HashMap<UUID, Scoreboard>();
     private final Map<UUID, Scoreboard> activeBoards = new HashMap<UUID, Scoreboard>();
     private final Map<UUID, String> tabContents = new HashMap<UUID, String>();
@@ -50,6 +51,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
         this.plugin = plugin;
         this.matches = matches;
         this.generators = generators;
+        this.skins = new TabSkinService(plugin, matches);
     }
 
     @Override
@@ -57,6 +59,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
 
     @Override
     public void start() {
+        skins.start();
         Bukkit.getPluginManager().registerEvents(this, plugin);
         refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override
@@ -72,6 +75,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
         refreshTask = null;
         org.bukkit.event.HandlerList.unregisterAll(this);
         for (Player player : Bukkit.getOnlinePlayers()) restoreBoard(player);
+        skins.stop();
         previousBoards.clear();
         activeBoards.clear();
         tabContents.clear();
@@ -182,6 +186,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
+        skins.onQuit(event.getPlayer());
         UUID id = event.getPlayer().getUniqueId();
         Scoreboard previous = previousBoards.remove(id);
         activeBoards.remove(id);
@@ -193,7 +198,13 @@ public final class MatchPresentationService implements ManagedService, Listener 
         GameMatch match = matches.getMatchForPlayer(player.getUniqueId());
         if (match == null) match = matches.getSpectatedMatch(player.getUniqueId());
         if (match == null) {
-            restoreBoard(player);
+            if (activeBoards.containsKey(player.getUniqueId())) {
+                boolean lobbyTab = plugin.getConfig().getBoolean("tab.enabled", true)
+                    && plugin.getConfig().getBoolean("tab.lobby.enabled", true);
+                restoreBoard(player, !lobbyTab);
+            }
+            skins.restore(player);
+            updateLobbyTab(player);
             return;
         }
         Scoreboard board = activeBoards.get(player.getUniqueId());
@@ -225,6 +236,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
             renderLobby(board, match);
         }
         syncNameTags(board, match);
+        skins.refresh(player, match);
         updateTab(player, match);
     }
 
@@ -248,6 +260,26 @@ public final class MatchPresentationService implements ManagedService, Listener 
         } catch (RuntimeException error) {
             tabAvailable = false;
             plugin.getLogger().warning("Cabecalho TAB desativado: " + error.getMessage());
+        }
+    }
+
+    private void updateLobbyTab(Player player) {
+        if (!tabAvailable || !plugin.getConfig().getBoolean("tab.enabled", true)
+                || !plugin.getConfig().getBoolean("tab.lobby.enabled", true)) return;
+        Map<String, String> tokens = new HashMap<String, String>();
+        tokens.put("footer", brandFooter());
+        String header = formatTabText(plugin.getConfig().getString("tab.lobby.header",
+            "&b&lSTARFIN BEDWARS\\n{footer}"), tokens);
+        String footer = formatTabText(plugin.getConfig().getString("tab.lobby.footer",
+            "{footer}"), tokens);
+        String key = header + "\u0000" + footer;
+        if (key.equals(tabContents.get(player.getUniqueId()))) return;
+        try {
+            TabHeaderV1_8_R3.send(player, header, footer);
+            tabContents.put(player.getUniqueId(), key);
+        } catch (RuntimeException error) {
+            tabAvailable = false;
+            plugin.getLogger().warning("Cabecalho TAB do lobby desativado: " + error.getMessage());
         }
     }
 
@@ -647,8 +679,13 @@ public final class MatchPresentationService implements ManagedService, Listener 
     }
 
     private void restoreBoard(Player player) {
+        restoreBoard(player, true);
+    }
+
+    private void restoreBoard(Player player, boolean clearTabHeader) {
+        skins.restore(player);
         UUID id = player.getUniqueId();
-        if (tabContents.remove(id) != null && tabAvailable) {
+        if (tabContents.remove(id) != null && tabAvailable && clearTabHeader) {
             try { TabHeaderV1_8_R3.send(player, "", ""); }
             catch (RuntimeException error) { tabAvailable = false; }
         }

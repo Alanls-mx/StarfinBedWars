@@ -13,6 +13,8 @@ public final class PresentationConfigMigrator {
     private static final String[] PATHS = {
         "tab.enabled", "tab.header", "tab.footer", "tab.team-prefixes",
         "tab.team-prefix", "tab.show-spectators", "tab.spectator-prefix",
+        "tab.skins.enabled", "tab.skins.fallback-player", "tab.skins.aliases",
+        "tab.lobby.enabled", "tab.lobby.header", "tab.lobby.footer",
         "scoreboard.enabled", "scoreboard.preset", "scoreboard.title",
         "scoreboard.footer", "scoreboard.eliminated-display", "scoreboard.own-marker",
         "scoreboard.team-line", "scoreboard.layouts.lobby",

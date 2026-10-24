@@ -180,6 +180,14 @@ tab:
   team-prefix: '[{initial}] ' # {initial}, {team}; cor da equipe aplicada automaticamente.
   show-spectators: true
   spectator-prefix: '&7[S] '
+  skins:
+    enabled: true # Icones reais para contas originais e nomes premium em servidores offline.
+    fallback-player: '' # Skin padrao para nomes piratas sem perfil premium; vazio mantem Steve/Alex.
+    aliases: {} # Exemplo: MeuJogadorPirata: AlanLS_
+  lobby:
+    enabled: true # Mostra o TAB configurado tambem depois de sair da partida.
+    header: '&b&lSTARFIN BEDWARS\n{footer}'
+    footer: '{footer}'
 
 scoreboard:
   enabled: true
