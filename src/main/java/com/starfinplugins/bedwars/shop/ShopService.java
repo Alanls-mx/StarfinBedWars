@@ -594,10 +594,14 @@ public final class ShopService implements ManagedService, Listener {
                         || player.getWorld() != matches.getWorld(matchId)) return;
                 GameParticipant currentParticipant = current.getParticipant(player.getUniqueId());
                 if (currentParticipant == null
-                        || currentParticipant.getState() != ParticipantState.CONNECTED
-                        || !route.canAccess(current.getId(), currentParticipant.getTeamId())) return;
+                        || currentParticipant.getState() != ParticipantState.CONNECTED) return;
+                // The NPC may belong to an enemy island. Any purchase still
+                // targets the current player's team, never the NPC's island.
+                final String purchaserTeamId = route.getPurchasingTeamId(
+                    current.getId(), currentParticipant.getTeamId());
+                if (purchaserTeamId == null) return;
                 try {
-                    if (upgradesMenu) upgrades.openShop(player, current, currentParticipant.getTeamId());
+                    if (upgradesMenu) upgrades.openShop(player, current, purchaserTeamId);
                     else openMenu(player, ClassicShopMenu.Category.FAVORITES, 0, false);
                 } catch (RuntimeException error) {
                     plugin.getLogger().log(java.util.logging.Level.SEVERE,
