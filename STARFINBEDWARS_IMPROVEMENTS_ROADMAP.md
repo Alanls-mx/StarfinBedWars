@@ -733,3 +733,83 @@ entrar numa partida, usar `/sbw matchpoint`, observar voo sobre as
 ilhas e centro; conferir crateras reais na ilha e log `blocos
 destruidos de verdade`. Testar todos os layouts existentes, inclusive
 mapas de 2 e 4 equipes, protecao do template e recompilacao limpa.
+
+## Match Point: rotas por TODOS os blocos do mapa, metas 5/8 minutos e raios (24/10/2026)
+
+O usuario confirmou que as crateras da passagem do EnderDragon funcionam,
+mas as rotas continuam demasiado focadas nas ilhas com cama. Requereu
+destruicao configuravel de 80% do mapa ate 5 minutos e 100% em 8 minutos,
+independentemente da quantidade de jogadores, alem de raios opcionais
+QUE REALMENTE destroem blocos, ligados por padrao.
+
+### Mudancas implementadas
+- `MatchPointMapIndex` percorre, incrementalmente na thread do servidor,
+  os snapshots dos chunks presentes na MAIN delimitada por pos1/pos2.
+  A indexacao considera TODOS os blocos presentes (exceto AIR e BEDROCK)
+  no inicio do evento, incluindo ilhas SEM camas, ilhas centrais, vidro,
+  la, plataformas, geradores etc. Pula apenas secoes de chunks vazias
+  e limita leituras a 7000 posicoes por tick e 1 novo chunk por tick
+  por padrao, sem gerar chunks ausentes.
+- `structuralHotspots(24)` identifica chunks com mais construcao e
+  distribui pontos de visita por estruturas separadas. Depois de
+  concluir a indexacao, a rota em X passa pelos spawns das equipes,
+  pelos geradores centrais/diamante/esmeralda e pelos centros das
+  principais construcoes detectadas, sem depender dos times participantes.
+  Os limites da MAIN continuam sendo o limite de seguranca.
+- `MatchPointDemolitionSchedule` define curva linear em dois trechos,
+  baseada na QUANTIDADE INICIAL DE BLOCOS DESTRUTIVEIS, nunca no
+  volume de ar: 80% apos 5 minutos, 100% apos 8 minutos.
+  `match-point.demolition.partial-minutes: 5`,
+  `partial-percent: 80`, `complete-minutes: 8`.
+  O relogio comeca no momento da ativacao, via timer ou `/sbw matchpoint`.
+- Remocao programada `advanceDemolition` busca blocos em chunks com
+  construcoes, priorizando a proximidade do dragao, com limite de 220
+  blocos por tick por padrao (max configuravel 1400). Pode compensar
+  atraso da indexacao. Os impactos continuam na instancia temporaria
+  e o template permanece intacto.
+- Progresso na consola com blocos originais processados, removidos, e
+  inacessiveis; se chunks falharem ou o limite/taxa TPS nao permitirem
+  a meta no horario, emite aviso de atraso, sem prometer falsos 100%.
+  `MapIndex.retryLast` evita registrar como removido um bloco cuja
+  instancia nao pode ser carregada ou cujo tipo nao pode ser apagado.
+  Em chunks inacessiveis ja durante a indexacao, informa quantos
+  ficaram de fora, nao os declara destruidos.
+- `match-point.lightning.enabled: true` por padrao. A cada 60 ticks
+  (configuravel), escolhe impacto entre os blocos realmente removidos
+  no progresso programado e executa `strikeLightningEffect` visual.
+  O plugin quebra AINDA MAIS blocos da estrutura em raio configuravel
+  (3 blocos, ate 24 blocos por raio), sem ativar dano, incendio ou
+  eletricidade vanilla fora da area. Apos desativar com `enabled: false`,
+  a curva 5/8 minutos e a destruicao do dragao continuam independentes.
+  O impacto nao gera efeito se nenhum bloco local adicional foi removido.
+- As crateras menores criadas pelo proprio voo continuam ativadas; a
+  aceleracao controlada por metas atua em blocos reais mapeados, nao
+  varre cuboides inteiros de ar, sem depender de jogadores proximo.
+- Configuracoes adicionadas sem substituir valores personalizadas em
+  `PresentationConfigMigrator`:
+  `match-point.demolition.{partial-minutes,partial-percent,complete-minutes,survey-positions-per-tick,max-blocks-per-tick}`;
+  `match-point.lightning.{enabled,interval-ticks,radius,max-blocks-per-strike}`.
+- Testes: `MatchPointDemolitionScheduleTest` (metas e customizacao),
+  `MatchPointMapIndexTest` (ilhas centrais SEM camas, vidro, exclusao
+  de bedrock, retry nao falseia %), extensao dos testes do migrador
+  (default lightning ativo, config lightning desligado), e testes do
+  trajeto ja presentes.
+
+### Limites operacionais e homologacao
+As metas de 5/8 minutos dependem de TPS, quantidade de blocos,
+limite maximo configurado por tick, chunks acessiveis e tempo da
+indexacao. Elas sao alvos reais medidos; o codigo nao faz promessas
+impossiveis de 100% se um chunk falhar ou o servidor estiver sobrecarregado.
+A estatistica e relativa aos blocos ORIGINAIS indexados quando Match
+Point inicia, nao as construes adicionadas depois por jogadores.
+Mundo instancia descartado ao terminar jogo -> mapa template restaurado
+na proxima partida.
+
+**A ser validado no servidor do usuario:** `mvn -B verify` com Java 8,
+`/sbw matchpoint`, observar rota cruzando centro, plataformas sem camas
+e outros geradores; testar raios enabled:true/false, destruicao real ao
+lado das ilhas, atingir ~80% em 5min e ~100% em 8min com a populacao de
+blocos do mapa real. Se ficar atrasado, ajustar
+`demolition.max-blocks-per-tick` com monitoramento de TPS; conferir
+limites da MAIN, chunks, logs de indexacao e restauracao apos nova partida.
+Nao ha Maven/nem homologacao PaperSpigot nesta sessao.
