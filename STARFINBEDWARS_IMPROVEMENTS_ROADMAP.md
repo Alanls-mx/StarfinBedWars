@@ -284,3 +284,89 @@ uma unica linha de lore.
 tooltips no cliente 1.8.8 em diferentes escalas de GUI; testar subida
 ate o teto, tentativa de sair pelas bordas da regiao configurada e
 confirmar que nenhum aviso fica repetindo continuamente a cada movimento.
+
+## Etapa: Vitoria com celebracao, Dream Defender permanente e Match Point (30 min)
+
+Implementacao na **unica branch ativa**, sem alterar a `main`.
+
+### Comemoracao ao vencer
+- `MatchVisualService` inicia show de vitoria no evento `ENDED` somente
+  para a equipe vencedora: **4 fireworks a cada 10 ticks**, multicoloridos,
+  com efeitos de rastro e brilhos, sons e titulo de vitoria.
+- Show continua ate o evento `PLAYERS_RETURNED` (retorno ao lobby), com
+  cancelamento ao final da partida, remocao da instancia ou desativacao do plugin.
+- Parametros em `visuals.victory.celebration`: enabled,
+  fireworks-per-burst, interval-ticks e radius.
+
+### Iron Golem
+- `special-items.defender-persistent: true` (padrao): nao desaparece
+  automaticamente em 30 segundos, mesmo quando um `config.yml` antigo
+  conserva `defender-lifetime-seconds: 30`. Morre normalmente quando
+  derrotado ou e removido ao terminar a partida.
+- `defender-persistent: false` permite restaurar duracoes especificas
+  configurando `defender-lifetime-seconds`.
+- Verificacao de piso proprio e piso frontal proximo a cada 4 ticks; evita
+  selecao de alvo atraves do vazio. Se houver queda acidental, retorna ao
+  ultimo local com piso valido, sem teleportar outros mobs ou jogadores.
+
+### Ultimo abate
+- `FinalKillResourcePolicy` evita transferir ferro/ouro/diamante/esmeralda
+  da vitima para o inventario do vencedor **quando a eliminacao encerra a
+  partida**; abates regulares continuam concedendo recursos.
+- Verifica cama destruida, ultimo jogador vivo do time e exatamente
+  duas equipes restantes. Testes unitarios cobrem casos positivos/negativos.
+
+### Match Point
+- Temporizador iniciado em `STARTED`, ativando Match Point aos 30 minutos
+  por padrao (`match-point.after-minutes: 30`).
+- Ao ativar, cada cama restante e destruida no modelo e seus blocos sao
+  removidos; eventos de cama destruida/alertas continuam sendo enviados.
+- Spawna **um EnderDragon por partida**, invulneravel a dano de qualquer
+  jogador e com comportamento de voo artificial, desenhando um circuito
+  eliptico orientado pelas coordenadas dos spawns das equipes, sempre dentro
+  dos limites da arena.
+- A cada percurso, remove blocos solidos proximos (max. 18 por sweep
+  configuravel) e causa dano aos participantes num raio configuravel.
+  Destruicao automatica original de Dragon e desativada, evitando grief sem
+  limites; a erosao planejada tambem remove rastreamento de blocos colocados.
+- Cada mundo de partida e **uma instancia/clonagem descartavel**. Ao
+  terminar, jogadores voltam ao lobby, a instancia e descarregada e excluida
+  sem salvar. O template da arena continua intacto. Proxima partida e uma
+  nova copia integral, restaurada do template.
+- Se o dragao nao for criado, as camas nao sao quebradas. A ativacao pode
+  ser tentada novamente, e a falha aparece no console.
+- As tarefas e entidades sao removidas ao finalizar ou desativar o plugin.
+- Configuracoes em `match-point.*`; testes puros de geometria e
+  preservacao de limites do voo.
+
+### NOVO: comando de teste
+- `/sbw matchpoint`: quando o administrador esta dentro de uma partida
+  em andamento, ativa o Match Point imediatamente.
+- `/sbw matchpoint <id-da-arena>`: permite escolher a arena ativa,
+  inclusive pelo console; autocomplete mostra apenas arenas em partida.
+- Permissao exclusiva `starfinbedwars.command.matchpoint` (padrao OP),
+  tambem permitida a `starfinbedwars.admin`. Auditado no log com nome
+  do executor, arena e UUID da partida.
+- Sem efeitos se nao existir partida em `IN_GAME`, nao existir mundo de
+  instancia ou se Match Point ja estiver ativo. O comando percorre exatamente
+  o mesmo fluxo da ativacao aos 30 minutos.
+
+### Validacao ainda obrigatoria
+A integracao foi aplicada no GitHub, mas **Maven nao esta instalado neste
+ambiente e o JAR ainda nao foi compilado/validado em PaperSpigot 1.8.8**.
+Executar `mvn -B verify` com JDK 8 e testar:
+1. Partida com 2 equipes; executar `/sbw matchpoint` quando iniciar;
+   todas as camas quebram, dragao surge, nenhum jogador consegue feri-lo.
+2. Testar `/sbw matchpoint arena_id` pelo console e repetir (resposta
+   ja ativo), negar usuarios nao-OP e negar arenas sem partida.
+3. Validar circuito, velocidade e destruicao em diferentes mapas, incluindo
+   altura/limites, danos em jogadores, sem destruir mundos externos.
+4. Terminar a partida durante a destruicao; nova partida deve carregar mapa
+   limpo do template, com camas intactas e sem EnderDragon residual.
+5. Vencer normalmente: dezenas de fireworks ate retorno ao lobby, sem
+   acumulo apos cancelamento/final.
+6. Invocar Iron Golem com config antigo contendo `defender-lifetime-seconds:
+   30` e verificar que permanece vivo; tentar atrai-lo ao Void e com Fireball.
+7. Abate comum continua transferindo recursos; ultimo abate de vitoria nao
+   transfere recursos ao inventario do vencedor.
+8. Confirmar isolamento entre duas partidas simultaneas e performance.
