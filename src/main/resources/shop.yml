@@ -64,7 +64,7 @@ items:
     description: "Acesso rapido a pontos altos."
     material: LADDER
     data: 0
-    amount: 8
+    amount: 16
     resource: IRON
     cost: 4
     slot: 16
@@ -356,3 +356,113 @@ items:
     cost: 2
     slot: 44
     quick-buy: true
+  clay:
+    name: "Argila Endurecida"
+    description: "Blocos resistentes para proteger a cama."
+    material: STAINED_CLAY
+    data: 12
+    amount: 16
+    resource: IRON
+    cost: 12
+    slot: 45
+    quick-buy: false
+  glass:
+    name: "Vidro"
+    description: "Proteja a cama contra explosoes."
+    material: GLASS
+    data: 0
+    amount: 4
+    resource: IRON
+    cost: 12
+    slot: 46
+    quick-buy: false
+  wood:
+    name: "Madeira"
+    description: "Defesa de madeira para a cama."
+    material: WOOD
+    data: 0
+    amount: 16
+    resource: GOLD
+    cost: 4
+    slot: 47
+    quick-buy: false
+  knockback-stick:
+    name: "Graveto"
+    description: "Empurre adversarios para longe."
+    material: STICK
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 5
+    slot: 48
+    quick-buy: false
+  bow-power:
+    name: "Arco com Forca I"
+    description: "Arco aprimorado para combate a distancia."
+    material: BOW
+    data: 0
+    amount: 1
+    resource: GOLD
+    cost: 24
+    slot: 49
+    quick-buy: false
+  bow-punch:
+    name: "Arco com Impacto I"
+    description: "Afaste adversarios com suas flechas."
+    material: BOW
+    data: 0
+    amount: 1
+    resource: EMERALD
+    cost: 4
+    slot: 50
+    quick-buy: false
+  jump-potion:
+    name: "Pocao de Salto"
+    description: "Salte mais alto durante o ataque."
+    material: POTION
+    data: 8203
+    amount: 1
+    resource: EMERALD
+    cost: 1
+    slot: 51
+    quick-buy: false
+  invisibility-potion:
+    name: "Pocao de Invisibilidade"
+    description: "Aproxime-se dos adversarios sem ser visto."
+    material: POTION
+    data: 8206
+    amount: 1
+    resource: EMERALD
+    cost: 2
+    slot: 52
+    quick-buy: false
+  strength-potion:
+    name: "Pocao de Forca"
+    description: "Aumente temporariamente o dano de ataque."
+    material: POTION
+    data: 8201
+    amount: 1
+    resource: EMERALD
+    cost: 1
+    slot: 53
+    quick-buy: false
+  sponge:
+    name: "Esponja"
+    description: "Absorve agua ao redor quando colocada."
+    material: SPONGE
+    data: 0
+    amount: 4
+    resource: GOLD
+    cost: 4
+    slot: 54
+    quick-buy: false
+  chest:
+    name: "Bau"
+    description: "Guarde recursos com sua equipe."
+    material: CHEST
+    data: 0
+    amount: 1
+    resource: IRON
+    cost: 8
+    slot: 55
+    quick-buy: false

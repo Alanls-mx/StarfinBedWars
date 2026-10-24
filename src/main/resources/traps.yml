@@ -1,8 +1,8 @@
 traps:
   alarm:
     cost: 1
-    effect: NONE
-    duration-ticks: 0
+    effect: BLINDNESS
+    duration-ticks: 160
     amplifier: 0
   blindness:
     cost: 2
@@ -10,7 +10,10 @@ traps:
     duration-ticks: 100
     amplifier: 0
   mining-fatigue:
-    cost: 2
+    cost: 1
     effect: SLOW_DIGGING
-    duration-ticks: 200
+    duration-ticks: 140
     amplifier: 0
+    level-2:
+      cost: 2
+      duration-ticks: 200

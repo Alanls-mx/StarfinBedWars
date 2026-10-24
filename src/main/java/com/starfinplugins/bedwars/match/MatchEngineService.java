@@ -266,6 +266,11 @@ public final class MatchEngineService implements ManagedService, Listener {
         arenas.getWorlds().createInstance(arena, new ArenaServiceWorldCallback(arena, player));
     }
 
+    /** True while the disposable world for this arena is being prepared. */
+    public boolean isPreparingArena(String arenaId) {
+        return arenaId != null && Boolean.TRUE.equals(loading.get(arenaId));
+    }
+
     public void spectate(Player player, String arenaId) {
         if (player == null || arenaId == null) {
             throw new IllegalArgumentException("Jogador e arena sao obrigatorios.");

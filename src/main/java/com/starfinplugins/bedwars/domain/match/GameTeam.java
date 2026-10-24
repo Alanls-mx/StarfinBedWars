@@ -17,7 +17,7 @@ public final class GameTeam {
     private final Set<UUID> members = new LinkedHashSet<UUID>();
     private final Map<TeamUpgradeType, Integer> upgrades =
         new EnumMap<TeamUpgradeType, Integer>(TeamUpgradeType.class);
-    private final List<TeamTrapType> traps = new ArrayList<TeamTrapType>();
+    private final List<QueuedTrap> traps = new ArrayList<QueuedTrap>();
     private boolean bedAlive = true;
 
     public GameTeam(TeamDefinition definition) {
@@ -41,14 +41,48 @@ public final class GameTeam {
     }
     public boolean addTrap(TeamTrapType trap, int maximumQueued) {
         if (trap == null || maximumQueued < 1 || traps.size() >= maximumQueued) return false;
-        traps.add(trap);
+        traps.add(new QueuedTrap(trap, 1));
         return true;
     }
-    public TeamTrapType consumeTrap() {
+    public boolean upgradeQueuedTrap(TeamTrapType trap, int maximumLevel) {
+        if (trap == null || maximumLevel < 2) return false;
+        for (int index = 0; index < traps.size(); index++) {
+            QueuedTrap queued = traps.get(index);
+            if (queued.type == trap && queued.level < maximumLevel) {
+                traps.set(index, new QueuedTrap(trap, queued.level + 1));
+                return true;
+            }
+        }
+        return false;
+    }
+    public int getQueuedTrapLevel(TeamTrapType trap) {
+        int level = 0;
+        for (QueuedTrap queued : traps) {
+            if (queued.type == trap) level = Math.max(level, queued.level);
+        }
+        return level;
+    }
+    public QueuedTrap consumeQueuedTrap() {
         return traps.isEmpty() ? null : traps.remove(0);
     }
+    public TeamTrapType consumeTrap() {
+        QueuedTrap trap = consumeQueuedTrap();
+        return trap == null ? null : trap.type;
+    }
     public List<TeamTrapType> getTraps() {
-        return Collections.unmodifiableList(new ArrayList<TeamTrapType>(traps));
+        List<TeamTrapType> types = new ArrayList<TeamTrapType>();
+        for (QueuedTrap trap : traps) types.add(trap.type);
+        return Collections.unmodifiableList(types);
+    }
+    public static final class QueuedTrap {
+        private final TeamTrapType type;
+        private final int level;
+        private QueuedTrap(TeamTrapType type, int level) {
+            this.type = type;
+            this.level = level;
+        }
+        public TeamTrapType getType() { return type; }
+        public int getLevel() { return level; }
     }
     public void destroyBed() { bedAlive = false; }
     public boolean add(UUID player) {

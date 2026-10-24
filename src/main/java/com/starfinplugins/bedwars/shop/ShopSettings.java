@@ -38,7 +38,7 @@ public final class ShopSettings {
         ConfigurationSection section = yaml.getConfigurationSection("items");
         if (section == null) throw new IOException("shop.yml: secao items ausente.");
         Map<String, ShopItemDefinition> items = new LinkedHashMap<String, ShopItemDefinition>();
-        boolean[] usedSlots = new boolean[45];
+        boolean[] usedSlots = new boolean[128];
         for (String id : section.getKeys(false)) {
             ConfigurationSection item = section.getConfigurationSection(id);
             if (item == null || !item.isString("material") || !item.isString("resource")
@@ -88,9 +88,15 @@ public final class ShopSettings {
         ConfigurationSection savedItems = current.getConfigurationSection("items");
         if (defaultItems == null || savedItems == null) return;
         boolean changed = false;
+        if (savedItems.getInt("ladder.amount", -1) == 8) {
+            savedItems.set("ladder.amount", 16);
+            changed = true;
+        }
         for (String id : new String[] {"tnt", "ladder", "obsidian", "ender-pearl",
                 "speed-potion", "water-bucket", "fireball", "bridge-egg",
-                "bedbug", "dream-defender", "magic-milk"}) {
+                "bedbug", "dream-defender", "magic-milk", "clay", "glass", "wood",
+                "knockback-stick", "bow-power", "bow-punch", "jump-potion",
+                "invisibility-potion", "strength-potion", "sponge", "chest"}) {
             if (savedItems.contains(id)) continue;
             int slot = defaultItems.getInt(id + ".slot", -1);
             boolean occupied = false;

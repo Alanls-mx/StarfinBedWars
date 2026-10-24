@@ -20,6 +20,7 @@ import com.starfinplugins.bedwars.match.MatchVisualService;
 import com.starfinplugins.bedwars.match.MatchPointService;
 import com.starfinplugins.bedwars.match.BedHologramService;
 import com.starfinplugins.bedwars.menu.BedWarsMenuService;
+import com.starfinplugins.bedwars.menu.NextMatchService;
 import com.starfinplugins.bedwars.setup.ArenaSetupWizardService;
 import com.starfinplugins.bedwars.service.ServiceLifecycle;
 import com.starfinplugins.bedwars.shop.ShopService;
@@ -51,6 +52,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private ArenaRegionSelectionService regionSelection;
     private MatchPresentationService presentation;
     private BedWarsMenuService menus;
+    private NextMatchService nextMatch;
     private ArenaSetupWizardService setupWizard;
     private ReconnectService reconnect;
     private ManagedMobGuard mobGuard;
@@ -90,6 +92,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             reconnect = new ReconnectService(this, matchEngine, ReconnectSettings.load(this));
             matchEngine.setReconnect(reconnect);
             menus = new BedWarsMenuService(this, arenaService, matchEngine, arenaEditing);
+            nextMatch = new NextMatchService(this, arenaService, matchEngine, menus);
             setupWizard = new ArenaSetupWizardService(this, arenaService, arenaEditing);
             arenaEditing.setSetupWizard(setupWizard);
             mobGuard = new ManagedMobGuard(this, arenaService, arenaEditing,
@@ -137,6 +140,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services.add(visuals);
             services.add(bedHolograms);
             services.add(menus);
+            services.add(nextMatch);
             services.add(setupWizard);
             services.start();
 

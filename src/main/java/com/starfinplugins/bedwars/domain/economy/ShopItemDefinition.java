@@ -25,7 +25,7 @@ public final class ShopItemDefinition {
         if (id == null || !id.matches("[a-z0-9_-]{1,32}") || displayName == null
                 || displayName.trim().isEmpty() || material == null || amount < 1 || amount > 64
                 || material == Material.AIR || data < 0
-                || costType == null || cost < 1 || cost > 4096 || slot < 0 || slot > 44) {
+                || costType == null || cost < 1 || cost > 4096 || slot < 0 || slot > 127) {
             throw new IllegalArgumentException("Definicao de item da loja invalida.");
         }
         this.id = id;

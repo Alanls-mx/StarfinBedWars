@@ -664,9 +664,9 @@ public final class ShopService implements ManagedService, Listener {
         }
         ShopItemDefinition definition = menu.getEntry(event.getRawSlot());
         if (definition == null) return;
-        if (menu.isEditing()) {
+        if (menu.isEditing() || event.isShiftClick()) {
             toggleFavorite(player, definition.getId());
-            refreshLater(player, menu, menu.getCategory(), menu.getPage(), true);
+            refreshLater(player, menu, menu.getCategory(), menu.getPage(), menu.isEditing());
             return;
         }
         purchase(player, definition);
@@ -691,9 +691,16 @@ public final class ShopService implements ManagedService, Listener {
 
     private List<ClassicShopMenu.Category> categoryOrder() {
         List<String> configured = plugin.getConfig().getStringList("shop.category-order");
+        if (configured.equals(java.util.Arrays.asList("FAVORITES", "SWORDS", "ARMOR", "TOOLS",
+                "BLOCKS", "BOWS", "POTIONS", "UTILITIES", "SPECIAL"))) {
+            configured = java.util.Arrays.asList("FAVORITES", "BLOCKS", "COMBAT", "ARMOR",
+                "TOOLS", "BOWS", "POTIONS", "UTILITIES");
+        }
         List<ClassicShopMenu.Category> order = new ArrayList<ClassicShopMenu.Category>();
         for (String value : configured) {
             try {
+                if ("SWORDS".equalsIgnoreCase(value)) value = "COMBAT";
+                if ("SPECIAL".equalsIgnoreCase(value)) value = "UTILITIES";
                 ClassicShopMenu.Category category = ClassicShopMenu.Category.valueOf(
                     value.toUpperCase(Locale.ROOT));
                 if (!order.contains(category)) order.add(category);
@@ -712,6 +719,19 @@ public final class ShopService implements ManagedService, Listener {
             new EnumMap<ClassicShopMenu.Category, Material>(ClassicShopMenu.Category.class);
         for (ClassicShopMenu.Category category : ClassicShopMenu.Category.values()) {
             String value = plugin.getConfig().getString("shop.category-icons." + category.name());
+            if (category == ClassicShopMenu.Category.COMBAT && value == null) {
+                value = plugin.getConfig().getString("shop.category-icons.SWORDS");
+                if ("IRON_SWORD".equals(value)) value = "GOLD_SWORD";
+            }
+            if (category == ClassicShopMenu.Category.BLOCKS && "WOOL".equals(value)) {
+                value = "STAINED_CLAY";
+            }
+            if (category == ClassicShopMenu.Category.ARMOR && "DIAMOND_CHESTPLATE".equals(value)) {
+                value = "CHAINMAIL_BOOTS";
+            }
+            if (category == ClassicShopMenu.Category.POTIONS && "POTION".equals(value)) {
+                value = "BREWING_STAND_ITEM";
+            }
             if (value == null) continue;
             try { icons.put(category, Material.valueOf(value.toUpperCase(Locale.ROOT))); }
             catch (IllegalArgumentException invalid) {
@@ -903,6 +923,13 @@ public final class ShopService implements ManagedService, Listener {
             data = match.getTeam(participant.getTeamId()).getDefinition().getColorData();
         }
         ItemStack item = new ItemStack(definition.getMaterial(), definition.getAmount(), data);
+        if ("knockback-stick".equals(definition.getId())) {
+            item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.KNOCKBACK, 1);
+        } else if ("bow-power".equals(definition.getId())) {
+            item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.ARROW_DAMAGE, 1);
+        } else if ("bow-punch".equals(definition.getId())) {
+            item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.ARROW_KNOCKBACK, 1);
+        }
         upgrades.applyItemUpgrade(match, participant, item);
         return SpecialItemService.decoratePurchase(definition.getId(), item);
     }

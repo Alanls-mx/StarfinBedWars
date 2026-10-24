@@ -12,6 +12,9 @@ match:
   # Empates e encerramentos sem vencedor continuam com 5 segundos.
   victory-celebration-seconds: 9
 
+next-match:
+  enabled: true # Oferece jogar novamente no mesmo modo ou escolher arena apos o resultado.
+
 # Itens especiais do BedWars classico (compra configurada em shop.yml).
 special-items:
   enabled: true
@@ -245,17 +248,16 @@ shop:
   # Maximo de caracteres visiveis por linha da descricao (18 a 40).
   # Linhas menores evitam tooltips fora da tela em resolucoes baixas.
   description-line-length: 28
-  category-order: [FAVORITES, SWORDS, ARMOR, TOOLS, BLOCKS, BOWS, POTIONS, UTILITIES, SPECIAL]
+  category-order: [FAVORITES, BLOCKS, COMBAT, ARMOR, TOOLS, BOWS, POTIONS, UTILITIES]
   category-icons:
     FAVORITES: NETHER_STAR
-    SWORDS: IRON_SWORD
-    ARMOR: DIAMOND_CHESTPLATE
+    BLOCKS: STAINED_CLAY
+    COMBAT: GOLD_SWORD
+    ARMOR: CHAINMAIL_BOOTS
     TOOLS: IRON_PICKAXE
-    BLOCKS: WOOL
     BOWS: BOW
-    POTIONS: POTION
+    POTIONS: BREWING_STAND_ITEM
     UTILITIES: TNT
-    SPECIAL: BLAZE_POWDER
 
 visuals:
   lobby-countdown:
@@ -327,6 +329,7 @@ messages:
     names:
       sharpness: 'Afiacao'
       protection: 'Protecao'
+      haste: 'Pressa'
       forge: 'Forja'
       heal_pool: 'Poco de cura'
   player-joined: '&7{player} &eentrou (&b{on}&e/&b{max}&e)!'
