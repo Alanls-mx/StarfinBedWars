@@ -11,6 +11,7 @@ import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
 import com.starfinplugins.bedwars.service.ManagedService;
 import com.starfinplugins.bedwars.world.ManagedMobGuard;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -272,6 +273,10 @@ public final class MatchPointService implements ManagedService, Listener {
         // Only alter the match when the Dragon actually exists. A failed
         // test command must not irreversibly break beds without a Match Point.
         if (active.dragon == null || !active.dragon.isValid()) return;
+        active.area = bounds;
+        active.mapIndex = new MatchPointMapIndex(bounds);
+        active.startedAtMillis = System.currentTimeMillis();
+        active.demolition = demolitionSchedule();
         matches.destroyAllBedsAtMatchPoint(match);
         for (GameParticipant participant : match.getParticipantList()) {
             Player player = Bukkit.getPlayer(participant.getPlayerId());
@@ -318,10 +323,39 @@ public final class MatchPointService implements ManagedService, Listener {
             return;
         }
 
-        // Use the actual dragon position, not an artificial path point.
-        // This keeps erosion and damage synchronized with what players see.
+        // Use real dragon coordinates for proximity, damage and TNT bursts.
         Location actual = dragon.getLocation();
-        destroyNearby(active, actual);
+        if (active.mapIndex != null && !active.mapIndex.isFinished()) {
+            int inspections = Math.max(500, Math.min(25000, plugin.getConfig()
+                .getInt("match-point.demolition.survey-positions-per-tick", 7000)));
+            if (active.mapIndex.survey(world, inspections)) {
+                final List<Position> structures = new ArrayList<Position>();
+                for (com.starfinplugins.bedwars.domain.arena.TeamDefinition team
+                        : active.match.getArena().getTeamList()) {
+                    if (team.getSpawn() != null) structures.add(team.getSpawn());
+                }
+                for (com.starfinplugins.bedwars.domain.arena.ResourceGeneratorDefinition generator
+                        : active.match.getArena().getGeneratorList()) {
+                    structures.add(generator.getPosition());
+                }
+                structures.addAll(active.mapIndex.structuralHotspots(24));
+                active.route = new MatchPointPatrolRoute(active.area,
+                    active.match.getArena().getCeilingHeight(), actual.getY(),
+                    plugin.getConfig().getInt("match-point.dragon-patrol-spacing", 40),
+                    structures);
+                active.waypointIndex = 0;
+                active.waypointTicks = 0;
+                plugin.getLogger().info("Match Point [" + active.match.getArena().getId()
+                    + "]: indexados " + active.mapIndex.getTotalBlocks()
+                    + " blocos destrutiveis, " + active.mapIndex.getInaccessibleChunks()
+                    + " chunks indisponiveis; patrulha expandida com "
+                    + structures.size() + " pontos de ilhas/centro.");
+            }
+        }
+        if (active.mapIndex != null && active.mapIndex.isFinished()) {
+            destroyNearby(active, actual);
+            advanceDemolition(active, world, actual);
+        }
         damageNearby(active, actual);
     }
 
@@ -430,6 +464,105 @@ public final class MatchPointService implements ManagedService, Listener {
         }
     }
 
+    private MatchPointDemolitionSchedule demolitionSchedule() {
+        int at = Math.max(1, Math.min(120, plugin.getConfig().getInt(
+            "match-point.demolition.partial-minutes", 5)));
+        int complete = Math.max(at + 1, Math.min(180, plugin.getConfig().getInt(
+            "match-point.demolition.complete-minutes", 8)));
+        int percent = Math.max(1, Math.min(99, plugin.getConfig().getInt(
+            "match-point.demolition.partial-percent", 80)));
+        return new MatchPointDemolitionSchedule(at, complete, percent);
+    }
+
+    /**
+     * Destroy a fraction of all ORIGINAL block positions, not a fraction of
+     * the rectangular arena volume (which is mostly air). The real baseline
+     * comes from an incremental snapshot survey of the disposable instance.
+     *
+     * Realtime interpolation allows lag/slow scans to catch up, but the
+     * per-tick cap protects the game thread. Target completion requires
+     * enough server TPS and accessible chunks; overdue budgets are logged.
+     */
+    private void advanceDemolition(Active active, World world, Location dragon) {
+        MatchPointMapIndex map = active.mapIndex;
+        if (map == null || !map.isFinished() || map.getTotalBlocks() == 0L) return;
+        long elapsed = Math.max(0L, System.currentTimeMillis() - active.startedAtMillis);
+        long target = active.demolition.target(elapsed, map.getTotalBlocks());
+        long missing = target - map.getConsumed();
+        if (missing <= 0) return;
+        int limit = Math.max(10, Math.min(1400, plugin.getConfig()
+            .getInt("match-point.demolition.max-blocks-per-tick", 220)));
+        int cap = (int) Math.min(missing, limit);
+
+        int done = 0, strikes = 0, removed = 0;
+        boolean lightningEnabled = plugin.getConfig().getBoolean(
+            "match-point.lightning.enabled", true);
+        int lightningInterval = Math.max(20, Math.min(600, plugin.getConfig()
+            .getInt("match-point.lightning.interval-ticks", 60)));
+        boolean lightningDue = lightningEnabled && ticks - active.lastLightningTick >= lightningInterval;
+        int strikeBudget = lightningDue ? Math.min(cap, Math.max(1, Math.min(120,
+            plugin.getConfig().getInt("match-point.lightning.max-blocks-per-strike", 24)))) : 0;
+        Location lightningAt = null;
+        int loadedChunks = 0;
+        for (; done < cap; done++) {
+            MatchPointMapIndex.Cell cell = map.consumeNearest(dragon.getX(), dragon.getZ());
+            if (cell == null) break;
+            if (!world.isChunkLoaded(cell.x >> 4, cell.z >> 4)) {
+                if (loadedChunks >= 2 || !world.loadChunk(cell.x >> 4, cell.z >> 4, false)) {
+                    // This coordinate belonged to a surveyed world chunk.
+                    // Report inaccessible chunks rather than fabricating
+                    // completed block destruction for a skipped location.
+                    active.failedRemovals++;
+                    continue;
+                }
+                loadedChunks++;
+            }
+            Block block = world.getBlockAt(cell.x, cell.y, cell.z);
+            boolean alreadyAir = block.getType() == Material.AIR;
+            if (alreadyAir || eraseBlock(active, block)) {
+                removed++;
+                if (lightningDue && done < strikeBudget && lightningAt == null && !alreadyAir) {
+                    lightningAt = new Location(world, cell.x + 0.5D,
+                        cell.y + 1.0D, cell.z + 0.5D);
+                }
+                if (active.waveAt == null && !alreadyAir) {
+                    active.waveAt = new Location(world, cell.x + 0.5D,
+                        cell.y + 0.5D, cell.z + 0.5D);
+                }
+            } else active.failedRemovals++;
+        }
+        active.scheduledRemoved += removed;
+        if (lightningDue && lightningAt != null) {
+            // strikeLightningEffect never creates real lightning/fire and
+            // does not inflict uncontrolled vanilla damage on players.
+            world.strikeLightningEffect(lightningAt);
+            strikes++;
+            active.lastLightningTick = ticks;
+        }
+        if (ticks % 20L == 0L && active.waveAt != null) {
+            world.playEffect(active.waveAt, Effect.EXPLOSION_LARGE, 0);
+            active.waveAt = null;
+        }
+
+        if (ticks - active.lastProgressLog >= 200L ||
+                (map.getConsumed() == map.getTotalBlocks() && !active.completionLogged)) {
+            active.lastProgressLog = ticks;
+            long processed = map.getConsumed();
+            int progress = (int) (100L * processed / map.getTotalBlocks());
+            plugin.getLogger().info("Match Point [" + active.match.getArena().getId() + "]: "
+                + progress + "% de " + map.getTotalBlocks() + " blocos originais processados"
+                + " (meta " + target + "), " + active.scheduledRemoved
+                + " removidos/ja destruidos, " + active.failedRemovals
+                + " inacessiveis; raios nesta verificacao=" + strikes + ".");
+            if (elapsed >= active.demolition.getCompleteMillis()
+                    && processed < map.getTotalBlocks()) {
+                plugin.getLogger().warning("Match Point atrasado: aumente "
+                    + "match-point.demolition.max-blocks-per-tick ou verifique TPS/chunks.");
+            }
+            if (processed == map.getTotalBlocks()) active.completionLogged = true;
+        }
+    }
+
     /** Erase only disposable match-instance blocks, never bedrock. */
     private boolean eraseBlock(Active active, Block block) {
         Material material = block.getType();
@@ -510,6 +643,16 @@ public final class MatchPointService implements ManagedService, Listener {
         private EnderDragon dragon;
         private long localDestroyed;
         private long missedBlasts;
+        private ArenaRegion area;
+        private MatchPointMapIndex mapIndex;
+        private MatchPointDemolitionSchedule demolition;
+        private long startedAtMillis;
+        private long scheduledRemoved;
+        private long failedRemovals;
+        private long lastLightningTick;
+        private long lastProgressLog;
+        private Location waveAt;
+        private boolean completionLogged;
         private long lastBlastTick = Long.MIN_VALUE / 2L;
         private Location lastBlastPosition;
         private Active(GameMatch match) { this.match = match; }
