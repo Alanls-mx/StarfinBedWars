@@ -89,6 +89,7 @@ public final class PresentationConfigMigrator {
         "match-point.demolition.max-blocks-per-tick",
         "match-point.lightning.enabled",
         "match-point.lightning.interval-ticks",
+        "match-point.lightning.radius",
         "match-point.lightning.max-blocks-per-strike",
         "match-point.bossbar-enabled",
         "match.victory-celebration-seconds",
