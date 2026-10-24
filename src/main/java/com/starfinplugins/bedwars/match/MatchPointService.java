@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.ChunkSnapshot;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -306,8 +307,14 @@ public final class MatchPointService implements ManagedService, Listener {
             // surface at X/Z rather than the empty air around its body.
             int y = Math.min(bounds.getMaximumY(), world.getHighestBlockYAt(x, z));
             if (y < bounds.getMinimumY()) continue;
-            Block block = world.getBlockAt(x, y, z);
-            if (eraseBlock(active, block)) removed++;
+            // PaperSpigot 1.8 may return the Y of the AIR above the surface.
+            // Look down a few blocks so dragon strikes genuinely hit islands.
+            for (int depth = 0; depth < 8 && y >= bounds.getMinimumY(); depth++, y--) {
+                Block block = world.getBlockAt(x, y, z);
+                if (block.getType() == Material.AIR) continue;
+                if (eraseBlock(active, block)) removed++;
+                break;
+            }
         }
         if (removed > 0) active.localDestroyed += removed;
     }
@@ -361,15 +368,22 @@ public final class MatchPointService implements ManagedService, Listener {
                 continue;
             }
 
-            // Once per X/Z column, fast-forward to the topmost actual terrain.
-            // A 280x280x256 arena contains ~20 million coordinates; scanning
-            // all the empty sky first made the previous implementation look
-            // like it wasn't breaking anything.
-            if (cell.x != active.previousColumnX || cell.z != active.previousColumnZ) {
-                active.previousColumnX = cell.x;
-                active.previousColumnZ = cell.z;
-                cursor.skipAirAbove(world.getHighestBlockYAt(cell.x, cell.z));
-                cell = cursor.peek();
+            // A 280x280x256 arena has ~20 million coordinates. The heightmap
+            // cannot safely skip sky: in 1.8 it ignores some transparent blocks.
+            // Instead skip ONLY 16-block sections verified empty in the original
+            // chunk snapshot. Glass, wool, water and other blocks are preserved
+            // in the scan even when the heightmap would ignore them.
+            if (active.snapshotChunk != chunkKey || active.snapshot == null) {
+                active.snapshot = world.getChunkAt(cell.chunkX(), cell.chunkZ())
+                    .getChunkSnapshot(false, false, false);
+                active.snapshotChunk = chunkKey;
+            }
+            if (active.snapshot.isSectionEmpty(cell.y >> 4)) {
+                int originalY = cell.y;
+                cursor.skipAirAbove((cell.y & ~15) - 1);
+                if (cursor.peek().y == originalY) cursor.advance();
+                checks++;
+                continue;
             }
             Block block = world.getBlockAt(cell.x, cell.y, cell.z);
             cursor.advance();
@@ -467,8 +481,8 @@ public final class MatchPointService implements ManagedService, Listener {
         private MatchPointErosionCursor erosion;
         private int lastErosionReport;
         private long localDestroyed;
-        private int previousColumnX = Integer.MIN_VALUE;
-        private int previousColumnZ = Integer.MIN_VALUE;
+        private long snapshotChunk = Long.MIN_VALUE;
+        private ChunkSnapshot snapshot;
         private final Set<Long> unavailableChunks = new HashSet<Long>();
         private Active(GameMatch match) { this.match = match; }
     }
