@@ -449,8 +449,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         final String arenaId = match.getArena().getId();
         spawnOpeningValues.put(arenaId, spawnOpeningSeconds);
         announce(match, "messages.spawn-preparing",
-            "&ePrepare-se! A partida comeca em &6{time} &esegundos.",
-            "time", Integer.toString(spawnOpeningSeconds));
+            "&eAs equipes estao nas bases. Aguarde a abertura das barreiras.");
         spawnOpeningTasks.put(arenaId, Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override public void run() {
                 Integer remaining = spawnOpeningValues.get(arenaId);
