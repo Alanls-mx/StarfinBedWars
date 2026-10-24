@@ -727,12 +727,15 @@ public final class ShopService implements ManagedService, Listener {
         BukkitTask task = Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override public void run() {
                 pendingShopRefresh.remove(playerId);
-                if (!isViewingMenu(player, menu)) return;
+                if (!player.isOnline()) return;
                 try {
+                    // Refreshing a retained inventory is safe even if the player closed
+                    // it in the meantime; never silently suppress a tab click because
+                    // Paper/Spigot exposes a new Inventory wrapper for the same window.
                     menu.refresh(player, settings.getItems().values(), favoritesFor(playerId),
                         category, page, editing, categoryOrder(), categoryIcons());
-                    // Content changes are delivered by Bukkit for the already-open window.
-                    // updateInventory() here can cause another inventory resync on 1.8 clients.
+                    // Bukkit delivers item changes to viewers of the same inventory.
+                    // Do not call updateInventory(): it resynchronizes the player view.
                 } catch (RuntimeException error) {
                     plugin.getLogger().log(java.util.logging.Level.SEVERE,
                         "Falha ao atualizar categoria " + category + " da loja para "
