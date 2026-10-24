@@ -281,30 +281,35 @@ public final class MatchPointService implements ManagedService, Listener {
         ArenaRegion bounds = active.match.getArena().getRegion(ArenaRegionType.MAIN);
         if (bounds == null) bounds = active.match.getArena().getBounds();
         if (bounds == null) return;
-        int limit = Math.max(1, Math.min(35,
-            plugin.getConfig().getInt("match-point.blocks-per-sweep", 18)));
+        final int maxRemoved = Math.max(1, Math.min(75,
+            plugin.getConfig().getInt("match-point.blocks-per-sweep", 28)));
+        final int radius = Math.max(3, Math.min(14,
+            plugin.getConfig().getInt("match-point.dragon-erode-radius", 9)));
+        final int diameter = radius * 2 + 1;
+        final int total = diameter * diameter;
+        // Alternate the first sampled column so each sweep cuts different
+        // terrain instead of drilling the same hole every second.
+        final int start = (int) ((ticks / 20L * 37L) % total);
         int removed = 0;
         World world = point.getWorld();
-        for (int dy = -6; dy <= 2 && removed < limit; dy++) {
-            for (int dx = -3; dx <= 3 && removed < limit; dx++) {
-                for (int dz = -3; dz <= 3 && removed < limit; dz++) {
-                    int x = point.getBlockX() + dx;
-                    int y = point.getBlockY() + dy;
-                    int z = point.getBlockZ() + dz;
-                    if (y < 1 || y > 254 || !world.isChunkLoaded(x >> 4, z >> 4)
-                            || x < bounds.getMinimumX() || x > bounds.getMaximumX()
-                            || z < bounds.getMinimumZ() || z > bounds.getMaximumZ()
-                            || y < bounds.getMinimumY() || y > bounds.getMaximumY()) continue;
-                    Block block = world.getBlockAt(x, y, z);
-                    Material material = block.getType();
-                    if (material == Material.AIR || material == Material.BEDROCK
-                            || material == Material.BED_BLOCK || !material.isSolid()) continue;
-                    matches.forgetMatchPointBlock(active.match, block);
-                    block.setType(Material.AIR, false);
-                    removed++;
-                }
-            }
+        for (int offset = 0; offset < total && removed < maxRemoved; offset++) {
+            int sample = (start + offset) % total;
+            int dx = sample % diameter - radius;
+            int dz = sample / diameter - radius;
+            if (dx * dx + dz * dz > radius * radius) continue;
+            int x = point.getBlockX() + dx;
+            int z = point.getBlockZ() + dz;
+            if (x < bounds.getMinimumX() || x > bounds.getMaximumX()
+                    || z < bounds.getMinimumZ() || z > bounds.getMaximumZ()
+                    || !world.isChunkLoaded(x >> 4, z >> 4)) continue;
+            // The dragon may fly above the islands. Erode the actual terrain
+            // surface at X/Z rather than the empty air around its body.
+            int y = Math.min(bounds.getMaximumY(), world.getHighestBlockYAt(x, z));
+            if (y < bounds.getMinimumY()) continue;
+            Block block = world.getBlockAt(x, y, z);
+            if (eraseBlock(active, block)) removed++;
         }
+        if (removed > 0) active.localDestroyed += removed;
     }
 
     /**
@@ -350,25 +355,44 @@ public final class MatchPointService implements ManagedService, Listener {
                         + "; nenhum bloco externo sera gerado.");
                 }
             }
+            if (active.unavailableChunks.contains(chunkKey)) {
+                cursor.advance();
+                checks++;
+                continue;
+            }
+
+            // Once per X/Z column, fast-forward to the topmost actual terrain.
+            // A 280x280x256 arena contains ~20 million coordinates; scanning
+            // all the empty sky first made the previous implementation look
+            // like it wasn't breaking anything.
+            if (cell.x != active.previousColumnX || cell.z != active.previousColumnZ) {
+                active.previousColumnX = cell.x;
+                active.previousColumnZ = cell.z;
+                cursor.skipAirAbove(world.getHighestBlockYAt(cell.x, cell.z));
+                cell = cursor.peek();
+            }
+            Block block = world.getBlockAt(cell.x, cell.y, cell.z);
             cursor.advance();
             checks++;
-            if (active.unavailableChunks.contains(chunkKey)) continue;
-            Block block = world.getBlockAt(cell.x, cell.y, cell.z);
-            Material material = block.getType();
-            // BEDROCK deliberately remains indestructible. All ordinary map
-            // blocks (including player blocks, water and decorations) erode.
-            if (material == Material.AIR || material == Material.BEDROCK) continue;
-            matches.forgetMatchPointBlock(active.match, block);
-            block.setType(Material.AIR, false);
-            changed++;
+            if (eraseBlock(active, block)) changed++;
         }
         int progress = cursor.getProgressPercent();
         if (progress >= active.lastErosionReport + 25 || !cursor.hasNext()) {
             active.lastErosionReport = progress;
             plugin.getLogger().info("Match Point: destruicao progressiva da arena "
                 + active.match.getArena().getId() + " " + progress + "% ("
-                + cursor.getVisited() + "/" + cursor.getTotal() + " posicoes verificadas).");
+                + cursor.getVisited() + "/" + cursor.getTotal() + " posicoes verificadas, "
+                + active.localDestroyed + " blocos destruidos perto do dragao).");
         }
+    }
+
+    /** Erase only disposable match-instance blocks, never bedrock. */
+    private boolean eraseBlock(Active active, Block block) {
+        Material material = block.getType();
+        if (material == Material.AIR || material == Material.BEDROCK) return false;
+        matches.forgetMatchPointBlock(active.match, block);
+        block.setType(Material.AIR, false);
+        return block.getType() == Material.AIR;
     }
 
     private void damageNearby(Active active, Location center) {
@@ -442,6 +466,9 @@ public final class MatchPointService implements ManagedService, Listener {
         private EnderDragon dragon;
         private MatchPointErosionCursor erosion;
         private int lastErosionReport;
+        private long localDestroyed;
+        private int previousColumnX = Integer.MIN_VALUE;
+        private int previousColumnZ = Integer.MIN_VALUE;
         private final Set<Long> unavailableChunks = new HashSet<Long>();
         private Active(GameMatch match) { this.match = match; }
     }
