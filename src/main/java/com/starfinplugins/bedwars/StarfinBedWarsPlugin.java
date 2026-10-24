@@ -68,6 +68,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
         try {
             getLogger().info("Verificando dependencias...");
             verifyPlatform();
+            verifyBundledClasses();
 
             getLogger().info("Carregando configuracoes...");
             saveDefaultConfig();
@@ -202,6 +203,35 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
         if (version == null || !version.startsWith("1.8.8")) {
             throw new IllegalStateException("Versao Bukkit nao suportada: " + version
                 + ". O alvo desta versao e Spigot 1.8.8.");
+        }
+    }
+
+    /**
+     * Fail at startup with an actionable message instead of discovering a
+     * missing class when a player opens a Shop or when the server shuts down.
+     *
+     * Class.forName with initialize=false resolves the actual plugin jar
+     * class path, but does not initialize the NMS NPC's static state.
+     */
+    private void verifyBundledClasses() {
+        String[] expected = {
+            "com.starfinplugins.bedwars.shop.npc.ShopNpcFactoryV1_8_R3",
+            "com.starfinplugins.bedwars.shop.npc.ShopNpcVillager",
+            "com.starfinplugins.bedwars.match.MatchPointDragonFlightV1_8_R3",
+            "com.starfinplugins.bedwars.match.MatchPointBossBarV1_8_R3"
+        };
+        for (String name : expected) {
+            try {
+                Class.forName(name, false, getClass().getClassLoader());
+            } catch (ClassNotFoundException error) {
+                throw new IllegalStateException("JAR StarfinBedWars incompleto: classe "
+                    + name + " ausente. Pare o servidor, recompile com mvn -B verify "
+                    + "e instale o JAR novo antes de iniciar.", error);
+            } catch (LinkageError error) {
+                throw new IllegalStateException("JAR StarfinBedWars incompativel "
+                    + "ou corrompido ao carregar " + name + ". "
+                    + "Confira PaperSpigot 1.8.8 e reinstale com o servidor desligado.", error);
+            }
         }
     }
 
