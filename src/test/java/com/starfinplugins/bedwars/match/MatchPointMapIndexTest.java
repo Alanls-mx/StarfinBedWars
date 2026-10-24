@@ -5,6 +5,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import com.starfinplugins.bedwars.domain.arena.ArenaRegion;
+import com.starfinplugins.bedwars.domain.arena.Position;
+import java.util.List;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -32,6 +34,11 @@ public class MatchPointMapIndexTest {
         }
         assertTrue(index.isFinished());
         assertEquals(4, index.getTotalBlocks());
+        assertEquals(0, index.getInaccessibleChunks());
+        List<Position> landmarks = index.structuralHotspots(8);
+        assertTrue("Survey must discover neutral island without bed",
+            landmarks.stream().anyMatch(p -> Math.abs(p.getX() - 24) < 16
+                && Math.abs(p.getZ() - 24) < 16));
         int seen = 0;
         boolean center = false;
         for (int i=0;i<4;i++) {
