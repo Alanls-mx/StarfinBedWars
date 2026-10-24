@@ -1104,7 +1104,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         }
         if (participant.getTeamId().equals(bedTeam.getDefinition().getId())) {
             player.sendMessage(message("messages.own-bed",
-                "&cVoce nao pode destruir sua propria cama!"));
+                "&cVocê não pode destruir sua própria cama!"));
             return;
         }
         if (!bedTeam.isBedAlive()) return;
