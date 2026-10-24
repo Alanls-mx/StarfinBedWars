@@ -366,18 +366,31 @@ public final class SpecialItemService implements ManagedService, Listener {
                 continue;
             }
             if (bridgeTick < trail.nextRemovalTick) continue;
-            List<BridgeCell> slice = trail.slices.pollOldest();
+            List<BridgeCell> slice = trail.slices.peekOldest();
             if (slice == null) {
                 it.remove();
                 continue;
             }
-            // Erase in EXACT construction order. A reused location owned by
-            // someone else will be skipped by decayBridgeBlock().
+            // Do not lose a bridge section if its chunk is temporarily
+            // unavailable. Retry later when the chunk can be loaded.
+            boolean available = true;
             for (BridgeCell cell : slice) {
                 int chunkX = cell.x >> 4;
                 int chunkZ = cell.z >> 4;
                 if (!trail.world.isChunkLoaded(chunkX, chunkZ)
-                        && !trail.world.loadChunk(chunkX, chunkZ, false)) continue;
+                        && !trail.world.loadChunk(chunkX, chunkZ, false)) {
+                    available = false;
+                    break;
+                }
+            }
+            if (!available) {
+                trail.nextRemovalTick = bridgeTick + 20L;
+                continue;
+            }
+            trail.slices.pollOldest();
+            // Erase in EXACT construction order. A reused location owned by
+            // someone else will be skipped by decayBridgeBlock().
+            for (BridgeCell cell : slice) {
                 Block block = trail.world.getBlockAt(cell.x, cell.y, cell.z);
                 matches.decayBridgeBlock(match, block, entry.getKey(), trail.color);
             }
