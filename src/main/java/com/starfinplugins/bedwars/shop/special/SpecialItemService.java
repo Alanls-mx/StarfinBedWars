@@ -424,7 +424,8 @@ public final class SpecialItemService implements ManagedService, Listener {
         String[] parts = data.split("\\|", 2);
         if (parts.length != 2) return;
         GameMatch match = matches.getMatchInWorld(projectile.getWorld());
-        if (match == null || !match.getId().toString().equals(parts[0])
+        if (match == null || match.getState() != MatchState.IN_GAME
+                || !match.getId().toString().equals(parts[0])
                 || match.getState() != MatchState.IN_GAME) return;
         if (countMobs(match, parts[1], EntityType.SILVERFISH) >= 3) return;
         Location spawn = projectile.getLocation();
@@ -446,7 +447,10 @@ public final class SpecialItemService implements ManagedService, Listener {
         Entity mob = guard == null ? at.getWorld().spawnEntity(at, type)
             : guard.spawnAuthorized(at, type);
         if (!(mob instanceof Creature)) {
-            if (mob != null) mob.remove();
+            if (mob != null) {
+                if (guard != null) guard.forget(mob);
+                mob.remove();
+            }
             return false;
         }
         Creature creature = (Creature) mob;
@@ -471,20 +475,26 @@ public final class SpecialItemService implements ManagedService, Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPetTarget(EntityTargetLivingEntityEvent event) {
         String data = ownMetadata(event.getEntity());
-        if (data == null || !(event.getTarget() instanceof Player)) return;
-        if (isFriendlyTarget(data, (Player) event.getTarget())) event.setCancelled(true);
+        if (data == null || event.getTarget() == null) return;
+        if (!(event.getTarget() instanceof Player)
+                || isFriendlyTarget(data, (Player) event.getTarget())) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPetAttack(EntityDamageByEntityEvent event) {
         String attacker = ownMetadata(event.getDamager());
-        if (attacker != null && event.getEntity() instanceof Player
-                && isFriendlyTarget(attacker, (Player) event.getEntity())) {
+        if (attacker != null && (!(event.getEntity() instanceof Player)
+                || isFriendlyTarget(attacker, (Player) event.getEntity()))) {
             event.setCancelled(true);
         }
         String victim = ownMetadata(event.getEntity());
-        if (victim != null && event.getDamager() instanceof Player
-                && isFriendlyTarget(victim, (Player) event.getDamager())) {
+        Entity damager = event.getDamager();
+        if (damager instanceof Projectile) {
+            org.bukkit.projectiles.ProjectileSource shooter = ((Projectile) damager).getShooter();
+            if (shooter instanceof Entity) damager = (Entity) shooter;
+        }
+        if (victim != null && damager instanceof Player
+                && isFriendlyTarget(victim, (Player) damager)) {
             event.setCancelled(true);
         }
     }
@@ -551,7 +561,8 @@ public final class SpecialItemService implements ManagedService, Listener {
         String[] parts = data.split("\\|", 2);
         if (parts.length != 2) return true;
         GameMatch match = matches.getMatchForPlayer(target.getUniqueId());
-        if (match == null || !match.getId().toString().equals(parts[0])
+        if (match == null || match.getState() != MatchState.IN_GAME
+                || !match.getId().toString().equals(parts[0])
                 || matches.getWorld(match.getId()) != target.getWorld()) return true;
         GameParticipant participant = match.getParticipant(target.getUniqueId());
         return participant == null || participant.getState() != ParticipantState.CONNECTED
