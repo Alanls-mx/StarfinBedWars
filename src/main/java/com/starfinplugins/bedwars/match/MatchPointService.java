@@ -295,10 +295,13 @@ public final class MatchPointService implements ManagedService, Listener {
         // history of body/head/tail positions.
         double[] point = active.route.at(active.waypointIndex);
         Location waypoint = new Location(world, point[0], point[1], point[2]);
-        double reach = Math.max(8.0D, Math.min(24.0D,
-            plugin.getConfig().getDouble("match-point.dragon-waypoint-reach", 14.0D)));
+        // A 14-block arrival tolerance lets the dragon skip the island
+        // entirely while a blast only reaches 3 blocks. Existing configs may
+        // still say 14, so cap the runtime tolerance at 7.
+        double reach = Math.max(3.0D, Math.min(7.0D,
+            plugin.getConfig().getDouble("match-point.dragon-waypoint-reach", 6.0D)));
         if (dragon.getLocation().distanceSquared(waypoint) <= reach * reach
-                || ++active.waypointTicks > 220) {
+                || ++active.waypointTicks > 700) {
             active.waypointIndex = (active.waypointIndex + 1) % active.route.size();
             active.waypointTicks = 0;
             point = active.route.at(active.waypointIndex);
@@ -349,44 +352,79 @@ public final class MatchPointService implements ManagedService, Listener {
             plugin.getConfig().getInt("match-point.dragon-blast-depth", 1)));
 
         final World world = point.getWorld();
-        int centerX = point.getBlockX();
-        int centerZ = point.getBlockZ();
+        final int centerX = point.getBlockX();
+        final int centerZ = point.getBlockZ();
         int removed = 0;
+        int examinedColumns = 0;
+        int unloadedChunks = 0;
+        int loadedChunks = 0;
         Location visibleImpact = null;
+        // Blast destruction is STRICTLY below the actual dragon position.
+        // The clamped range prevents removing distant structures in a tall map.
+        final int floorY = bounds.getMinimumY();
+        final int ceilingY = Math.min(bounds.getMaximumY(),
+            Math.min(255, point.getBlockY() + 4));
         for (MatchPointBlastFootprint.Offset offset : MatchPointBlastFootprint.offsets(radius)) {
             if (removed >= maxBlocks) break;
-            int x = centerX + offset.x, z = centerZ + offset.z;
+            final int x = centerX + offset.x, z = centerZ + offset.z;
             if (x < bounds.getMinimumX() || x > bounds.getMaximumX()
                     || z < bounds.getMinimumZ() || z > bounds.getMaximumZ()
-                    || !world.isChunkLoaded(x >> 4, z >> 4)) continue;
-
-            int highest = Math.min(bounds.getMaximumY(), world.getHighestBlockYAt(x, z));
-            if (highest < bounds.getMinimumY()) continue;
-            // Spigot 1.8 height maps may point to the AIR above the terrain.
-            // Remove a few layers only, like TNT digging a small crater.
-            int erasedInColumn = 0;
-            for (int y = highest, searched = 0;
-                    y >= bounds.getMinimumY() && searched < 12
-                    && erasedInColumn < depth && removed < maxBlocks;
-                    y--, searched++) {
+                    || ceilingY < floorY) continue;
+            int cx = x >> 4, cz = z >> 4;
+            if (!world.isChunkLoaded(cx, cz)) {
+                if (loadedChunks >= 2 || !world.loadChunk(cx, cz, false)) {
+                    unloadedChunks++;
+                    continue;
+                }
+                loadedChunks++;
+            }
+            examinedColumns++;
+            // getHighestBlockYAt was returning AIR above floating islands.
+            // Only scanning the next 12 blocks never reached their platforms.
+            // Examine the full MAIN vertical column, including glass/wool.
+            final int groundY = MatchPointSurfaceSearch.highest(floorY, ceilingY,
+                y -> world.getBlockAt(x, y, z).getType() != Material.AIR);
+            if (groundY < floorY) continue;
+            int erased = 0;
+            for (int y = groundY; y >= floorY && erased < depth
+                    && removed < maxBlocks; y--) {
                 Block block = world.getBlockAt(x, y, z);
                 if (block.getType() == Material.AIR) continue;
-                if (visibleImpact == null) visibleImpact = block.getLocation().add(0.5D, 0.5D, 0.5D);
-                if (eraseBlock(active, block)) {
-                    erasedInColumn++;
-                    removed++;
+                if (!eraseBlock(active, block)) continue;
+                if (visibleImpact == null) {
+                    visibleImpact = new Location(world, x + 0.5D, y + 0.5D, z + 0.5D);
                 }
+                erased++;
+                removed++;
             }
         }
 
+        // Never reset the timer/movement on a failed attempt: the next tick
+        // should retry when an island's chunk becomes accessible.
+        if (removed == 0) {
+            active.missedBlasts++;
+            if (active.missedBlasts % 10 == 0) {
+                plugin.getLogger().info("Match Point [" + active.match.getArena().getId()
+                    + "] sem blocos sob dragao X=" + centerX + " Z=" + centerZ
+                    + " Y=" + point.getBlockY() + " ("
+                    + examinedColumns + " colunas, " + unloadedChunks
+                    + " chunks indisponiveis, limites Y="
+                    + floorY + ".." + ceilingY + ").");
+            }
+            return;
+        }
         active.lastBlastTick = ticks;
         active.lastBlastPosition = point.clone();
-        if (removed > 0) {
-            active.localDestroyed += removed;
-            if (visibleImpact != null) {
-                world.playEffect(visibleImpact, Effect.EXPLOSION_LARGE, 0);
-                world.playSound(visibleImpact, Sound.EXPLODE, 0.85F, 0.85F);
-            }
+        active.missedBlasts = 0;
+        active.localDestroyed += removed;
+        if (visibleImpact != null) {
+            world.playEffect(visibleImpact, Effect.EXPLOSION_LARGE, 0);
+            world.playSound(visibleImpact, Sound.EXPLODE, 0.85F, 0.85F);
+        }
+        if (active.localDestroyed % 32L < removed) {
+            plugin.getLogger().info("Match Point [" + active.match.getArena().getId()
+                + "] " + active.localDestroyed + " blocos destruidos de verdade"
+                + " na instancia " + world.getName() + ".");
         }
     }
 
@@ -469,6 +507,7 @@ public final class MatchPointService implements ManagedService, Listener {
         private MatchPointPatrolRoute route;
         private EnderDragon dragon;
         private long localDestroyed;
+        private long missedBlasts;
         private long lastBlastTick = Long.MIN_VALUE / 2L;
         private Location lastBlastPosition;
         private Active(GameMatch match) { this.match = match; }
