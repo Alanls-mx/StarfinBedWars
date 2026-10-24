@@ -351,6 +351,13 @@ public final class MatchPointService implements ManagedService, Listener {
                     + " blocos destrutiveis, " + active.mapIndex.getInaccessibleChunks()
                     + " chunks indisponiveis; patrulha expandida com "
                     + structures.size() + " pontos de ilhas/centro.");
+                if (active.mapIndex.getInaccessibleChunks() > 0) {
+                    plugin.getLogger().warning("Match Point ["
+                        + active.match.getArena().getId()
+                        + "]: existe area fora da indexacao. Uma meta de 100% "
+                        + "do mapa INTEIRO nao pode ser confirmada ate esses "
+                        + "chunks ficarem acessiveis.");
+                }
             }
         }
         if (active.mapIndex != null && active.mapIndex.isFinished()) {
