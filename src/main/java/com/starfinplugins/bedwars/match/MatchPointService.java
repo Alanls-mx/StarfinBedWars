@@ -242,7 +242,7 @@ public final class MatchPointService implements ManagedService, Listener {
             + plugin.getConfig().getInt("match-point.dragon-height-offset", 3);
         active.route = new MatchPointPatrolRoute(bounds,
             match.getArena().getCeilingHeight(), baseY,
-            plugin.getConfig().getInt("match-point.dragon-patrol-spacing", 40));
+            plugin.getConfig().getInt("match-point.dragon-patrol-spacing", 40), islands);
         plugin.getLogger().info("Match Point: rota pos1/pos2 na arena "
             + match.getArena().getId() + " entre X=" + bounds.getMinimumX()
             + ".." + bounds.getMaximumX() + " Y=" + bounds.getMinimumY()
