@@ -58,7 +58,10 @@ public final class PresentationConfigMigrator {
         "messages.death.explosion", "messages.death.explosion-killer",
         "messages.death.projectile", "messages.death.projectile-killer",
         "messages.death.combat", "messages.death.combat-killer",
-        "messages.death.generic", "messages.death.generic-killer"
+        "messages.death.generic", "messages.death.generic-killer",
+        "messages.respawn-countdown", "messages.respawned",
+        "messages.you-eliminated", "messages.start-tutorial",
+        "visuals.death.title", "visuals.death.subtitle"
     };
 
     private PresentationConfigMigrator() { }
