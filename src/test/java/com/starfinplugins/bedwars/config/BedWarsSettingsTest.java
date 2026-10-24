@@ -28,8 +28,33 @@ public class BedWarsSettingsTest {
         assertFalse(settings.isDebugEnabled());
         assertEquals(3, settings.getRespawnSeconds());
         assertEquals(10, settings.getSpawnOpeningSeconds());
+        assertTrue(settings.isTntAutoPrime());
+        assertEquals(40, settings.getTntFuseTicks());
         assertEquals(280, settings.getAutomaticBoundsWidth());
         assertEquals(1000, settings.getAutomaticBoundsMaximumDimension());
+    }
+
+    @Test
+    public void readsTntConfiguration() throws Exception {
+        YamlConfiguration config = validConfig();
+        config.set("match.tnt-auto-prime", false);
+        config.set("match.tnt-fuse-ticks", 65);
+        BedWarsSettings settings = BedWarsSettings.from(config);
+        assertFalse(settings.isTntAutoPrime());
+        assertEquals(65, settings.getTntFuseTicks());
+    }
+
+    @Test
+    public void rejectsInvalidTntConfiguration() throws Exception {
+        YamlConfiguration config = validConfig();
+        config.set("match.tnt-auto-prime", "yes");
+        assertInvalid(config);
+        config = validConfig();
+        config.set("match.tnt-fuse-ticks", 0);
+        assertInvalid(config);
+        config = validConfig();
+        config.set("match.tnt-fuse-ticks", 201);
+        assertInvalid(config);
     }
 
     @Test
