@@ -40,6 +40,12 @@ public class PresentationConfigMigratorTest {
             "special-items.defender-knockback.vertical"), 0.0D);
         assertEquals("&cVocê não pode destruir sua própria cama!",
             updated.getString("messages.own-bed"));
+        assertEquals(28, updated.getInt("shop.description-line-length"));
+        assertEquals(4, updated.getInt("messages.boundary-warning-cooldown-seconds"));
+        assertEquals("&cVocê atingiu o limite de altura desta arena!",
+            updated.getString("messages.boundary-height"));
+        assertEquals("&cVocê chegou ao limite da arena! Não é possível sair do mapa.",
+            updated.getString("messages.boundary-edge"));
         assertEquals("&e&lINICIANDO", updated.getString("visuals.lobby-countdown.title"));
         assertEquals(original, new String(Files.readAllBytes(
             new File(folder.getRoot(), "config.yml.pre-presentation.bak").toPath()),
@@ -62,6 +68,27 @@ public class PresentationConfigMigratorTest {
         assertEquals("&7{player} sumiu.", updated.getString("messages.death.void"));
         assertEquals("&eA partida comeca em &6{time} &esegundos!",
             updated.getString("messages.lobby-countdown"));
+    }
+
+    @Test
+    public void preservesCustomBoundaryMessagesAndLoreLength() throws Exception {
+        File config = folder.newFile("custom-boundaries.yml");
+        Files.write(config.toPath(), ("shop:\n"
+            + "  description-line-length: 22\n"
+            + "messages:\n"
+            + "  boundary-edge: '&cPare agora!'\n"
+            + "  boundary-warning-cooldown-seconds: 7\n")
+            .getBytes(StandardCharsets.UTF_8));
+        YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(
+            getClass().getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));
+        assertTrue(PresentationConfigMigrator.mergeFile(config, defaults));
+        YamlConfiguration updated = YamlConfiguration.loadConfiguration(config);
+        assertEquals(22, updated.getInt("shop.description-line-length"));
+        assertEquals(7, updated.getInt("messages.boundary-warning-cooldown-seconds"));
+        assertEquals("&cPare agora!", updated.getString("messages.boundary-edge"));
+        assertEquals("&cVocê atingiu o limite de altura desta arena!",
+            updated.getString("messages.boundary-height"));
+        assertFalse(PresentationConfigMigrator.mergeFile(config, defaults));
     }
 
     @Test
