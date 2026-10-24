@@ -44,7 +44,21 @@ public final class PresentationConfigMigrator {
         "generator-holograms.resources.emerald.orbit-material",
         "generator-holograms.performance.max-icons-per-generator",
         "generator-holograms.performance.pause-when-no-viewers",
-        "generator-holograms.performance.activation-distance"
+        "generator-holograms.performance.activation-distance",
+        "visuals.lobby-countdown.start-at", "visuals.lobby-countdown.title",
+        "visuals.lobby-countdown.subtitle", "visuals.lobby-countdown.cancelled",
+        "visuals.lobby-countdown.sound", "visuals.lobby-countdown.sound-enabled",
+        "messages.player-joined", "messages.player-left", "messages.you-joined",
+        "messages.reconnected", "messages.lobby-ready", "messages.lobby-countdown",
+        "messages.spawn-preparing", "messages.spawn-countdown",
+        "messages.countdown-cancelled", "messages.match-started", "messages.own-bed",
+        "messages.death.void", "messages.death.void-killer",
+        "messages.death.fall", "messages.death.fall-killer",
+        "messages.death.fire", "messages.death.lava", "messages.death.drowning",
+        "messages.death.explosion", "messages.death.explosion-killer",
+        "messages.death.projectile", "messages.death.projectile-killer",
+        "messages.death.combat", "messages.death.combat-killer",
+        "messages.death.generic", "messages.death.generic-killer"
     };
 
     private PresentationConfigMigrator() { }
