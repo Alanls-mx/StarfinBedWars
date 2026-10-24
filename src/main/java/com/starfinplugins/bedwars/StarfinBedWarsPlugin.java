@@ -10,6 +10,7 @@ import com.starfinplugins.bedwars.arena.ArenaRegionSelectionService;
 import com.starfinplugins.bedwars.reconnect.ReconnectService;
 import com.starfinplugins.bedwars.reconnect.ReconnectSettings;
 import com.starfinplugins.bedwars.match.MatchEngineService;
+import com.starfinplugins.bedwars.match.TntAutoIgniteService;
 import com.starfinplugins.bedwars.match.ParticipantInventoryService;
 import com.starfinplugins.bedwars.match.MatchPresentationService;
 import com.starfinplugins.bedwars.match.MatchChatService;
@@ -36,6 +37,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private BedWarsSettings settings;
     private ArenaService arenaService;
     private MatchEngineService matchEngine;
+    private TntAutoIgniteService tntAutoIgnite;
     private ResourceGeneratorService generators;
     private ParticipantInventoryService participantInventory;
     private TeamUpgradeService teamUpgrades;
@@ -79,6 +81,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             matchEngine = new MatchEngineService(this, arenaService,
                 settings.getRespawnSeconds(),
                 settings.getSpawnOpeningSeconds());
+            tntAutoIgnite = new TntAutoIgniteService(this, matchEngine, settings);
             reconnect = new ReconnectService(this, matchEngine, ReconnectSettings.load(this));
             matchEngine.setReconnect(reconnect);
             menus = new BedWarsMenuService(this, arenaService, matchEngine, arenaEditing);
@@ -106,6 +109,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services.add(worldManagement);
             services.add(arenaService);
             services.add(matchEngine);
+            services.add(tntAutoIgnite);
             services.add(reconnect);
             services.add(arenaEditing);
             services.add(mobGuard);
