@@ -16,8 +16,8 @@ public class MatchMessageTemplatesTest {
     }
 
     @Test public void retainsColorCodesForBukkitProcessing() {
-        assertEquals("&cVoce nao pode destruir sua propria cama!",
-            MatchMessageTemplates.format("&cVoce nao pode destruir sua propria cama!"));
+        assertEquals("&cVocê não pode destruir sua própria cama!",
+            MatchMessageTemplates.format("&cVocê não pode destruir sua própria cama!"));
     }
 
     @Test public void routesVoidAndFinalKillReasons() {
