@@ -1285,6 +1285,14 @@ public final class MatchEngineService implements ManagedService, Listener {
         return true;
     }
 
+    /** Match Point removes a block from a disposable instance: untrack its old owner. */
+    public void forgetMatchPointBlock(GameMatch match, Block block) {
+        if (match == null || block == null) return;
+        Set<String> placed = playerPlacedBlocks.get(match.getId());
+        if (placed != null) placed.remove(blockKey(block));
+        bridgeBlockOwners.forget(match.getId(), blockKey(block));
+    }
+
     /** Release a TNT placement after the block has become a primed entity. */
     void forgetPlacedBlock(GameMatch match, Block block) {
         if (match == null || block == null) return;
