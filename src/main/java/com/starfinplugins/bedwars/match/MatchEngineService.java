@@ -210,6 +210,11 @@ public final class MatchEngineService implements ManagedService, Listener {
         return arenaId != null && byArena.containsKey(arenaId);
     }
 
+    /** Returns only a currently active match for this configured arena. */
+    public GameMatch getMatchForArena(String arenaId) {
+        return arenaId == null ? null : byArena.get(arenaId);
+    }
+
     public boolean isSpectating(UUID playerId) {
         return spectators.containsKey(playerId);
     }
