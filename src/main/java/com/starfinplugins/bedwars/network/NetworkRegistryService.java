@@ -138,14 +138,14 @@ public final class NetworkRegistryService implements ManagedService, Listener {
         for (ArenaDefinition arena : arenas.getArenas()) {
             GameMatch match = matches.getMatchForArena(arena.getId());
             boolean editing = arenas.isEditing(arena.getId());
-            int players = match == null ? 0 : match.getParticipantList().size();
+            int arenaPlayerCount = match == null ? 0 : match.getParticipantList().size();
             String state = match == null
                 ? (editing ? "EDITING" : arena.isEnabled() ? "AVAILABLE" : "DISABLED")
                 : match.getState().name();
             boolean joinable = arena.isEnabled() && !editing
                 && (match == null || match.getState() == MatchState.WAITING
                     || match.getState() == MatchState.STARTING)
-                && players < arena.getMaximumPlayers();
+                && arenaPlayerCount < arena.getMaximumPlayers();
             int teamSize = -1;
             for (TeamDefinition team : arena.getTeamList()) {
                 if (teamSize == -1) teamSize = team.getCapacity();
@@ -158,14 +158,14 @@ public final class NetworkRegistryService implements ManagedService, Listener {
                 shortName(arena.getDisplayName()), arena.getSourceWorld(),
                 arenas.getStoredConfiguration(arena), mode, arena.getGroup(), arena.getTeamList().size(), teamSize,
                 arena.getGeneratorList().size(), arena.getMinimumPlayers(),
-                arena.getMaximumPlayers(), players, arena.getCountdownSeconds(),
+                arena.getMaximumPlayers(), arenaPlayerCount, arena.getCountdownSeconds(),
                 arena.isEnabled(), editing, joinable, state,
                 match == null ? null : match.getId().toString()));
             if (match != null) {
                 running.add(new NetworkSnapshot.Match(match.getId().toString(), arena.getId(),
                     match.getState().name(), match.getWinnerTeamId(),
                     match.getEndReason() == null ? null : match.getEndReason().name(),
-                    players, match.getConnectedCount(), arena.getMaximumPlayers(),
+                    arenaPlayerCount, match.getConnectedCount(), arena.getMaximumPlayers(),
                     epoch(match.getStartedAt()), epoch(match.getEndedAt())));
             }
         }
