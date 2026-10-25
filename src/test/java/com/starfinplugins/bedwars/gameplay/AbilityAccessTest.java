@@ -47,11 +47,14 @@ public class AbilityAccessTest {
     @Test public void coreCalculationsHaveBoundedEffects() {
         Assert.assertEquals(45, AbilityEffectMath.respawnTicks(60, 25, 20));
         Assert.assertEquals(20, AbilityEffectMath.respawnTicks(20, 25, 20));
+        Assert.assertEquals(10, AbilityEffectMath.respawnTicks(10, 25, 20));
         Assert.assertEquals(7.5, AbilityEffectMath.reduceDamage(10, 25, 0.65), 0.001);
         Assert.assertEquals(3.5, AbilityEffectMath.reduceDamage(10, 99, 0.65), 0.001);
         Assert.assertEquals(10.8, AbilityEffectMath.addDamage(10, 8), 0.001);
         Assert.assertEquals(7, AbilityEffectMath.fireSeconds(10, 30));
+        Assert.assertEquals(0, AbilityEffectMath.fireSeconds(0, 30));
         Assert.assertEquals(1, AbilityEffectMath.shopCost(1, 6, 1));
+        Assert.assertEquals(5, AbilityEffectMath.shopCost(5, 6, 10));
         Assert.assertEquals(19, AbilityEffectMath.shopCost(20, 6, 1));
         Assert.assertEquals(20, AbilityEffectMath.heal(15, 20, 2.5), 0.001);
         Assert.assertTrue(AbilityEffectMath.succeeds(5, 0.049));

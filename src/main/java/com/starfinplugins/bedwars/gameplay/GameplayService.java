@@ -281,6 +281,9 @@ public final class GameplayService implements ManagedService, Listener {
     @EventHandler(ignoreCancelled = true) public void onDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player)) return;
         Player player = (Player) event.getEntity();
+        if (event.getCause() == EntityDamageEvent.DamageCause.BLOCK_EXPLOSION
+                || event.getCause() == EntityDamageEvent.DamageCause.ENTITY_EXPLOSION)
+            recentCombatVelocity.remove(player.getUniqueId());
         GameMatch match = matches.getMatchForPlayer(player.getUniqueId());
         if (!eligibleInGame(player, match)) return;
         AbilityState state = state(match, player.getUniqueId());
