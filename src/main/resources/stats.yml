@@ -14,6 +14,13 @@ mysql:
   connection-timeout-ms: 10000
 
 # Nivel inicial 1; a progressao e calculada pelo XP total, sem duplicar estado no banco.
+rankings:
+  enabled: true
+  cache-seconds: 60
+  default-page-size: 10
+  maximum-page-size: 50
+  update-after-match: true
+
 levels:
   base-xp: 1000
   increase-per-level: 250

@@ -27,6 +27,20 @@ public final class XpProgression {
         return new Progress(level, remaining, required);
     }
 
+    /** Minimum persisted total XP needed to reach a level on the existing curve. */
+    public long totalXpForLevel(int level) {
+        if (level < 1 || level > 10000) throw new IllegalArgumentException("Nivel fora do limite");
+        long total = 0;
+        for (int current = 1; current < level; current++) {
+            long multiplier = current - 1L;
+            long next = multiplier > 0 && increment > (Long.MAX_VALUE - base) / multiplier
+                ? Long.MAX_VALUE : base + increment * (current - 1L);
+            if (Long.MAX_VALUE - total < next) return Long.MAX_VALUE;
+            total += next;
+        }
+        return total;
+    }
+
     public static final class Progress {
         public final int level;
         public final long current;

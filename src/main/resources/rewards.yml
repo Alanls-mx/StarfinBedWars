@@ -1,0 +1,32 @@
+# Only TITLE_UNLOCK is executable. IDs are permanent once granted.
+levels:
+  5:
+    title: Aprendiz
+    rewards:
+      - type: TITLE_UNLOCK
+        id: apprentice
+        titles: {pt_BR: Aprendiz, en_US: Apprentice, es_ES: Aprendiz}
+  10:
+    title: Guerreiro
+    rewards:
+      - type: TITLE_UNLOCK
+        id: warrior
+        titles: {pt_BR: Guerreiro, en_US: Warrior, es_ES: Guerrero}
+  25:
+    title: Veterano
+    rewards:
+      - type: TITLE_UNLOCK
+        id: veteran
+        titles: {pt_BR: Veterano, en_US: Veteran, es_ES: Veterano}
+  40:
+    title: Mestre
+    rewards:
+      - type: TITLE_UNLOCK
+        id: master
+        titles: {pt_BR: Mestre, en_US: Master, es_ES: Maestro}
+  50:
+    title: Lenda
+    rewards:
+      - type: TITLE_UNLOCK
+        id: legend
+        titles: {pt_BR: Lenda, en_US: Legend, es_ES: Leyenda}

@@ -44,4 +44,28 @@ public class StatsOutboxTest {
         assertEquals(0, reloaded.pending().size());
         Files.delete(folder);
     }
+
+    @Test public void readsPreviousNineFieldFormatAndNewModeTimestamp() throws Exception {
+        Path folder = Files.createTempDirectory("sbw-stat-outbox-v2");
+        UUID match = UUID.randomUUID(), player = UUID.randomUUID();
+        java.util.Properties old = new java.util.Properties();
+        old.setProperty("match", match.toString());
+        old.setProperty("count", "1");
+        old.setProperty("player.0", player + "|Tester|4|2|3|1|1|WIN|200");
+        Path legacy = folder.resolve(match + ".properties");
+        try (java.io.OutputStream output = Files.newOutputStream(legacy)) { old.store(output, "old"); }
+        MatchResult recovered = new StatsOutbox(folder).read(legacy).get(0);
+        assertNull(recovered.mode);
+        assertTrue(recovered.completedAtMillis > 0);
+        assertEquals(1, recovered.finalDeaths);
+        Files.delete(legacy);
+        MatchResult modern = new MatchResult(UUID.randomUUID(), player, "Tester", 4, 2, 3, 1, 1,
+            MatchResult.Outcome.WIN, 200, "solo", 123456789L);
+        Path file = new StatsOutbox(folder).write(Collections.singletonList(modern));
+        MatchResult roundTrip = new StatsOutbox(folder).read(file).get(0);
+        assertEquals("solo", roundTrip.mode);
+        assertEquals(123456789L, roundTrip.completedAtMillis);
+        Files.delete(file);
+        Files.delete(folder);
+    }
 }

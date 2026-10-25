@@ -8,6 +8,7 @@ import com.starfinplugins.bedwars.domain.match.MatchState;
 import com.starfinplugins.bedwars.domain.match.ParticipantState;
 import com.starfinplugins.bedwars.event.MatchCombatDeathEvent;
 import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
+import com.starfinplugins.bedwars.event.PlayerProgressionEvent;
 import com.starfinplugins.bedwars.service.ManagedService;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -16,7 +17,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.ArrayList;
+import java.util.Set;
+import java.util.Collections;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -41,9 +45,15 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     /** Immutable snapshots; safe to read from the 1-second lobby scoreboard refresh. */
     private final Map<UUID, StatsProfile> profileCache = new ConcurrentHashMap<UUID, StatsProfile>();
     private final Map<UUID, PlayerPreferences> preferencesCache = new ConcurrentHashMap<UUID, PlayerPreferences>();
+    private final Map<UUID, Set<String>> unlocksCache = new ConcurrentHashMap<UUID, Set<String>>();
+    private final Map<UUID, Long> rankPositionCache = new ConcurrentHashMap<UUID, Long>();
+    private final Map<UUID, Long> lastMatchXpCache = new ConcurrentHashMap<UUID, Long>();
+    private final AtomicInteger pendingRankings = new AtomicInteger();
     private final Map<UUID, Long> preferenceRevisions = new ConcurrentHashMap<UUID, Long>();
     private final AtomicLong revisionCounter = new AtomicLong();
     private StatsSettings settings;
+    private RewardsCatalog rewards = RewardsCatalog.empty();
+    private RankingsService rankings;
     private StatsOutbox outbox;
     private PreferencesOutbox preferencesOutbox;
     private ExecutorService worker;
@@ -59,6 +69,13 @@ public final class MatchStatisticsService implements ManagedService, Listener {
             plugin.getLogger().info("Estatisticas desativadas: configure stats.yml e MySQL compartilhado.");
             return;
         }
+        try { rewards = RewardsCatalog.load(plugin, settings.progression); }
+        catch (RuntimeException invalid) {
+            plugin.getLogger().severe("rewards.yml invalido (" + invalid.getMessage()
+                + "); desbloqueios suspensos ate corrigir a configuracao.");
+            rewards = RewardsCatalog.empty();
+        }
+        rankings = new RankingsService(settings.rankingsCacheSeconds);
         outbox = new StatsOutbox(plugin.getDataFolder().toPath().resolve("stats-pending"));
         preferencesOutbox = new PreferencesOutbox(plugin.getDataFolder().toPath().resolve("preferences-pending"));
         worker = Executors.newSingleThreadExecutor(r -> {
@@ -84,6 +101,9 @@ public final class MatchStatisticsService implements ManagedService, Listener {
                     for (UUID id : online) {
                         refreshProfile(id);
                         refreshPreferences(id, null);
+                        refreshRewards(id);
+                        refreshRankPosition(id);
+                        refreshLastMatchXp(id);
                     }
                 });
             }, 1200L, 1200L);
@@ -99,6 +119,9 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         matches.clear();
         profileCache.clear();
         preferencesCache.clear();
+        unlocksCache.clear();
+        rankPositionCache.clear();
+        lastMatchXpCache.clear();
         preferenceRevisions.clear();
         if (worker == null) return;
         worker.shutdown();
@@ -118,6 +141,29 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     public boolean isEnabled() { return settings != null && settings.enabled; }
     public StatsProfile getCachedProfile(UUID uuid) { return profileCache.get(uuid); }
     public PlayerPreferences getCachedPreferences(UUID uuid) { return preferencesCache.get(uuid); }
+    public Set<String> getCachedUnlocks(UUID uuid) {
+        return unlocksCache.getOrDefault(uuid, Collections.emptySet());
+    }
+    public RewardsCatalog getRewards() { return rewards; }
+    public long getCachedRankPosition(UUID uuid) {
+        return rankPositionCache.getOrDefault(uuid, 0L);
+    }
+    public long getCachedLastMatchXp(UUID uuid) {
+        return lastMatchXpCache.getOrDefault(uuid, 0L);
+    }
+    public int getDefaultRankingPageSize() {
+        return settings == null ? 10 : settings.rankingsDefaultPageSize;
+    }
+    public int getMaximumRankingPageSize() {
+        return settings == null ? 50 : settings.rankingsMaximumPageSize;
+    }
+    public String getSelectedTitle(UUID uuid) {
+        PlayerPreferences prefs = preferencesCache.get(uuid);
+        if (prefs == null || prefs.selectedTitle == null) return "";
+        RewardsCatalog.TitleReward title = rewards.title(prefs.selectedTitle);
+        return title == null || !getCachedUnlocks(uuid).contains(title.id)
+            ? "" : title.name(prefs.language);
+    }
     public String getLanguage(UUID uuid) {
         PlayerPreferences prefs = preferencesCache.get(uuid);
         return prefs == null ? "pt_BR" : prefs.language;
@@ -167,6 +213,9 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         String name = event.getPlayer().getName();
         profileCache.remove(id);
         preferencesCache.remove(id);
+        unlocksCache.remove(id);
+        rankPositionCache.remove(id);
+        lastMatchXpCache.remove(id);
         preferenceRevisions.put(id, revisionCounter.incrementAndGet());
         worker.execute(() -> {
             try {
@@ -185,6 +234,9 @@ public final class MatchStatisticsService implements ManagedService, Listener {
                 ensureOpen();
                 repository.updateName(id, name);
                 refreshProfile(id);
+                refreshRewards(id);
+                refreshRankPosition(id);
+                refreshLastMatchXp(id);
                 flushPreferencesOutbox();
                 refreshPreferences(id, legacy);
             } catch (Exception error) { logDatabaseFailure(error); }
@@ -196,7 +248,8 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         GameMatch match = event.getMatch();
         switch (event.getType()) {
             case STARTED:
-                MatchStatsTracker tracker = new MatchStatsTracker(match.getId(), settings.awards);
+                MatchStatsTracker tracker = new MatchStatsTracker(match.getId(), settings.awards,
+                    MatchMode.of(match.getArena()));
                 for (GameParticipant participant : match.getParticipantList()) {
                     Player online = Bukkit.getPlayer(participant.getPlayerId());
                     tracker.addPlayer(participant.getPlayerId(), participant.getTeamId(),
@@ -229,7 +282,8 @@ public final class MatchStatisticsService implements ManagedService, Listener {
                     }
                 }
                 List<MatchResult> results = completed.finish(match.getWinnerTeamId(),
-                    match.getEndReason() == MatchEndReason.DRAW);
+                    match.getEndReason() == MatchEndReason.DRAW,
+                    match.getEndedAt() == null ? 0L : match.getEndedAt().toEpochMilli());
                 if (!results.isEmpty()) {
                     // Always journal before JDBC so a DB outage can be retried on this node.
                     worker.execute(() -> {
@@ -331,9 +385,15 @@ public final class MatchStatisticsService implements ManagedService, Listener {
             for (Path file : files) {
                 try {
                     List<MatchResult> results = outbox.read(file);
-                    repository.saveMatch(results);
+                    List<ProgressionUpdate> updates = repository.saveMatch(results, rewards,
+                        settings.progression);
                     outbox.acknowledge(file);
                     for (MatchResult result : results) refreshProfile(result.playerId);
+                    for (MatchResult result : results) refreshRewards(result.playerId);
+                    for (MatchResult result : results) refreshRankPosition(result.playerId);
+                    for (MatchResult result : results) refreshLastMatchXp(result.playerId);
+                    if (settings.rankingsUpdateAfterMatch) rankings.invalidate();
+                    notifyProgress(updates);
                 } catch (IOException invalidOutbox) {
                     plugin.getLogger().log(Level.SEVERE,
                         "Outbox invalido: preservado para inspecao " + file.getFileName(), invalidOutbox);
@@ -350,6 +410,125 @@ public final class MatchStatisticsService implements ManagedService, Listener {
             StatsProfile profile = repository.find(id.toString());
             if (profile != null) profileCache.put(id, profile);
         } catch (Exception error) { logDatabaseFailure(error); }
+    }
+
+    private void refreshRewards(UUID id) {
+        try {
+            ensureOpen();
+            unlocksCache.put(id, Collections.unmodifiableSet(repository.ensureRewards(id, rewards)));
+        } catch (Exception error) { logDatabaseFailure(error); }
+    }
+
+    private void refreshRankPosition(UUID id) {
+        if (!settings.rankingsEnabled) return;
+        try {
+            ensureOpen();
+            rankPositionCache.put(id, repository.globalWinPosition(id));
+        } catch (Exception error) { logDatabaseFailure(error); }
+    }
+
+    private void refreshLastMatchXp(UUID id) {
+        try {
+            ensureOpen();
+            lastMatchXpCache.put(id, repository.latestMatchXp(id));
+        } catch (Exception error) { logDatabaseFailure(error); }
+    }
+
+    public void requestRanking(Player player, RankingSpec spec,
+                               java.util.function.BiConsumer<RankingPage, String> completion) {
+        if (!isEnabled() || !settings.rankingsEnabled) {
+            completion.accept(null, "Rankings indisponiveis.");
+            return;
+        }
+        if (pendingRankings.incrementAndGet() > 16) {
+            pendingRankings.decrementAndGet();
+            completion.accept(null, "Muitas consultas de ranking. Tente novamente.");
+            return;
+        }
+        UUID viewer = player.getUniqueId();
+        try {
+            worker.execute(() -> {
+                RankingPage page = null;
+                String failure = null;
+                try {
+                    ensureOpen();
+                    page = rankings.load(repository, spec, viewer);
+                } catch (Exception error) {
+                    logDatabaseFailure(error);
+                    failure = "Nao foi possivel consultar o ranking agora.";
+                } finally { pendingRankings.decrementAndGet(); }
+                final RankingPage result = page;
+                final String message = failure;
+                if (plugin.isEnabled()) Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (Bukkit.getPlayer(viewer) != null) completion.accept(result, message);
+                });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException stopped) {
+            pendingRankings.decrementAndGet();
+            completion.accept(null, "Rankings indisponiveis.");
+        }
+    }
+
+    public void selectTitle(Player player, String titleId) {
+        if (!isEnabled() || rewards.title(titleId) == null) {
+            player.sendMessage(ChatColor.RED + Phase2Text.text(getLanguage(player.getUniqueId()), "unavailable"));
+            return;
+        }
+        UUID id = player.getUniqueId();
+        preferenceRevisions.put(id, revisionCounter.incrementAndGet());
+        worker.execute(() -> {
+            boolean selected = false;
+            try { ensureOpen(); selected = repository.selectTitle(id, titleId); }
+            catch (Exception error) { logDatabaseFailure(error); }
+            final boolean confirmed = selected;
+            if (!plugin.isEnabled()) return;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                Player current = Bukkit.getPlayer(id);
+                if (current == null) return;
+                if (!confirmed) {
+                    current.sendMessage(ChatColor.RED + Phase2Text.text(getLanguage(id), "title_blocked"));
+                    return;
+                }
+                PlayerPreferences previous = preferencesCache.get(id);
+                if (previous != null) preferencesCache.put(id, previous.withSelectedTitle(titleId));
+                current.sendMessage(ChatColor.GREEN + Phase2Text.text(getLanguage(id), "title_selected") + ": "
+                    + rewards.title(titleId).name(getLanguage(id)));
+            });
+        });
+    }
+
+    private void notifyProgress(List<ProgressionUpdate> updates) {
+        if (updates.isEmpty() || !plugin.isEnabled()) return;
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            for (ProgressionUpdate update : updates) {
+                Bukkit.getPluginManager().callEvent(new PlayerProgressionEvent(update));
+                Player player = Bukkit.getPlayer(update.playerId);
+                if (player == null) continue;
+                String language = getLanguage(update.playerId);
+                if ("en_US".equals(language)) {
+                    player.sendMessage(ChatColor.AQUA + "Match XP: +" + update.earnedXp);
+                    if (update.currentLevel > update.previousLevel)
+                        player.sendMessage(ChatColor.GOLD + "Level " + update.previousLevel
+                            + " -> " + update.currentLevel + "!");
+                } else if ("es_ES".equals(language)) {
+                    player.sendMessage(ChatColor.AQUA + "XP de partida: +" + update.earnedXp);
+                    if (update.currentLevel > update.previousLevel)
+                        player.sendMessage(ChatColor.GOLD + "Nivel " + update.previousLevel
+                            + " -> " + update.currentLevel + "!");
+                } else {
+                    player.sendMessage(ChatColor.AQUA + Phase2Text.text(language, "match_xp") + ": +" + update.earnedXp);
+                    if (update.currentLevel > update.previousLevel)
+                        player.sendMessage(ChatColor.GOLD + "Nivel " + update.previousLevel
+                            + " -> " + update.currentLevel + "!");
+                }
+                for (String titleId : update.unlockedTitles) {
+                    RewardsCatalog.TitleReward title = rewards.title(titleId);
+                    if (title != null) player.sendMessage(ChatColor.GREEN
+                        + Phase2Text.text(language, "title_unlocked") + ": "
+                        + title.name(language));
+                }
+            }
+        });
     }
 
     private void refreshPreferences(UUID id, List<String> legacy) {

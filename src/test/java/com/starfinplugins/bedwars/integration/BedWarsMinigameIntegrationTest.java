@@ -63,7 +63,7 @@ public class BedWarsMinigameIntegrationTest {
         ArenaDefinition arena = arena(2);
         Assert.assertEquals("duo", BedWarsMinigameProvider.mode(arena));
         arena.addTeam(new TeamDefinition("green", "Green", "a", 1));
-        Assert.assertEquals("mixed", BedWarsMinigameProvider.mode(arena));
+        Assert.assertEquals("custom", BedWarsMinigameProvider.mode(arena));
         ArenaDefinition incomplete = new ArenaDefinition("empty", "world");
         MinigameArenaSnapshot snapshot = BedWarsMinigameProvider.snapshotArena(incomplete, null, false, "bedwars-01");
         Assert.assertFalse(snapshot.isJoinable());

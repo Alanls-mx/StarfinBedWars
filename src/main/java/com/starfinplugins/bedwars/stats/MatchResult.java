@@ -16,6 +16,10 @@ public final class MatchResult {
     public final int beds;
     public final Outcome outcome;
     public final long xp;
+    /** Null for legacy results whose original mode is not provable. */
+    public final String mode;
+    /** Zero for legacy outbox entries without a trustworthy completion time. */
+    public final long completedAtMillis;
 
     public MatchResult(UUID matchId, UUID playerId, String name, int kills, int finalKills,
                        int deaths, int beds, Outcome outcome, long xp) {
@@ -24,9 +28,16 @@ public final class MatchResult {
 
     public MatchResult(UUID matchId, UUID playerId, String name, int kills, int finalKills,
                        int deaths, int finalDeaths, int beds, Outcome outcome, long xp) {
+        this(matchId, playerId, name, kills, finalKills, deaths, finalDeaths, beds,
+            outcome, xp, null, 0L);
+    }
+
+    public MatchResult(UUID matchId, UUID playerId, String name, int kills, int finalKills,
+                       int deaths, int finalDeaths, int beds, Outcome outcome, long xp,
+                       String mode, long completedAtMillis) {
         if (matchId == null || playerId == null || outcome == null || xp < 0
                 || kills < 0 || finalKills < 0 || deaths < 0 || finalDeaths < 0
-                || finalDeaths > deaths || beds < 0 || finalKills > kills) {
+                || finalDeaths > deaths || beds < 0 || finalKills > kills || completedAtMillis < 0) {
             throw new IllegalArgumentException("Resultado de partida invalido");
         }
         this.matchId = matchId;
@@ -39,5 +50,7 @@ public final class MatchResult {
         this.beds = beds;
         this.outcome = outcome;
         this.xp = xp;
+        this.mode = MatchMode.persisted(mode);
+        this.completedAtMillis = completedAtMillis;
     }
 }

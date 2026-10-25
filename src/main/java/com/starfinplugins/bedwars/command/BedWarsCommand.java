@@ -21,6 +21,7 @@ import com.starfinplugins.bedwars.world.WorldManagementService;
 import com.starfinplugins.bedwars.world.SafeLocationResolver;
 import com.starfinplugins.bedwars.integration.worldedit.WorldEditSelectionAdapter;
 import com.starfinplugins.bedwars.menu.BedWarsMenuService;
+import com.starfinplugins.bedwars.stats.RankingSpec;
 import com.starfinplugins.bedwars.setup.ArenaSetupWizardService;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -156,11 +157,48 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         }
         if ("stats".equalsIgnoreCase(args[0]) || "perfil".equalsIgnoreCase(args[0])
                 || "nivel".equalsIgnoreCase(args[0])) {
+            if (args.length == 1 && sender instanceof Player
+                    && ("perfil".equalsIgnoreCase(args[0]) || "nivel".equalsIgnoreCase(args[0]))) {
+                if ("perfil".equalsIgnoreCase(args[0])) plugin.getProgressionMenus().openProfile((Player) sender);
+                else plugin.getProgressionMenus().openProgress((Player) sender);
+                return true;
+            }
             if (args.length > 2 || (args.length == 1 && !(sender instanceof Player))) {
                 sender.sendMessage(PREFIX + ChatColor.YELLOW + "Use /sbw stats [jogador|UUID].");
             } else {
                 String target = args.length == 2 ? args[1] : ((Player) sender).getUniqueId().toString();
                 plugin.getStatistics().showProfile(sender, target);
+            }
+            return true;
+        }
+        if ("profile".equalsIgnoreCase(args[0]) || "progress".equalsIgnoreCase(args[0])
+                || "rewards".equalsIgnoreCase(args[0]) || "recompensas".equalsIgnoreCase(args[0])) {
+            if (!(sender instanceof Player) || args.length != 1) {
+                sender.sendMessage(PREFIX + ChatColor.YELLOW + "Use /sbw <profile|progress|rewards>.");
+                return true;
+            }
+            if ("profile".equalsIgnoreCase(args[0])) plugin.getProgressionMenus().openProfile((Player) sender);
+            else if ("progress".equalsIgnoreCase(args[0])) plugin.getProgressionMenus().openProgress((Player) sender);
+            else plugin.getProgressionMenus().openRewards((Player) sender);
+            return true;
+        }
+        if ("top".equalsIgnoreCase(args[0])) {
+            if (!(sender instanceof Player) || args.length > 5) {
+                sender.sendMessage(PREFIX + ChatColor.YELLOW + "Use /sbw top [metrica] [modalidade] [periodo] [pagina].");
+                return true;
+            }
+            try {
+                RankingSpec.Metric metric = args.length > 1 ? RankingSpec.Metric.parse(args[1])
+                    : RankingSpec.Metric.WINS;
+                String mode = args.length > 2 && !"all".equalsIgnoreCase(args[2]) ? args[2] : null;
+                RankingSpec.Period period = args.length > 3 ? RankingSpec.Period.parse(args[3])
+                    : RankingSpec.Period.ALL;
+                int page = args.length > 4 ? Integer.parseInt(args[4]) : 1;
+                plugin.getProgressionMenus().openRanking((Player) sender,
+                    plugin.getProgressionMenus().spec(metric, period, mode, page));
+            } catch (IllegalArgumentException invalid) {
+                sender.sendMessage(PREFIX + ChatColor.RED
+                    + "Filtro invalido. Use: /sbw top [wins|games|kills|final_kills|deaths|final_deaths|beds|xp|level|win_rate|kd] [all|solo|duo|trio|squad|custom] [all|weekly|monthly] [pagina].");
             }
             return true;
         }
@@ -1511,6 +1549,8 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 sender.sendMessage(ChatColor.GRAY + "/sbw join <arena|group:grupo> | /sbw spectate <arena> | /sbw leave");
                 sender.sendMessage(ChatColor.GRAY + "/sbw chat <global|team|spectator>");
                 sender.sendMessage(ChatColor.GRAY + "/sbw stats [jogador] - perfil, XP e nivel da rede");
+                sender.sendMessage(ChatColor.GRAY + "/sbw profile | progress | rewards - menus de progressao");
+                sender.sendMessage(ChatColor.GRAY + "/sbw top [metrica] [modo] [periodo] [pagina]");
                 sender.sendMessage(ChatColor.GRAY + "/sbw idioma [pt_BR|en_US|es_ES] - idioma salvo no MySQL");
                 return;
             }
@@ -1540,6 +1580,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         sender.sendMessage(ChatColor.GRAY + "/sbw join <arena|group:grupo> | /sbw spectate <arena> | /sbw leave");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena group <arena> <grupo> | /sbw idioma [pt_BR|en_US|es_ES]");
         sender.sendMessage(ChatColor.GRAY + "/sbw stats [jogador|UUID] | /sbw perfil [jogador]");
+        sender.sendMessage(ChatColor.GRAY + "/sbw profile | progress | rewards | top [metrica] [modo] [periodo] [pagina]");
         if (sender.hasPermission("starfinbedwars.admin")) {
             sender.sendMessage(ChatColor.GRAY
                 + "/sbw migrate preview <mysql|sqlite> | apply <mysql|sqlite> confirm");
@@ -1578,7 +1619,8 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         if (args.length == 1) {
             List<String> choices = new ArrayList<String>(Arrays.asList(
                 "help", "version", "menu", "arena", "join", "spectate", "leave", "chat",
-                "stats", "perfil", "nivel", "idioma", "language", "lang"));
+                "stats", "perfil", "nivel", "profile", "progress", "rewards", "recompensas",
+                "top", "idioma", "language", "lang"));
             if (sender.hasPermission("starfinbedwars.command.status")
                     || sender.hasPermission("starfinbedwars.admin")) choices.add("status");
             if (hasArenaAdmin(sender)) {
@@ -1601,6 +1643,12 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         if (args.length == 2 && ("idioma".equalsIgnoreCase(args[0])
                 || "language".equalsIgnoreCase(args[0]) || "lang".equalsIgnoreCase(args[0]))) {
             return filter(Arrays.asList("pt_BR", "en_US", "es_ES"), args[1]);
+        }
+        if ("top".equalsIgnoreCase(args[0])) {
+            if (args.length == 2) return filter(Arrays.asList("wins", "games", "kills", "final_kills",
+                "deaths", "final_deaths", "beds", "xp", "level", "win_rate", "kd"), args[1]);
+            if (args.length == 3) return filter(Arrays.asList("all", "solo", "duo", "trio", "squad", "custom"), args[2]);
+            if (args.length == 4) return filter(Arrays.asList("all", "weekly", "monthly"), args[3]);
         }
         if ("matchpoint".equalsIgnoreCase(args[0]) && args.length == 2) {
             if (!sender.hasPermission("starfinbedwars.command.matchpoint")

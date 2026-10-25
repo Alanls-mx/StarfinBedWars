@@ -11,8 +11,10 @@ public final class StatsSettings {
     public final int port, poolSize, timeoutMs;
     public final XpProgression progression;
     public final MatchStatsTracker.Awards awards;
+    public final boolean rankingsEnabled, rankingsUpdateAfterMatch;
+    public final int rankingsCacheSeconds, rankingsDefaultPageSize, rankingsMaximumPageSize;
 
-    private StatsSettings(FileConfiguration yml) {
+    StatsSettings(FileConfiguration yml) {
         enabled = yml.getBoolean("enabled", false);
         host = yml.getString("mysql.host", "127.0.0.1").trim();
         port = yml.getInt("mysql.port", 3306);
@@ -27,6 +29,15 @@ public final class StatsSettings {
         awards = new MatchStatsTracker.Awards(yml.getLong("xp.participation", 25),
             yml.getLong("xp.victory", 100), yml.getLong("xp.kill", 10),
             yml.getLong("xp.final-kill", 20), yml.getLong("xp.bed", 40));
+        rankingsEnabled = yml.getBoolean("rankings.enabled", true);
+        rankingsCacheSeconds = yml.getInt("rankings.cache-seconds", 60);
+        rankingsDefaultPageSize = yml.getInt("rankings.default-page-size", 10);
+        rankingsMaximumPageSize = yml.getInt("rankings.maximum-page-size", 50);
+        rankingsUpdateAfterMatch = yml.getBoolean("rankings.update-after-match", true);
+        if (rankingsCacheSeconds < 5 || rankingsCacheSeconds > 3600
+                || rankingsDefaultPageSize < 1 || rankingsMaximumPageSize > 50
+                || rankingsMaximumPageSize < rankingsDefaultPageSize)
+            throw new IllegalArgumentException("Configuracao rankings invalida");
         if (enabled) {
             if (!host.matches("[A-Za-z0-9.\\-_:]+") || !schema.matches("[A-Za-z0-9_]+")
                     || user.isEmpty() || port < 1 || port > 65535 || poolSize < 1 || poolSize > 20

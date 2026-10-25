@@ -200,8 +200,10 @@ scoreboard:
   main-lobby:
     enabled: true
     title: '&e&lBED WARS'
-    # Variaveis: {player}, {date}, {level}, {xp}, {xp_current}, {xp_required},
-    # {xp_bar}, {games}, {wins}, {kills}, {final_kills}, {beds}, {status},
+    # Variaveis: {player}, {date}, {level}, {xp}, {total_xp}, {xp_current}, {xp_required},
+    # {xp_remaining}, {last_match_xp}, {wins}, {kills}, {final_kills}, {beds}, {games},
+    # {win_rate}, {rank_position}, {selected_title},
+    # {xp_bar}, {status},
     # {language}, {footer}. Os numeros sao obtidos do cache assincrono MySQL.
     lines:
       - '{date}'

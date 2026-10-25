@@ -16,4 +16,14 @@ public class XpProgressionTest {
 
     @Test(expected = IllegalArgumentException.class)
     public void rejectsBrokenCurve() { new XpProgression(0, 1); }
+
+    @Test public void crossingSeveralLevelsUsesTheOriginalCurve() {
+        XpProgression xp = new XpProgression(1000, 250);
+        assertEquals(1, xp.totalXpForLevel(2) / 1000);
+        assertEquals(3750, xp.totalXpForLevel(4));
+        assertEquals(4, xp.progress(3750).level);
+        assertEquals(4, xp.progress(3999).level);
+        assertEquals(10000, xp.progress(Long.MAX_VALUE).level);
+        assertTrue(xp.totalXpForLevel(10000) > xp.totalXpForLevel(5000));
+    }
 }

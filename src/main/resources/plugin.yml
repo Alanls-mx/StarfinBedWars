@@ -12,7 +12,7 @@ softdepend:
 commands:
   starfinbedwars:
     description: StarfinBedWars administration and status
-    usage: /starfinbedwars <help|version|status|menu|arena|world|join|spectate|leave|chat|matchpoint|migrate>
+    usage: /starfinbedwars <help|version|status|menu|arena|world|join|spectate|leave|chat|stats|profile|progress|rewards|top|matchpoint|migrate>
     aliases:
       - sbw
   reconnect:

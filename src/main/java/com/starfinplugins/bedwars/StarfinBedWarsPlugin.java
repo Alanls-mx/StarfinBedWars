@@ -25,6 +25,7 @@ import com.starfinplugins.bedwars.network.NetworkReservationDeliveryService;
 import com.starfinplugins.bedwars.integration.BedWarsMinigameIntegration;
 import com.starfinplugins.bedwars.storage.StorageMigrationService;
 import com.starfinplugins.bedwars.menu.BedWarsMenuService;
+import com.starfinplugins.bedwars.menu.ProgressionMenuService;
 import com.starfinplugins.bedwars.menu.NextMatchService;
 import com.starfinplugins.bedwars.setup.ArenaSetupWizardService;
 import com.starfinplugins.bedwars.service.ServiceLifecycle;
@@ -57,6 +58,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private ArenaRegionSelectionService regionSelection;
     private MatchPresentationService presentation;
     private BedWarsMenuService menus;
+    private ProgressionMenuService progressionMenus;
     private NextMatchService nextMatch;
     private ArenaSetupWizardService setupWizard;
     private ReconnectService reconnect;
@@ -127,6 +129,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             matchPoint = new MatchPointService(this, matchEngine, mobGuard);
             bedHolograms = new BedHologramService(this, arenaService, matchEngine, mobGuard);
             statistics = new MatchStatisticsService(this);
+            progressionMenus = new ProgressionMenuService(this, statistics);
             networkRegistry = new NetworkRegistryService(this, arenaService, matchEngine);
             storageMigration = new StorageMigrationService(this, arenaService);
             shops = new ShopService(this, arenaService, matchEngine, teamUpgrades);
@@ -156,6 +159,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services.add(visuals);
             services.add(bedHolograms);
             services.add(menus);
+            services.add(progressionMenus);
             services.add(nextMatch);
             services.add(setupWizard);
             if (getServer().getPluginManager().isPluginEnabled("StarfinMinigames")) {
@@ -219,6 +223,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     public ReconnectService getReconnect() { return reconnect; }
     public MatchChatService getMatchChat() { return matchChat; }
     public MatchStatisticsService getStatistics() { return statistics; }
+    public ProgressionMenuService getProgressionMenus() { return progressionMenus; }
     public NetworkRegistryService getNetworkRegistry() { return networkRegistry; }
     public StorageMigrationService getStorageMigration() { return storageMigration; }
 

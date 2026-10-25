@@ -385,11 +385,18 @@ public final class MatchPresentationService implements ManagedService, Listener 
         tokens.put("player", player.getName());
         tokens.put("level", Integer.toString(xp.level));
         tokens.put("xp", Long.toString(profile == null ? 0 : profile.totalXp));
+        tokens.put("total_xp", Long.toString(profile == null ? 0 : profile.totalXp));
         tokens.put("xp_current", Long.toString(xp.current));
         tokens.put("xp_required", Long.toString(xp.required));
+        tokens.put("xp_remaining", Long.toString(Math.max(0, xp.required - xp.current)));
+        tokens.put("last_match_xp", Long.toString(stats == null ? 0 : stats.getCachedLastMatchXp(id)));
         tokens.put("xp_bar", progressBar(xp.current, xp.required));
         tokens.put("games", Long.toString(games));
         tokens.put("wins", Long.toString(wins));
+        tokens.put("win_rate", games == 0 ? "0%" : String.format(Locale.ROOT, "%.1f%%", 100.0 * wins / games));
+        tokens.put("rank_position", stats == null || stats.getCachedRankPosition(id) <= 0
+            ? "-" : Long.toString(stats.getCachedRankPosition(id)));
+        tokens.put("selected_title", stats == null ? "" : stats.getSelectedTitle(id));
         tokens.put("kills", Long.toString(kills));
         tokens.put("final_kills", Long.toString(finalKills));
         tokens.put("beds", Long.toString(beds));

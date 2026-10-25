@@ -10,6 +10,7 @@ import com.starfinplugins.bedwars.domain.match.ParticipantState;
 import com.starfinplugins.bedwars.domain.match.ConnectionState;
 import com.starfinplugins.bedwars.match.MatchEngineService;
 import com.starfinplugins.bedwars.match.ArenaAvailability;
+import com.starfinplugins.bedwars.stats.MatchMode;
 import com.starfinplugins.minigames.api.MinigameArenaSnapshot;
 import com.starfinplugins.minigames.api.MinigameDescriptor;
 import com.starfinplugins.minigames.api.MinigameMatchSnapshot;
@@ -82,18 +83,7 @@ public final class BedWarsMinigameProvider implements MinigameProvider {
     }
 
     static String mode(ArenaDefinition arena) {
-        int teamSize = -1;
-        for (TeamDefinition team : arena.getTeamList()) {
-            if (teamSize == -1) teamSize = team.getCapacity();
-            else if (teamSize != team.getCapacity()) return "mixed";
-        }
-        switch (teamSize) {
-            case 1: return "solo";
-            case 2: return "duo";
-            case 3: return "trio";
-            case 4: return "squad";
-            default: return "custom";
-        }
+        return MatchMode.of(arena);
     }
 
     static MinigamePlayerSnapshot.Role role(GameParticipant participant) {

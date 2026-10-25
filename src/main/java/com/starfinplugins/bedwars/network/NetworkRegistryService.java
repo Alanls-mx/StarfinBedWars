@@ -13,6 +13,7 @@ import com.starfinplugins.bedwars.match.MatchEngineService;
 import com.starfinplugins.bedwars.match.ArenaAvailability;
 import com.starfinplugins.bedwars.service.ManagedService;
 import com.starfinplugins.bedwars.stats.StatsSettings;
+import com.starfinplugins.bedwars.stats.MatchMode;
 import com.starfinplugins.minigames.api.ReservationSnapshot;
 import java.io.IOException;
 import java.time.Instant;
@@ -215,9 +216,7 @@ public final class NetworkRegistryService implements ManagedService, Listener {
                 if (teamSize == -1) teamSize = team.getCapacity();
                 else if (teamSize != team.getCapacity()) teamSize = 0;
             }
-            String mode = teamSize == 0 ? "MIXED" : teamSize == 1 ? "SOLO"
-                : teamSize == 2 ? "DUO" : teamSize == 3 ? "TRIO"
-                : teamSize == 4 ? "SQUAD" : "CUSTOM";
+            String mode = MatchMode.of(arena).toUpperCase(java.util.Locale.ROOT);
             advertisements.add(new NetworkSnapshot.Arena(arena.getId(),
                 shortName(arena.getDisplayName()), arena.getSourceWorld(),
                 arenas.getStoredConfiguration(arena), mode, arena.getGroup(), arena.getTeamList().size(), teamSize,

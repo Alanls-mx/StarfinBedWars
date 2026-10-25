@@ -11,11 +11,17 @@ public final class MatchStatsTracker {
     private final UUID matchId;
     private final Map<UUID, Entry> entries = new LinkedHashMap<UUID, Entry>();
     private final Awards awards;
+    private final String mode;
 
     public MatchStatsTracker(UUID matchId, Awards awards) {
+        this(matchId, awards, null);
+    }
+
+    public MatchStatsTracker(UUID matchId, Awards awards, String mode) {
         if (matchId == null || awards == null) throw new IllegalArgumentException("Partida ausente");
         this.matchId = matchId;
         this.awards = awards;
+        this.mode = MatchMode.persisted(mode);
     }
 
     public void addPlayer(UUID uuid, String team, String name) {
@@ -46,6 +52,10 @@ public final class MatchStatsTracker {
     }
 
     public List<MatchResult> finish(String winnerTeam, boolean draw) {
+        return finish(winnerTeam, draw, 0L);
+    }
+
+    public List<MatchResult> finish(String winnerTeam, boolean draw, long completedAtMillis) {
         List<MatchResult> results = new ArrayList<MatchResult>();
         for (Map.Entry<UUID, Entry> value : entries.entrySet()) {
             Entry e = value.getValue();
@@ -56,7 +66,8 @@ public final class MatchStatsTracker {
                 + e.finalKills * awards.finalKill + e.beds * awards.bed
                 + (outcome == MatchResult.Outcome.WIN ? awards.victory : 0L);
             results.add(new MatchResult(matchId, value.getKey(), e.name, e.kills,
-                e.finalKills, e.deaths, e.finalDeaths, e.beds, outcome, xp));
+                e.finalKills, e.deaths, e.finalDeaths, e.beds, outcome, xp,
+                mode, completedAtMillis));
         }
         return results;
     }

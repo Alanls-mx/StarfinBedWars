@@ -11,16 +11,25 @@ public final class PlayerPreferences {
     public final String language;
     /** Null uses shop.yml default Quick Buy; empty means an intentionally empty Quick Buy. */
     private final List<String> quickBuy;
+    public final String selectedTitle;
 
     public PlayerPreferences(String language, List<String> quickBuy) {
+        this(language, quickBuy, null);
+    }
+
+    public PlayerPreferences(String language, List<String> quickBuy, String selectedTitle) {
         this.language = languageOrDefault(language);
         this.quickBuy = quickBuy == null ? null : Collections.unmodifiableList(
             new ArrayList<String>(normalizeItems(quickBuy)));
+        this.selectedTitle = selectedTitle;
     }
 
     public List<String> getQuickBuy() { return quickBuy; }
-    public PlayerPreferences withLanguage(String next) { return new PlayerPreferences(next, quickBuy); }
-    public PlayerPreferences withQuickBuy(List<String> next) { return new PlayerPreferences(language, next); }
+    public PlayerPreferences withLanguage(String next) { return new PlayerPreferences(next, quickBuy, selectedTitle); }
+    public PlayerPreferences withQuickBuy(List<String> next) { return new PlayerPreferences(language, next, selectedTitle); }
+    public PlayerPreferences withSelectedTitle(String next) {
+        return new PlayerPreferences(language, quickBuy, next);
+    }
 
     public static String languageOrDefault(String value) {
         if (value == null) return "pt_BR";
