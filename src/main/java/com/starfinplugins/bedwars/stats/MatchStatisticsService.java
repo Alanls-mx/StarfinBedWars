@@ -46,6 +46,8 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     private final Map<UUID, StatsProfile> profileCache = new ConcurrentHashMap<UUID, StatsProfile>();
     private final Map<UUID, PlayerPreferences> preferencesCache = new ConcurrentHashMap<UUID, PlayerPreferences>();
     private final Map<UUID, Set<String>> unlocksCache = new ConcurrentHashMap<UUID, Set<String>>();
+    private final Map<UUID, Map<String, Integer>> abilityLevelsCache =
+        new ConcurrentHashMap<UUID, Map<String, Integer>>();
     private final Map<UUID, Long> rankPositionCache = new ConcurrentHashMap<UUID, Long>();
     private final Map<UUID, Long> lastMatchXpCache = new ConcurrentHashMap<UUID, Long>();
     private final AtomicInteger pendingRankings = new AtomicInteger();
@@ -101,6 +103,7 @@ public final class MatchStatisticsService implements ManagedService, Listener {
                     for (UUID id : online) {
                         refreshProfile(id);
                         refreshPreferences(id, null);
+                        refreshAbilityLevels(id);
                         refreshRewards(id);
                         refreshRankPosition(id);
                         refreshLastMatchXp(id);
@@ -120,6 +123,7 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         profileCache.clear();
         preferencesCache.clear();
         unlocksCache.clear();
+        abilityLevelsCache.clear();
         rankPositionCache.clear();
         lastMatchXpCache.clear();
         preferenceRevisions.clear();
@@ -151,6 +155,35 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     }
     public Set<String> getCachedUnlocks(UUID uuid) {
         return unlocksCache.getOrDefault(uuid, Collections.emptySet());
+    }
+    public Map<String, Integer> getAbilityLevels(UUID uuid) {
+        return abilityLevelsCache.getOrDefault(uuid, Collections.emptyMap());
+    }
+    public int getAbilityLevel(UUID uuid, String abilityId) {
+        return getAbilityLevels(uuid).getOrDefault(abilityId, 0);
+    }
+
+    /** An administrative grant is confirmed in MySQL before the cached level is published. */
+    public void grantAbility(UUID uuid, String abilityId, int level,
+                             java.util.function.IntConsumer completed) {
+        if (!isEnabled() || worker == null) { completed.accept(0); return; }
+        worker.execute(() -> {
+            int actual = 0;
+            try {
+                ensureOpen();
+                actual = repository.grantAbility(uuid, abilityId, level);
+            } catch (Exception error) { logDatabaseFailure(error); }
+            final int confirmed = actual;
+            if (!plugin.isEnabled()) return;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (confirmed > 0 && Bukkit.getPlayer(uuid) != null) {
+                    Map<String, Integer> next = new HashMap<String, Integer>(getAbilityLevels(uuid));
+                    next.put(abilityId, confirmed);
+                    abilityLevelsCache.put(uuid, Collections.unmodifiableMap(next));
+                }
+                completed.accept(confirmed);
+            });
+        });
     }
     public RewardsCatalog getRewards() { return rewards; }
     public long getCachedRankPosition(UUID uuid) {
@@ -239,6 +272,7 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         profileCache.remove(id);
         preferencesCache.remove(id);
         unlocksCache.remove(id);
+        abilityLevelsCache.remove(id);
         rankPositionCache.remove(id);
         lastMatchXpCache.remove(id);
         preferenceRevisions.put(id, revisionCounter.incrementAndGet());
@@ -264,6 +298,7 @@ public final class MatchStatisticsService implements ManagedService, Listener {
                 refreshLastMatchXp(id);
                 flushPreferencesOutbox();
                 refreshPreferences(id, legacy);
+                refreshAbilityLevels(id);
             } catch (Exception error) { logDatabaseFailure(error); }
         });
     }
@@ -567,6 +602,18 @@ public final class MatchStatisticsService implements ManagedService, Listener {
                         && preferenceRevisions.getOrDefault(id, 0L) == expected) {
                     preferencesCache.put(id, loaded);
                 }
+            });
+        } catch (Exception error) { logDatabaseFailure(error); }
+    }
+
+    private void refreshAbilityLevels(UUID id) {
+        try {
+            ensureOpen();
+            Map<String, Integer> loaded = Collections.unmodifiableMap(
+                new HashMap<String, Integer>(repository.loadAbilityLevels(id)));
+            if (!plugin.isEnabled()) return;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (Bukkit.getPlayer(id) != null) abilityLevelsCache.put(id, loaded);
             });
         } catch (Exception error) { logDatabaseFailure(error); }
     }

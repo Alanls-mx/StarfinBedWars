@@ -69,6 +69,12 @@ public final class MySqlStatsRepository implements AutoCloseable {
                 + "required_level INT NOT NULL,unlocked_at BIGINT NOT NULL,"
                 + "PRIMARY KEY(player_uuid,reward_id),"
                 + "INDEX idx_sbw_reward_id (reward_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            statement.execute("CREATE TABLE IF NOT EXISTS sbw_ability_levels ("
+                + "player_uuid CHAR(36) NOT NULL, ability_id VARCHAR(32) NOT NULL,"
+                + "level TINYINT UNSIGNED NOT NULL, unlocked TINYINT(1) NOT NULL DEFAULT 1,"
+                + "acquired_at BIGINT NOT NULL, updated_at BIGINT NOT NULL,"
+                + "PRIMARY KEY(player_uuid,ability_id),INDEX idx_sbw_ability_id (ability_id))"
+                + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             // Upgrade databases created by earlier BedWars versions without deleting user data.
             ensureColumn(connection, "sbw_profiles", "final_deaths", "BIGINT NOT NULL DEFAULT 0");
             ensureColumn(connection, "sbw_profiles", "first_play", "BIGINT NOT NULL DEFAULT 0");
@@ -90,6 +96,54 @@ public final class MySqlStatsRepository implements AutoCloseable {
             dataSource.close();
             throw error;
         }
+    }
+
+    /** A monotonic, idempotent administrative grant; paid upgrades must use a real currency provider. */
+    public int grantAbility(UUID player, String abilityId, int level) throws SQLException {
+        if (player == null || abilityId == null || !abilityId.matches("[a-z0-9_-]{1,32}")
+                || level < 1 || level > 5) throw new IllegalArgumentException("Grant de habilidade invalido");
+        try (Connection connection = pool.getConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement grant = connection.prepareStatement(
+                    "INSERT INTO sbw_ability_levels"
+                    + " (player_uuid,ability_id,level,unlocked,acquired_at,updated_at)"
+                    + " VALUES (?,?,?,1,?,?) ON DUPLICATE KEY UPDATE"
+                    + " level=GREATEST(level,VALUES(level)),unlocked=1,updated_at=VALUES(updated_at)");
+                 PreparedStatement read = connection.prepareStatement(
+                    "SELECT level FROM sbw_ability_levels WHERE player_uuid=? AND ability_id=?")) {
+                long now = System.currentTimeMillis();
+                grant.setString(1, player.toString());
+                grant.setString(2, abilityId);
+                grant.setInt(3, level);
+                grant.setLong(4, now);
+                grant.setLong(5, now);
+                grant.executeUpdate();
+                read.setString(1, player.toString());
+                read.setString(2, abilityId);
+                try (ResultSet row = read.executeQuery()) {
+                    if (!row.next()) throw new SQLException("Grant nao confirmado");
+                    int actual = row.getInt(1);
+                    connection.commit();
+                    return actual;
+                }
+            } catch (SQLException | RuntimeException error) {
+                connection.rollback();
+                throw error;
+            }
+        }
+    }
+
+    public java.util.Map<String, Integer> loadAbilityLevels(UUID player) throws SQLException {
+        java.util.Map<String, Integer> levels = new java.util.LinkedHashMap<String, Integer>();
+        try (Connection connection = pool.getConnection();
+             PreparedStatement read = connection.prepareStatement(
+                 "SELECT ability_id,level FROM sbw_ability_levels WHERE player_uuid=? AND unlocked=1")) {
+            read.setString(1, player.toString());
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) levels.put(row.getString(1), row.getInt(2));
+            }
+        }
+        return levels;
     }
 
     /** Transactional insert-only ledger + atomic profile increments across Bungee servers. */

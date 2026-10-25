@@ -25,6 +25,8 @@ O lobby de espera oferece seleção de kit pela estrela do Nether no slot visual
 
 O ambiente Always é configurado em `plugins/StarfinBedWars/always.yml`: hora, dificuldade, clima e spawn/griefing de mobs por mundo e por arena. As cópias de partidas recebem sempre dia e dificuldade 3 por padrão; mundos comuns permanecem intactos até serem habilitados. Consulte [docs/ALWAYS_ENVIRONMENT.md](docs/ALWAYS_ENVIRONMENT.md) para herança, opções e comandos.
 
+As 18 habilidades evolutivas, seus cinco níveis, preços, permissões individuais e limites estão em `plugins/StarfinBedWars/abilities.yml`. O menu do frasco no lobby de espera mostra estado, efeitos e requisitos. Desbloqueios e níveis são compartilhados pelo MySQL; `/sbw ability grant <jogador-online> <id> <nível>` permite a um administrador homologar habilidades. Compras e melhorias por moedas ficam indisponíveis até a rede fornecer um provedor monetário real. Veja [docs/PROMPT5_1_ABILITIES.md](docs/PROMPT5_1_ABILITIES.md).
+
 ## API compartilhada de minigames (Fase 1)
 
 Com StarfinMinigames presente, BedWars registra `bedwars` no `MinigameRegistry` do Bukkit `ServicesManager`. Arenas, grupos, modalidades, partidas, capacidades, estados e UUIDs dos jogadores sao consultados por snapshots imutaveis. Um adaptador publica eventos genericos a partir de `MatchLifecycleEvent` sem disparar os mesmos eventos internos novamente. O registro e removido no desligamento do BedWars; o StarfinMinigames tambem remove registros quando o plugin proprietario e desabilitado.

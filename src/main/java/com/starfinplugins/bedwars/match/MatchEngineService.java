@@ -66,6 +66,7 @@ public final class MatchEngineService implements ManagedService, Listener {
     private final Plugin plugin;
     private final ArenaService arenas;
     private final int respawnSeconds;
+    private java.util.function.BiFunction<GameMatch, UUID, Integer> respawnDelayModifier;
     private final int spawnOpeningSeconds;
     private final Map<String, GameMatch> byArena = new HashMap<String, GameMatch>();
     private final Map<UUID, GameMatch> byPlayer = new java.util.concurrent.ConcurrentHashMap<UUID, GameMatch>();
@@ -103,6 +104,17 @@ public final class MatchEngineService implements ManagedService, Listener {
 
     public MatchEngineService(Plugin plugin, ArenaService arenas, int respawnSeconds) {
         this(plugin, arenas, respawnSeconds, 10);
+    }
+
+    public void setRespawnDelayModifier(java.util.function.BiFunction<GameMatch, UUID, Integer> modifier) {
+        this.respawnDelayModifier = modifier;
+    }
+
+    private int respawnDelayTicks(GameMatch match, UUID playerId) {
+        int base = match.getArena().getGameplayRules().respawn(respawnSeconds) * 20;
+        if (respawnDelayModifier == null) return base;
+        Integer modified = respawnDelayModifier.apply(match, playerId);
+        return modified == null ? base : Math.max(1, Math.min(base, modified));
     }
 
     public MatchEngineService(Plugin plugin, ArenaService arenas,
@@ -179,6 +191,12 @@ public final class MatchEngineService implements ManagedService, Listener {
 
     public GameMatch getMatchForPlayer(UUID playerId) {
         return byPlayer.get(playerId);
+    }
+
+    public GameMatch getMatch(UUID matchId) {
+        for (GameMatch match : byArena.values())
+            if (match.getId().equals(matchId)) return match;
+        return null;
     }
 
     public boolean hasPlayer(UUID playerId) {
@@ -914,7 +932,7 @@ public final class MatchEngineService implements ManagedService, Listener {
                         }
                         respawnTasks.remove(playerId);
                     }
-                }, match.getArena().getGameplayRules().respawn(respawnSeconds) * 20L));
+                }, respawnDelayTicks(match, playerId)));
             }
         } else {
             session.getSnapshot().restore(player);
@@ -992,7 +1010,7 @@ public final class MatchEngineService implements ManagedService, Listener {
             cancel(respawnTasks.remove(player.getUniqueId()));
             player.sendMessage(message("messages.respawn-countdown",
                 "&eVoce renascera em &c{time} &esegundos.",
-                "time", Integer.toString(match.getArena().getGameplayRules().respawn(respawnSeconds))));
+                "time", Integer.toString((respawnDelayTicks(match, player.getUniqueId()) + 19) / 20)));
             fire(MatchLifecycleEvent.Type.PLAYER_DIED, match, participant, participant.getTeamId());
         }
         // Evita a tela de morte e inicia imediatamente o periodo de espectador.
@@ -1150,7 +1168,7 @@ public final class MatchEngineService implements ManagedService, Listener {
                         }
                         respawnTasks.remove(player.getUniqueId());
                     }
-                }, match.getArena().getGameplayRules().respawn(respawnSeconds) * 20L));
+                }, respawnDelayTicks(match, player.getUniqueId())));
             }
         });
     }

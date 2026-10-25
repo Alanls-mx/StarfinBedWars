@@ -149,6 +149,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             shops = new ShopService(this, arenaService, matchEngine, teamUpgrades);
             shops.setMobGuard(mobGuard);
             shops.setEquipment(equipment);
+            shops.setGameplay(gameplay);
             services.add(worldManagement);
             services.add(arenaService);
             services.add(matchEngine);

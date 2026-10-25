@@ -307,6 +307,12 @@ public final class ResourceGeneratorService implements ManagedService, Listener 
                 GeneratorLevel level = levels.get(instance.getLevel() - 1);
                 int produced = distribute(match, instance, level.getAmount(),
                     level.getMaximumDropped(), currentDropped, location);
+                if (produced > 0 && gameplay != null
+                        && countTaggedItems(instance, match.getId()) < level.getMaximumDropped()
+                        && gameplay.forgeBonus(match, instance) > 0)
+                    produced += dropTagged(match, instance,
+                        new ItemStack(instance.getDefinition().getResource().getMaterial(), 1),
+                        location, level.getMaximumDropped(), countTaggedItems(instance, match.getId()));
                 Bukkit.getPluginManager().callEvent(new ResourceGeneratedEvent(match, instance, produced));
                 updateHologram(entry.getKey(), instance);
             }

@@ -239,8 +239,26 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             boolean ability = "ability".equalsIgnoreCase(args[0]);
             if (args.length == 2 && "list".equalsIgnoreCase(args[1])) {
                 sender.sendMessage(PREFIX + (ability ? "Habilidades: "
-                    + join(new ArrayList<String>(plugin.getGameplay().getSettings().abilities.keySet()))
+                    + join(new ArrayList<String>(plugin.getGameplay().getAbilityCatalog().abilities.keySet()))
                     : "Kits: " + join(new ArrayList<String>(plugin.getGameplay().getSettings().kits.keySet()))));
+            } else if (ability && args.length == 5 && "grant".equalsIgnoreCase(args[1])) {
+                if (!requireAdmin(sender)) return true;
+                Player target = plugin.getServer().getPlayerExact(args[2]);
+                com.starfinplugins.bedwars.gameplay.AbilityCatalog.Definition definition =
+                    plugin.getGameplay().getAbilityCatalog().abilities.get(args[3]);
+                int level;
+                try { level = Integer.parseInt(args[4]); }
+                catch (NumberFormatException invalid) { level = 0; }
+                if (target == null || definition == null || level < 1 || level > definition.maxLevel) {
+                    sender.sendMessage(PREFIX + ChatColor.RED + "Jogador online, ID e nivel validos obrigatorios.");
+                    return true;
+                }
+                final String grantedId = definition.id;
+                plugin.getStatistics().grantAbility(target.getUniqueId(), grantedId, level,
+                    confirmed -> sender.sendMessage(PREFIX + (confirmed == 0 ? ChatColor.RED
+                        + "MySQL indisponivel; nenhum desbloqueio concedido."
+                        : ChatColor.GREEN + "Desbloqueio confirmado: " + target.getName()
+                            + " / " + grantedId + " nivel " + confirmed)));
             } else if (ability && args.length == 2 && "use".equalsIgnoreCase(args[1])
                     && sender instanceof Player) {
                 plugin.getGameplay().useAbility((Player) sender);
@@ -248,7 +266,8 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 if (ability) plugin.getGameplay().openAbilities((Player) sender);
                 else plugin.getGameplay().openKits((Player) sender);
             } else sender.sendMessage(PREFIX + ChatColor.YELLOW
-                + (ability ? "/sbw ability [list|use]" : "/sbw kit [list]"));
+                + (ability ? "/sbw ability [list|use|grant <jogador> <id> <nivel>]"
+                    : "/sbw kit [list]"));
             return true;
         }
         if ("gameplay".equalsIgnoreCase(args[0])) {
@@ -1578,7 +1597,8 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 com.starfinplugins.bedwars.gameplay.GameplaySettings settings =
                     plugin.getGameplay().getSettings();
                 arenas.setGameplayLimits(settings.maximumTeamSize, settings.maximumTotalPlayers);
-                sender.sendMessage(PREFIX + ChatColor.GREEN + "gameplay.yml validado e recarregado.");
+                sender.sendMessage(PREFIX + ChatColor.GREEN
+                    + "gameplay.yml e abilities.yml validados e recarregados.");
             } catch (RuntimeException invalid) {
                 sender.sendMessage(PREFIX + ChatColor.RED + "Configuracao mantida: " + invalid.getMessage());
             }
@@ -1586,8 +1606,9 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         }
         if (args.length == 2 && "diagnose".equalsIgnoreCase(args[1])) {
             com.starfinplugins.bedwars.gameplay.GameplaySettings config = plugin.getGameplay().getSettings();
-            sender.sendMessage(PREFIX + "Kits=" + config.kits.size() + ", habilidades="
-                + config.abilities.size() + ", Split=" + config.splitEnabled
+            sender.sendMessage(PREFIX + "Kits=" + config.kits.size() + ", habilidades evolutivas="
+                + plugin.getGameplay().getAbilityCatalog().abilities.size()
+                + ", habilidades legadas=" + config.abilities.size() + ", Split=" + config.splitEnabled
                 + ", anti-AFK=" + config.antiAfkEnabled + ".");
             for (ArenaDefinition arena : arenas.getArenas()) {
                 ArenaGameplayRules rules = arena.getGameplayRules();
@@ -1595,7 +1616,9 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                     if (!config.kits.containsKey(id)) sender.sendMessage(ChatColor.RED
                         + arena.getId() + ": kit desconhecido " + id);
                 if (rules.abilities != null) for (String id : rules.abilities)
-                    if (!config.abilities.containsKey(id)) sender.sendMessage(ChatColor.RED
+                    if (!config.abilities.containsKey(id)
+                            && !plugin.getGameplay().getAbilityCatalog().abilities.containsKey(id))
+                        sender.sendMessage(ChatColor.RED
                         + arena.getId() + ": habilidade desconhecida " + id);
             }
             return;
@@ -1822,7 +1845,8 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         if ("kit".equalsIgnoreCase(args[0]) && args.length == 2)
             return filter(Collections.singletonList("list"), args[1]);
         if ("ability".equalsIgnoreCase(args[0]) && args.length == 2)
-            return filter(Arrays.asList("list", "use"), args[1]);
+            return filter(sender.hasPermission("starfinbedwars.admin")
+                ? Arrays.asList("list", "use", "grant") : Arrays.asList("list", "use"), args[1]);
         if (args.length == 2 && ("idioma".equalsIgnoreCase(args[0])
                 || "language".equalsIgnoreCase(args[0]) || "lang".equalsIgnoreCase(args[0]))) {
             return filter(Arrays.asList("pt_BR", "en_US", "es_ES"), args[1]);

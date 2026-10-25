@@ -74,6 +74,12 @@ public class Phase2MySqlIntegrationTest {
              MySqlStatsRepository second = new MySqlStatsRepository()) {
             first.open(settings);
             second.open(settings);
+            assertTrue(first.loadAbilityLevels(player).isEmpty());
+            assertEquals(1, first.grantAbility(player, "respawn_boost", 1));
+            assertEquals(Integer.valueOf(1), second.loadAbilityLevels(player).get("respawn_boost"));
+            assertEquals(5, second.grantAbility(player, "respawn_boost", 5));
+            assertEquals(5, first.grantAbility(player, "respawn_boost", 2));
+            assertEquals(Integer.valueOf(5), first.loadAbilityLevels(player).get("respawn_boost"));
             assertEquals("default", first.loadPreferences(player, null).selectedKit);
             assertEquals("none", first.loadPreferences(player, null).selectedAbility);
             first.updateGameplaySelection(player, PreferencesOutbox.Kind.KIT, "builder");

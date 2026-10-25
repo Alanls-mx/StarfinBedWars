@@ -93,12 +93,16 @@ public final class ShopService implements ManagedService, Listener {
     private ShopSettings settings;
     private ManagedMobGuard mobGuard;
     private MatchEquipmentService equipment;
+    private com.starfinplugins.bedwars.gameplay.GameplayService gameplay;
     private BukkitTask anchorCheck;
     private final Map<UUID, Set<String>> favorites = new HashMap<UUID, Set<String>>();
     private File favoritesFile;
 
     public void setMobGuard(ManagedMobGuard mobGuard) { this.mobGuard = mobGuard; }
     public void setEquipment(MatchEquipmentService equipment) { this.equipment = equipment; }
+    public void setGameplay(com.starfinplugins.bedwars.gameplay.GameplayService gameplay) {
+        this.gameplay = gameplay;
+    }
 
     public ShopService(Plugin plugin, ArenaService arenas, MatchEngineService matches,
                        TeamUpgradeService upgrades) {
@@ -909,12 +913,15 @@ public final class ShopService implements ManagedService, Listener {
             return;
         }
         ItemStack[] backup = InventoryEconomy.snapshot(player);
-        if (!InventoryEconomy.charge(player, definition.getCostType(), definition.getCost())) {
+        int charged = gameplay == null ? definition.getCost()
+            : gameplay.shopCost(player, match, definition.getCost());
+        if (!InventoryEconomy.charge(player, definition.getCostType(), charged)) {
             feedback(player, "insufficient", "&cRecursos insuficientes.");
             return;
         }
         if (permanent) {
             equipment.purchased(player, match, participant, product.getType());
+            if (gameplay != null) gameplay.completedShopPurchase(player, match, definition.getCost(), charged);
             Bukkit.getPluginManager().callEvent(new ShopPurchaseEvent(match, player.getUniqueId(), definition));
             feedback(player, "purchased", "&aComprado: &f{item}&a.",
                 "item", definition.getDisplayName());
@@ -927,6 +934,7 @@ public final class ShopService implements ManagedService, Listener {
             feedback(player, "delivery-failed", "&cCompra cancelada: nao foi possivel entregar o item.");
             return;
         }
+        if (gameplay != null) gameplay.completedShopPurchase(player, match, definition.getCost(), charged);
         Bukkit.getPluginManager().callEvent(new ShopPurchaseEvent(match, player.getUniqueId(), definition));
         feedback(player, "purchased", "&aComprado: &f{item}&a.",
                 "item", definition.getDisplayName());
