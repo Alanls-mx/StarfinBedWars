@@ -19,6 +19,7 @@ import com.starfinplugins.bedwars.match.MatchEquipmentService;
 import com.starfinplugins.bedwars.match.MatchVisualService;
 import com.starfinplugins.bedwars.match.MatchPointService;
 import com.starfinplugins.bedwars.match.BedHologramService;
+import com.starfinplugins.bedwars.stats.MatchStatisticsService;
 import com.starfinplugins.bedwars.menu.BedWarsMenuService;
 import com.starfinplugins.bedwars.menu.NextMatchService;
 import com.starfinplugins.bedwars.setup.ArenaSetupWizardService;
@@ -62,6 +63,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private MatchVisualService visuals;
     private MatchPointService matchPoint;
     private BedHologramService bedHolograms;
+    private MatchStatisticsService statistics;
     private boolean initialized;
 
     @Override
@@ -116,12 +118,14 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             visuals = new MatchVisualService(this, matchEngine);
             matchPoint = new MatchPointService(this, matchEngine, mobGuard);
             bedHolograms = new BedHologramService(this, arenaService, matchEngine, mobGuard);
+            statistics = new MatchStatisticsService(this);
             shops = new ShopService(this, arenaService, matchEngine, teamUpgrades);
             shops.setMobGuard(mobGuard);
             shops.setEquipment(equipment);
             services.add(worldManagement);
             services.add(arenaService);
             services.add(matchEngine);
+            services.add(statistics);
             services.add(tntAutoIgnite);
             services.add(reconnect);
             services.add(arenaEditing);
@@ -191,6 +195,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     public MatchPointService getMatchPoint() { return matchPoint; }
     public ReconnectService getReconnect() { return reconnect; }
     public MatchChatService getMatchChat() { return matchChat; }
+    public MatchStatisticsService getStatistics() { return statistics; }
 
     public WorldManagementService getWorldManagement() { return worldManagement; }
 

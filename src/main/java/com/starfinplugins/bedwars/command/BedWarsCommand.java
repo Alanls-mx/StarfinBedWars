@@ -128,6 +128,16 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             sendHelp(sender, label, args.length > 1 ? args[1] : null);
             return true;
         }
+        if ("stats".equalsIgnoreCase(args[0]) || "perfil".equalsIgnoreCase(args[0])
+                || "nivel".equalsIgnoreCase(args[0])) {
+            if (args.length > 2 || (args.length == 1 && !(sender instanceof Player))) {
+                sender.sendMessage(PREFIX + ChatColor.YELLOW + "Use /sbw stats [jogador|UUID].");
+            } else {
+                String target = args.length == 2 ? args[1] : ((Player) sender).getUniqueId().toString();
+                plugin.getStatistics().showProfile(sender, target);
+            }
+            return true;
+        }
         if ("chat".equalsIgnoreCase(args[0])) {
             if (!(sender instanceof Player) || args.length != 2) {
                 sender.sendMessage(PREFIX + ChatColor.RED + "Use /sbw chat <global|team|spectator>.");
@@ -1436,13 +1446,14 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 sender.sendMessage(PREFIX + ChatColor.YELLOW + "Partidas");
                 sender.sendMessage(ChatColor.GRAY + "/sbw join <arena> | /sbw spectate <arena> | /sbw leave");
                 sender.sendMessage(ChatColor.GRAY + "/sbw chat <global|team|spectator>");
+                sender.sendMessage(ChatColor.GRAY + "/sbw stats [jogador] - perfil, XP e nivel da rede");
                 return;
             }
             sender.sendMessage(PREFIX + ChatColor.RED + "Categoria invalida. Use setup, arena, world ou player.");
             return;
         }
         sender.sendMessage(PREFIX + ChatColor.YELLOW + "/" + label
-            + " <help [setup|arena|world|player]|version|status|menu|arena|setarena|world|join|spectate|leave|chat|next|npc|matchpoint>");
+            + " <help [setup|arena|world|player]|version|status|stats|menu|arena|setarena|world|join|spectate|leave|chat|next|npc|matchpoint>");
         sender.sendMessage(ChatColor.GRAY + "/sbw menu | /sbw arena menu");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena create <id> <mundo-descarregado> | import <id> <mundo-descarregado>");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena tp <arena> | /sbw arena exit");
@@ -1462,6 +1473,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         sender.sendMessage(ChatColor.GRAY + "/sbw setup <status|undo|pause|resume <arena>|cancel <arena>>");
         sender.sendMessage(ChatColor.GRAY + "/sbw setarena <center here|pos1|pos2|upoversize <L>x<C>|upheight <n>|uplow <n>|tp|preview|confirm|cancel>");
         sender.sendMessage(ChatColor.GRAY + "/sbw join <arena> | /sbw spectate <arena> | /sbw leave");
+        sender.sendMessage(ChatColor.GRAY + "/sbw stats [jogador|UUID] | /sbw perfil [jogador]");
         if (sender.hasPermission("starfinbedwars.command.matchpoint")
                 || sender.hasPermission("starfinbedwars.admin")) {
             sender.sendMessage(ChatColor.GRAY
@@ -1495,7 +1507,8 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
             List<String> choices = new ArrayList<String>(Arrays.asList(
-                "help", "version", "menu", "arena", "join", "spectate", "leave", "chat"));
+                "help", "version", "menu", "arena", "join", "spectate", "leave", "chat",
+                "stats", "perfil", "nivel"));
             if (sender.hasPermission("starfinbedwars.command.status")
                     || sender.hasPermission("starfinbedwars.admin")) choices.add("status");
             if (hasArenaAdmin(sender)) {

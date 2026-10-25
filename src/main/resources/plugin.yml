@@ -4,6 +4,8 @@ main: com.starfinplugins.bedwars.StarfinBedWarsPlugin
 author: StarfinPlugins
 website: https://starfinplugins.com.br
 description: Premium BedWars foundation for Spigot 1.8.8
+depend:
+  - StarfinCore
 softdepend:
   - WorldEdit
 commands:

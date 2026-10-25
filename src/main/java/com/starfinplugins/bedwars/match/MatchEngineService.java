@@ -15,6 +15,7 @@ import com.starfinplugins.bedwars.domain.match.MatchEndReason;
 import com.starfinplugins.bedwars.domain.match.MatchState;
 import com.starfinplugins.bedwars.domain.match.ParticipantState;
 import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
+import com.starfinplugins.bedwars.event.MatchCombatDeathEvent;
 import com.starfinplugins.bedwars.service.ManagedService;
 import com.starfinplugins.bedwars.reconnect.ReconnectService;
 import com.starfinplugins.bedwars.reconnect.ReconnectSession;
@@ -922,6 +923,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (match == null || match.getState() != MatchState.IN_GAME) return;
         GameParticipant participant = match.getParticipant(player.getUniqueId());
         if (participant == null || participant.getState() != ParticipantState.CONNECTED) return;
+        publishCombatDeath(match, player, participant);
         event.setDeathMessage(null); // Prevent duplicate server-wide vanilla death broadcasts.
         announcePlayerDeath(match, player, participant);
         event.getDrops().clear();
@@ -955,7 +957,16 @@ public final class MatchEngineService implements ManagedService, Listener {
     public void processDisconnectDeath(Player player, GameMatch match, GameParticipant participant) {
         if (byPlayer.get(player.getUniqueId()) != match || match.getState() != MatchState.IN_GAME
                 || participant.getState() != ParticipantState.CONNECTED) return;
+        publishCombatDeath(match, player, participant);
         prepareValidDeath(player, match, participant);
+    }
+
+    private void publishCombatDeath(GameMatch match, Player victim, GameParticipant participant) {
+        Player killer = deathKiller(victim, match, participant);
+        GameTeam team = match.getTeam(participant.getTeamId());
+        Bukkit.getPluginManager().callEvent(new MatchCombatDeathEvent(match.getId(),
+            victim.getUniqueId(), killer == null ? null : killer.getUniqueId(),
+            team != null && !team.isBedAlive()));
     }
 
     private void prepareValidDeath(Player player, GameMatch match, GameParticipant participant) {

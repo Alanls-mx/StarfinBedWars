@@ -10,13 +10,28 @@ Para o historico dos prompts e o inventario anterior, consulte `STARFINBEDWARS_P
 - Maven 3.6 ou superior.
 - Servidor Spigot 1.8.8.
 - O artefato local `org.spigotmc:spigot:1.8.8-R0.1-SNAPSHOT`, produzido pelo BuildTools, e necessario para compilar os adaptadores NPC e Title `v1_8_R3`.
-- O BedWars nao depende do StarfinCore. A API do StarfinMinigames ainda nao esta disponivel neste workspace.
+- **StarfinCore Spigot 0.3.1+ e obrigatorio** nesta branch: fornece HikariCP e o driver MySQL em runtime, antes do StarfinBedWars iniciar. A API do StarfinMinigames ainda nao esta disponivel neste workspace.
 
 ```text
 mvn -B verify
 ```
 
 O JAR e `target/StarfinBedWars-1.0.0-SNAPSHOT.jar`. A API Spigot e `provided` e nao e empacotada.
+
+## Estatisticas, perfis, XP e niveis na rede BungeeCord
+
+O modulo de estatisticas usa uma **unica base MySQL compartilhada por todos os servidores Spigot de BedWars** da rede BungeeCord. Cada servidor instala seu proprio StarfinCore Spigot, que carrega e verifica HikariCP 4.0.3 e MySQL Connector/J 8.4.0. Essas bibliotecas sao `provided`: nao entram no JAR do BedWars. O Core disponibiliza as classes; o BedWars gerencia seu pool de conexoes e o encerra ao desligar, conforme o contrato de `docs/SHARED-LIBRARIES.md` do Core. O proxy nao precisa de uma conexao para somar estatisticas.
+
+1. Instale o StarfinCore Spigot da plataforma antes do StarfinBedWars em **cada servidor**. O `plugin.yml` agora exige `StarfinCore`.
+2. Inicie uma vez para gerar `plugins/StarfinBedWars/stats.yml`; configure `mysql.host`, `port`, `database`, `username`, `password` e `ssl-mode`.
+3. Garanta que todos os servidores BedWars apontem ao **mesmo banco MySQL** com schema acessivel para criar tabelas. Habilite `enabled: true` no `stats.yml` de cada servidor e reinicie.
+4. Use `/sbw stats`, `/sbw perfil` ou `/sbw nivel` para ver o proprio perfil. `/sbw stats <jogador|UUID>` consulta qualquer perfil ja registrado na rede; o console deve informar um identificador.
+
+O perfil e identificado pelo UUID (o nome mostrado e atualizado quando o jogador entra). A partida concluida registra partidas, vitorias, derrotas, empates, abates, abates finais, mortes, camas destruidas e XP total. Niveis sao calculados a partir do XP com a curva editavel em `stats.yml`; o nivel inicial e 1. Os valores padrao de XP sao participacao 25, vitoria 100, abate 10, abate final 20 adicionais e cama 40. Partidas canceladas antes ou durante o jogo nao concedem XP. Uma saida definitiva impede receber vitoria da equipe depois de abandonar a partida.
+
+O registro `sbw_match_results` tem chave unica `(match_id, player_uuid)`, e as somas dos perfis ocorrem na mesma transacao InnoDB. Assim, dois servidores ou uma retransmissao do mesmo resultado nao duplicam XP e vitorias. O trabalho JDBC e feito em uma thread dedicada, sem consultas no thread principal do Bukkit. Partidas finalizadas sao gravadas primeiro em `stats-pending/*.properties` e reenviadas a cada 60 s ate que o banco confirme a transacao, inclusive apos reinicio do plugin. **Nao delete esse diretorio quando houver falha de conexao**. Existe uma pequena janela entre o evento de fim da partida e a gravacao assincrona do arquivo local; uma queda brusca nesse exato instante pode perder o resultado. O sistema nao recupera partidas interrompidas por crash nem faz migracao de estatisticas antigas inexistentes.
+
+`stats.yml` vem desativado por padrao para nao impedir que instalacoes existentes iniciem sem credenciais. SQLite local nao e um banco compartilhado para uma rede BungeeCord. Proteja as credenciais e utilize SSL adequado no MySQL; `ssl-mode: REQUIRED` e o padrao. Para isolamento, o usuario SQL deve ter permissoes apenas nas tabelas deste modulo.
 
 ## Instalar e configurar
 
