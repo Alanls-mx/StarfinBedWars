@@ -203,7 +203,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
                     && plugin.getConfig().getBoolean("tab.lobby.enabled", true);
                 restoreBoard(player, !lobbyTab);
             }
-            skins.restore(player);
+            skins.refreshLobby(player);
             updateLobbyTab(player);
             return;
         }

@@ -11,7 +11,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 /** Adds presentation options to older config.yml files without changing existing values. */
 public final class PresentationConfigMigrator {
     private static final String[] PATHS = {
-        "tab.enabled", "tab.header", "tab.footer", "tab.team-prefixes",
+        "tab.enabled", "tab.isolate-matches", "tab.header", "tab.footer", "tab.team-prefixes",
         "tab.team-prefix", "tab.show-spectators", "tab.spectator-prefix",
         "tab.skins.enabled", "tab.skins.fallback-player", "tab.skins.aliases",
         "tab.lobby.enabled", "tab.lobby.header", "tab.lobby.footer",

@@ -55,8 +55,8 @@ final class TabSkinProfileLookup {
 
     private static JsonObject read(String address) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
-        connection.setConnectTimeout(3000);
-        connection.setReadTimeout(3000);
+        connection.setConnectTimeout(8000);
+        connection.setReadTimeout(8000);
         connection.setRequestProperty("Accept", "application/json");
         connection.setRequestProperty("User-Agent", "StarfinBedWars/1.0");
         try {

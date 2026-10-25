@@ -176,6 +176,7 @@ match-chat:
 
 tab:
   enabled: true
+  isolate-matches: true # Lobby principal e cada partida mostram apenas seus proprios jogadores.
   # Placeholders: {arena}, {mode}, {players}, {max}, {footer}. Use \n para novas linhas.
   header: '&b&lSTARFIN BEDWARS\n{footer}'
   footer: '{footer}' # Usa scoreboard.footer; voce tambem pode escrever o texto diretamente aqui.

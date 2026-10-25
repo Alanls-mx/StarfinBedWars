@@ -38,6 +38,12 @@ final class TabSkinPacketsV1_8_R3 {
     @SuppressWarnings("unchecked")
     static void send(Player viewer, Player subject, TabSkinProfileLookup.Texture texture) {
         EntityPlayer handle = ((CraftPlayer) subject).getHandle();
+        // The 1.8 client may keep the already known PlayerInfo entry and its
+        // texture when it receives ADD_PLAYER alone. Replace that entry so the
+        // TAB face is rebuilt from the signed profile.
+        ((CraftPlayer) viewer).getHandle().playerConnection.sendPacket(
+            new PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.REMOVE_PLAYER,
+                handle));
         PacketPlayOutPlayerInfo packet = new PacketPlayOutPlayerInfo(
             PacketPlayOutPlayerInfo.EnumPlayerInfoAction.ADD_PLAYER, handle);
         if (texture != null) {
@@ -55,5 +61,11 @@ final class TabSkinPacketsV1_8_R3 {
             }
         }
         ((CraftPlayer) viewer).getHandle().playerConnection.sendPacket(packet);
+    }
+
+    static void hide(Player viewer, Player subject) {
+        ((CraftPlayer) viewer).getHandle().playerConnection.sendPacket(
+            new PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.REMOVE_PLAYER,
+                ((CraftPlayer) subject).getHandle()));
     }
 }

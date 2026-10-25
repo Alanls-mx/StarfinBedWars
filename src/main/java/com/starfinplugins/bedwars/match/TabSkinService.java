@@ -24,6 +24,7 @@ final class TabSkinService {
     private final Map<String, Cached> cache = new HashMap<String, Cached>();
     private final Set<String> pending = new HashSet<String>();
     private final Map<UUID, Map<UUID, String>> sent = new HashMap<UUID, Map<UUID, String>>();
+    private final Map<UUID, Set<UUID>> hidden = new HashMap<UUID, Set<UUID>>();
     private ThreadPoolExecutor executor;
     private boolean available = true;
 
@@ -45,19 +46,24 @@ final class TabSkinService {
         if (executor != null) executor.shutdownNow();
         executor = null;
         sent.clear();
+        hidden.clear();
         pending.clear();
         cache.clear();
     }
 
     void onQuit(Player player) {
         sent.remove(player.getUniqueId());
+        hidden.remove(player.getUniqueId());
         for (Map<UUID, String> entries : sent.values()) entries.remove(player.getUniqueId());
+        for (Set<UUID> entries : hidden.values()) entries.remove(player.getUniqueId());
     }
 
     void restore(Player viewer) {
         Map<UUID, String> entries = sent.remove(viewer.getUniqueId());
-        if (entries == null) return;
-        for (UUID id : entries.keySet()) {
+        Set<UUID> restore = hidden.remove(viewer.getUniqueId());
+        if (restore == null) restore = new HashSet<UUID>();
+        if (entries != null) restore.addAll(entries.keySet());
+        for (UUID id : restore) {
             Player subject = Bukkit.getPlayer(id);
             if (subject != null && subject.isOnline()) {
                 try { TabSkinPacketsV1_8_R3.send(viewer, subject, null); }
@@ -66,16 +72,40 @@ final class TabSkinService {
         }
     }
 
+    void refreshLobby(Player viewer) { refresh(viewer, null); }
+
     void refresh(Player viewer, GameMatch match) {
-        if (!available || executor == null || !plugin.getConfig().getBoolean("tab.skins.enabled", true)) {
+        if (!available || executor == null || !plugin.getConfig().getBoolean("tab.enabled", true)
+                || !plugin.getConfig().getBoolean("tab.isolate-matches", true)) {
             restore(viewer);
             return;
         }
+        boolean useSkins = plugin.getConfig().getBoolean("tab.skins.enabled", true);
         Set<UUID> visible = new HashSet<UUID>();
+        Set<UUID> hiddenForViewer = hidden.get(viewer.getUniqueId());
+        if (hiddenForViewer == null) {
+            hiddenForViewer = new HashSet<UUID>();
+            hidden.put(viewer.getUniqueId(), hiddenForViewer);
+        }
         for (Player subject : Bukkit.getOnlinePlayers()) {
-            if (matches.getMatchForPlayer(subject.getUniqueId()) != match
-                    && matches.getSpectatedMatch(subject.getUniqueId()) != match) continue;
+            GameMatch subjectMatch = matches.getMatchForPlayer(subject.getUniqueId());
+            if (subjectMatch == null) subjectMatch = matches.getSpectatedMatch(subject.getUniqueId());
+            if (!shouldShow(match, subjectMatch)) {
+                if (hiddenForViewer.add(subject.getUniqueId())) {
+                    try { TabSkinPacketsV1_8_R3.hide(viewer, subject); }
+                    catch (RuntimeException error) { disable(error); return; }
+                }
+                Map<UUID, String> known = sent.get(viewer.getUniqueId());
+                if (known != null) known.remove(subject.getUniqueId());
+                continue;
+            }
             visible.add(subject.getUniqueId());
+            boolean needsShow = hiddenForViewer.remove(subject.getUniqueId());
+            if (needsShow) {
+                try { TabSkinPacketsV1_8_R3.send(viewer, subject, null); }
+                catch (RuntimeException error) { disable(error); return; }
+            }
+            if (!useSkins) continue;
             TabSkinProfileLookup.Texture live = TabSkinPacketsV1_8_R3.liveTexture(subject);
             if (live != null) {
                 // Vanilla already sends signed textures from the live GameProfile.
@@ -113,6 +143,15 @@ final class TabSkinService {
         }
     }
 
+    static boolean shouldShow(GameMatch viewerMatch, GameMatch subjectMatch) {
+        return viewerMatch == subjectMatch;
+    }
+
+    private void disable(RuntimeException error) {
+        available = false;
+        plugin.getLogger().warning("TAB individual desativado: " + error.getMessage());
+    }
+
     private String sourceName(String playerName) {
         String alias = "";
         ConfigurationSection section = plugin.getConfig().getConfigurationSection("tab.skins.aliases");
@@ -139,6 +178,8 @@ final class TabSkinService {
                     catch (Exception error) {
                         // Offline/no premium profile and temporary Mojang failures use
                         // the client's normal default skin until the retry window ends.
+                        plugin.getLogger().fine("Skin do TAB indisponivel para " + source
+                            + ": " + error.getMessage());
                     }
                     final TabSkinProfileLookup.Texture resolved = texture;
                     if (!plugin.isEnabled()) return;
