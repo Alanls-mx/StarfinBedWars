@@ -33,6 +33,12 @@ O registro `sbw_match_results` tem chave unica `(match_id, player_uuid)`, e as s
 
 `stats.yml` vem desativado por padrao para nao impedir que instalacoes existentes iniciem sem credenciais. SQLite local nao e um banco compartilhado para uma rede BungeeCord. Proteja as credenciais e utilize SSL adequado no MySQL; `ssl-mode: REQUIRED` e o padrao. Para isolamento, o usuario SQL deve ter permissoes apenas nas tabelas deste modulo.
 
+## Catalogo de rede e migracao de YAML para banco SQL
+
+`network.yml` controla a publicacao assincrona de servidores, arenas completas (incluindo YAML de equipes, camas, geradores e regioes), partidas e presenca de jogadores nas tabelas `sbw_network_*`. Cada Spigot precisa de um `server-id` unico, igual ao nome no BungeeCord; todos usam o MySQL comum de `stats.yml`. O catalogo vem **desativado por padrao** e faz heartbeat periodico. O proxy e suas reservas/transferencias ainda precisam ser implementados.
+
+Para copiar arenas e configuracoes locais para MySQL ou SQLite com backup ZIP, use `/sbw migrate preview mysql` e depois `/sbw migrate apply mysql confirm` (ou `sqlite`). A importacao e idempotente quando o conteudo e identico e recusa conflitos sem sobrescrever. **Isso exporta os metadados, mas nao substitui o YAML local como fonte do gameplay nem copia os arquivos fisicos de mundos-template.** Veja [STARFINBEDWARS_NETWORK_STORAGE_MIGRATION.md](STARFINBEDWARS_NETWORK_STORAGE_MIGRATION.md) para schema, seguranca, consultas e checklist de testes.
+
 ## Instalar e configurar
 
 1. Coloque o JAR em `plugins/` e inicie o servidor.

@@ -88,6 +88,14 @@ public final class ArenaService implements ManagedService {
         return repository.snapshot(arena.getId());
     }
 
+    /** Read-only published/draft metadata for network discovery; safe during a match. */
+    public String getStoredConfiguration(ArenaDefinition arena) throws IOException {
+        if (arena == null || arenas.get(arena.getId()) != arena) {
+            throw new IllegalArgumentException("Arena nao gerenciada.");
+        }
+        return repository.snapshot(arena.getId());
+    }
+
     public ArenaDefinition restoreSnapshot(String arenaId, String snapshot) throws IOException {
         ArenaDefinition current = getArena(arenaId);
         if (current == null || !editingArenas.contains(current.getId())) {

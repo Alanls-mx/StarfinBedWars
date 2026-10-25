@@ -20,6 +20,8 @@ import com.starfinplugins.bedwars.match.MatchVisualService;
 import com.starfinplugins.bedwars.match.MatchPointService;
 import com.starfinplugins.bedwars.match.BedHologramService;
 import com.starfinplugins.bedwars.stats.MatchStatisticsService;
+import com.starfinplugins.bedwars.network.NetworkRegistryService;
+import com.starfinplugins.bedwars.storage.StorageMigrationService;
 import com.starfinplugins.bedwars.menu.BedWarsMenuService;
 import com.starfinplugins.bedwars.menu.NextMatchService;
 import com.starfinplugins.bedwars.setup.ArenaSetupWizardService;
@@ -64,6 +66,8 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private MatchPointService matchPoint;
     private BedHologramService bedHolograms;
     private MatchStatisticsService statistics;
+    private NetworkRegistryService networkRegistry;
+    private StorageMigrationService storageMigration;
     private boolean initialized;
 
     @Override
@@ -119,6 +123,8 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             matchPoint = new MatchPointService(this, matchEngine, mobGuard);
             bedHolograms = new BedHologramService(this, arenaService, matchEngine, mobGuard);
             statistics = new MatchStatisticsService(this);
+            networkRegistry = new NetworkRegistryService(this, arenaService, matchEngine);
+            storageMigration = new StorageMigrationService(this, arenaService);
             shops = new ShopService(this, arenaService, matchEngine, teamUpgrades);
             shops.setMobGuard(mobGuard);
             shops.setEquipment(equipment);
@@ -126,6 +132,8 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services.add(arenaService);
             services.add(matchEngine);
             services.add(statistics);
+            services.add(networkRegistry);
+            services.add(storageMigration);
             services.add(tntAutoIgnite);
             services.add(reconnect);
             services.add(arenaEditing);
@@ -196,6 +204,8 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     public ReconnectService getReconnect() { return reconnect; }
     public MatchChatService getMatchChat() { return matchChat; }
     public MatchStatisticsService getStatistics() { return statistics; }
+    public NetworkRegistryService getNetworkRegistry() { return networkRegistry; }
+    public StorageMigrationService getStorageMigration() { return storageMigration; }
 
     public WorldManagementService getWorldManagement() { return worldManagement; }
 

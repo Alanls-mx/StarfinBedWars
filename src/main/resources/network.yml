@@ -1,0 +1,8 @@
+# Catalogo MySQL compartilhado para descoberta de servidores, arenas e partidas.
+# Requer stats.yml enabled: true (mesmo MySQL usado pelos perfis).
+# Cada servidor Spigot deve ter um server-id EXCLUSIVO igual ao nome registrado no BungeeCord.
+# O proxy ainda precisa implementar reservas e transferencia; joinable e apenas informativo.
+enabled: false
+server-id: 'bedwars-01'
+refresh-ticks: 100 # 5 segundos, heartbeat; proxy deve ignorar registros com mais de 30 s.
+mysql-pool-size: 2

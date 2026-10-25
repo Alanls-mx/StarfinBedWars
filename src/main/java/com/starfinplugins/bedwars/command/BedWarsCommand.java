@@ -14,6 +14,7 @@ import com.starfinplugins.bedwars.domain.arena.ResourceGeneratorDefinition;
 import com.starfinplugins.bedwars.domain.economy.ResourceType;
 import com.starfinplugins.bedwars.match.MatchEngineService;
 import com.starfinplugins.bedwars.match.MatchPointService;
+import com.starfinplugins.bedwars.storage.SqlMigrationWriter;
 import com.starfinplugins.bedwars.domain.match.GameMatch;
 import com.starfinplugins.bedwars.domain.match.MatchState;
 import com.starfinplugins.bedwars.world.WorldManagementService;
@@ -126,6 +127,30 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         }
         if (args.length == 0 || "help".equalsIgnoreCase(args[0])) {
             sendHelp(sender, label, args.length > 1 ? args[1] : null);
+            return true;
+        }
+        if ("migrate".equalsIgnoreCase(args[0])) {
+            if (!sender.hasPermission("starfinbedwars.admin")) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "Migracao SQL exige starfinbedwars.admin.");
+                return true;
+            }
+            if (args.length < 3 || args.length > 4
+                    || !("preview".equalsIgnoreCase(args[1]) || "apply".equalsIgnoreCase(args[1]))
+                    || ("apply".equalsIgnoreCase(args[1])
+                        && (args.length != 4 || !"confirm".equalsIgnoreCase(args[3])))
+                    || ("preview".equalsIgnoreCase(args[1]) && args.length != 3)) {
+                sender.sendMessage(PREFIX + ChatColor.YELLOW
+                    + "Uso: /sbw migrate <preview|apply> <mysql|sqlite> [confirm]");
+                return true;
+            }
+            SqlMigrationWriter.Target target;
+            try {
+                target = SqlMigrationWriter.Target.valueOf(args[2].toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException invalid) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "Destino valido: mysql ou sqlite.");
+                return true;
+            }
+            plugin.getStorageMigration().execute(sender, "apply".equalsIgnoreCase(args[1]), target);
             return true;
         }
         if ("stats".equalsIgnoreCase(args[0]) || "perfil".equalsIgnoreCase(args[0])
@@ -1474,6 +1499,10 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         sender.sendMessage(ChatColor.GRAY + "/sbw setarena <center here|pos1|pos2|upoversize <L>x<C>|upheight <n>|uplow <n>|tp|preview|confirm|cancel>");
         sender.sendMessage(ChatColor.GRAY + "/sbw join <arena> | /sbw spectate <arena> | /sbw leave");
         sender.sendMessage(ChatColor.GRAY + "/sbw stats [jogador|UUID] | /sbw perfil [jogador]");
+        if (sender.hasPermission("starfinbedwars.admin")) {
+            sender.sendMessage(ChatColor.GRAY
+                + "/sbw migrate preview <mysql|sqlite> | apply <mysql|sqlite> confirm");
+        }
         if (sender.hasPermission("starfinbedwars.command.matchpoint")
                 || sender.hasPermission("starfinbedwars.admin")) {
             sender.sendMessage(ChatColor.GRAY
@@ -1513,12 +1542,20 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                     || sender.hasPermission("starfinbedwars.admin")) choices.add("status");
             if (hasArenaAdmin(sender)) {
                 choices.addAll(Arrays.asList("setarena", "create", "setup", "next"));
+                if (sender.hasPermission("starfinbedwars.admin")) choices.add("migrate");
             }
             if (sender.hasPermission("starfinbedwars.command.matchpoint")
                     || sender.hasPermission("starfinbedwars.admin")) choices.add("matchpoint");
             if (sender.hasPermission("starfinbedwars.command.world")
                     || sender.hasPermission("starfinbedwars.admin")) choices.add("world");
             return filter(choices, args[0]);
+        }
+        if ("migrate".equalsIgnoreCase(args[0]) && sender.hasPermission("starfinbedwars.admin")) {
+            if (args.length == 2) return filter(Arrays.asList("preview", "apply"), args[1]);
+            if (args.length == 3) return filter(Arrays.asList("mysql", "sqlite"), args[2]);
+            if (args.length == 4 && "apply".equalsIgnoreCase(args[1])) {
+                return filter(Collections.singletonList("confirm"), args[3]);
+            }
         }
         if ("matchpoint".equalsIgnoreCase(args[0]) && args.length == 2) {
             if (!sender.hasPermission("starfinbedwars.command.matchpoint")
