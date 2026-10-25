@@ -30,6 +30,7 @@ public class ArenaRepositoryTest {
         ArenaRepository repository = new ArenaRepository(temporaryFolder.getRoot());
         ArenaDefinition arena = new ArenaDefinition("duo", "bedwars_template");
         arena.setDisplayName("Duplas");
+        arena.setGroup("duplas");
         arena.setMinimumPlayers(4);
         arena.setCountdownSeconds(20);
         arena.setEnabled(true);
@@ -66,6 +67,7 @@ public class ArenaRepositoryTest {
         ArenaDefinition copy = loaded.get(0);
         assertEquals("duo", copy.getId());
         assertEquals("Duplas", copy.getDisplayName());
+        assertEquals("duplas", copy.getGroup());
         assertEquals(4, copy.getMinimumPlayers());
         assertTrue(copy.isEnabled());
         assertEquals(6, copy.getTeams().get("red").getCapacity());
@@ -102,7 +104,8 @@ public class ArenaRepositoryTest {
         assertEquals(8, copy.getGenerators().get("iron_1").getRegion().getMinimumX());
         YamlConfiguration saved = YamlConfiguration.loadConfiguration(new File(
             new File(temporaryFolder.getRoot(), "arenas"), "duo.yml"));
-        assertEquals(7, saved.getInt("version"));
+        assertEquals(8, saved.getInt("version"));
+        assertEquals("duplas", saved.getString("group"));
         assertFalse(repository.getTemplateDirectory("duo").exists());
     }
 
@@ -121,6 +124,7 @@ public class ArenaRepositoryTest {
         ArenaDefinition loaded = new ArenaRepository(data).loadAll().get(0);
 
         assertEquals("legacy", loaded.getId());
+        assertEquals("default", loaded.getGroup());
         assertEquals(null, loaded.getEditSpawn());
     }
 
