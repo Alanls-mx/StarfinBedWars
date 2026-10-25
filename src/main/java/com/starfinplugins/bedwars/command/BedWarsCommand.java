@@ -22,6 +22,7 @@ import com.starfinplugins.bedwars.world.SafeLocationResolver;
 import com.starfinplugins.bedwars.integration.worldedit.WorldEditSelectionAdapter;
 import com.starfinplugins.bedwars.menu.BedWarsMenuService;
 import com.starfinplugins.bedwars.setup.ArenaSetupWizardService;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -160,6 +161,28 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             } else {
                 String target = args.length == 2 ? args[1] : ((Player) sender).getUniqueId().toString();
                 plugin.getStatistics().showProfile(sender, target);
+            }
+            return true;
+        }
+        if ("idioma".equalsIgnoreCase(args[0]) || "language".equalsIgnoreCase(args[0])
+                || "lang".equalsIgnoreCase(args[0])) {
+            if (!(sender instanceof Player) || args.length > 2) {
+                sender.sendMessage(PREFIX + ChatColor.YELLOW + "Use /sbw idioma [pt_BR|en_US|es_ES].");
+                return true;
+            }
+            Player player = (Player) sender;
+            if (args.length == 1) {
+                sender.sendMessage(PREFIX + ChatColor.YELLOW + "Idioma atual: " + ChatColor.WHITE
+                    + plugin.getStatistics().getLanguage(player.getUniqueId()));
+                return true;
+            }
+            try {
+                plugin.getStatistics().setLanguage(player, args[1]);
+                sender.sendMessage(PREFIX + ChatColor.GREEN + "Idioma registrado para sincronizacao na rede: "
+                    + com.starfinplugins.bedwars.stats.PlayerPreferences.languageOrDefault(args[1]));
+            } catch (java.io.IOException | IllegalStateException | IllegalArgumentException error) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "Nao foi possivel salvar idioma: "
+                    + error.getMessage());
             }
             return true;
         }
@@ -326,7 +349,9 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 return true;
             }
             try {
-                matches.join((Player) sender, args[1].toLowerCase(Locale.ROOT));
+                String requested = args[1].toLowerCase(Locale.ROOT);
+                if (requested.startsWith("group:")) requested = arenaForGroup(requested.substring(6));
+                matches.join((Player) sender, requested);
             } catch (RuntimeException error) {
                 sender.sendMessage(PREFIX + ChatColor.RED + error.getMessage());
             }
@@ -822,6 +847,19 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 + (arenas.getArenas().isEmpty() ? "nenhuma" : names()));
             return;
         }
+        if ("group".equals(action) && args.length == 4) {
+            if (!requireAdmin(sender)) return;
+            ArenaDefinition arena = getArena(sender, args[2]);
+            if (arena == null) return;
+            try {
+                arenas.setGroup(arena, args[3].toLowerCase(Locale.ROOT));
+                sender.sendMessage(PREFIX + ChatColor.GREEN + "Arena " + arena.getId()
+                    + " adicionada ao grupo '" + arena.getGroup() + "'.");
+            } catch (IOException | IllegalArgumentException | IllegalStateException error) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "Falha ao alterar grupo: " + error.getMessage());
+            }
+            return;
+        }
         if (("import".equals(action) || "create".equals(action)) && args.length == 4) {
             if (!requireAdmin(sender)) return;
             final boolean startEditing = "create".equals(action);
@@ -1106,8 +1144,8 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             }
             return;
         }
-        sender.sendMessage(PREFIX + ChatColor.RED
-            + "Uso: /sbw arena list|menu|create|import|tp|exit|team|removeteam|edit|region|set|min|countdown|generator|shop|validate|enable|disable");
+            sender.sendMessage(PREFIX + ChatColor.RED
+            + "Uso: /sbw arena list|group|menu|create|import|tp|exit|team|removeteam|edit|region|set|min|countdown|generator|shop|validate|enable|disable");
     }
 
     private void handleEdit(final CommandSender sender, String[] args) {
@@ -1457,6 +1495,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             if ("arena".equals(normalized)) {
                 sender.sendMessage(PREFIX + ChatColor.YELLOW + "Arenas");
                 sender.sendMessage(ChatColor.GRAY + "/sbw arena <list|create|import|edit|publish|cancel|exit>");
+                sender.sendMessage(ChatColor.GRAY + "/sbw arena group <arena> <grupo> - selecao na rede");
                 sender.sendMessage(ChatColor.GRAY + "/sbw arena region <arena> <main|protection|waiting> <wand|worldedit|clear>");
                 sender.sendMessage(ChatColor.GRAY + "/sbw arena set <arena> <lobby|spectator|editspawn|spawn|respawn|bed> [equipe]");
                 sender.sendMessage(ChatColor.GRAY + "/sbw setarena ... - limites automaticos ou selecao manual");
@@ -1469,9 +1508,10 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             }
             if ("player".equals(normalized) || "jogador".equals(normalized)) {
                 sender.sendMessage(PREFIX + ChatColor.YELLOW + "Partidas");
-                sender.sendMessage(ChatColor.GRAY + "/sbw join <arena> | /sbw spectate <arena> | /sbw leave");
+                sender.sendMessage(ChatColor.GRAY + "/sbw join <arena|group:grupo> | /sbw spectate <arena> | /sbw leave");
                 sender.sendMessage(ChatColor.GRAY + "/sbw chat <global|team|spectator>");
                 sender.sendMessage(ChatColor.GRAY + "/sbw stats [jogador] - perfil, XP e nivel da rede");
+                sender.sendMessage(ChatColor.GRAY + "/sbw idioma [pt_BR|en_US|es_ES] - idioma salvo no MySQL");
                 return;
             }
             sender.sendMessage(PREFIX + ChatColor.RED + "Categoria invalida. Use setup, arena, world ou player.");
@@ -1497,7 +1537,8 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         sender.sendMessage(ChatColor.GRAY + "/sbw create teams <quantidade>");
         sender.sendMessage(ChatColor.GRAY + "/sbw setup <status|undo|pause|resume <arena>|cancel <arena>>");
         sender.sendMessage(ChatColor.GRAY + "/sbw setarena <center here|pos1|pos2|upoversize <L>x<C>|upheight <n>|uplow <n>|tp|preview|confirm|cancel>");
-        sender.sendMessage(ChatColor.GRAY + "/sbw join <arena> | /sbw spectate <arena> | /sbw leave");
+        sender.sendMessage(ChatColor.GRAY + "/sbw join <arena|group:grupo> | /sbw spectate <arena> | /sbw leave");
+        sender.sendMessage(ChatColor.GRAY + "/sbw arena group <arena> <grupo> | /sbw idioma [pt_BR|en_US|es_ES]");
         sender.sendMessage(ChatColor.GRAY + "/sbw stats [jogador|UUID] | /sbw perfil [jogador]");
         if (sender.hasPermission("starfinbedwars.admin")) {
             sender.sendMessage(ChatColor.GRAY
@@ -1537,7 +1578,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         if (args.length == 1) {
             List<String> choices = new ArrayList<String>(Arrays.asList(
                 "help", "version", "menu", "arena", "join", "spectate", "leave", "chat",
-                "stats", "perfil", "nivel"));
+                "stats", "perfil", "nivel", "idioma", "language", "lang"));
             if (sender.hasPermission("starfinbedwars.command.status")
                     || sender.hasPermission("starfinbedwars.admin")) choices.add("status");
             if (hasArenaAdmin(sender)) {
@@ -1556,6 +1597,10 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             if (args.length == 4 && "apply".equalsIgnoreCase(args[1])) {
                 return filter(Collections.singletonList("confirm"), args[3]);
             }
+        }
+        if (args.length == 2 && ("idioma".equalsIgnoreCase(args[0])
+                || "language".equalsIgnoreCase(args[0]) || "lang".equalsIgnoreCase(args[0]))) {
+            return filter(Arrays.asList("pt_BR", "en_US", "es_ES"), args[1]);
         }
         if ("matchpoint".equalsIgnoreCase(args[0]) && args.length == 2) {
             if (!sender.hasPermission("starfinbedwars.command.matchpoint")
@@ -1641,7 +1686,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             if (hasArenaAdmin(sender)) {
                 choices.addAll(Arrays.asList("menu", "create", "import", "loadsource", "tp", "exit",
                     "team", "removeteam", "edit", "region", "set", "min", "countdown",
-                    "generator", "shop", "validate", "enable", "disable"));
+                    "generator", "shop", "group", "validate", "enable", "disable"));
             }
             return filter(choices, args[1]);
         }
@@ -1680,7 +1725,14 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             return filter(arenaIds(), args[2]);
         }
         if (args.length == 2 && ("join".equalsIgnoreCase(args[0]) || "spectate".equalsIgnoreCase(args[0]))) {
-            return filter(arenaIds(), args[1]);
+            List<String> candidates = arenaIds();
+            if ("join".equalsIgnoreCase(args[0])) {
+                for (ArenaDefinition arena : arenas.getArenas()) {
+                    String group = "group:" + arena.getGroup();
+                    if (!candidates.contains(group)) candidates.add(group);
+                }
+            }
+            return filter(candidates, args[1]);
         }
         if (args.length == 4 && "arena".equalsIgnoreCase(args[0]) && "set".equalsIgnoreCase(args[1])) {
             return filter(Arrays.asList("lobby", "spectator", "editspawn", "spawn", "respawn", "bed"), args[3]);
@@ -1727,6 +1779,31 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         List<String> ids = new ArrayList<String>();
         for (ArenaDefinition arena : arenas.getArenas()) ids.add(arena.getId());
         return ids;
+    }
+
+    /** Prefer a populated WAITING room; avoid splitting players across empty arenas. */
+    private String arenaForGroup(String group) {
+        if (!group.matches("[a-z0-9_-]{1,32}")) {
+            throw new IllegalArgumentException("Grupo invalido.");
+        }
+        ArenaDefinition best = null;
+        int occupancy = -1;
+        for (ArenaDefinition arena : arenas.getArenas()) {
+            if (!arena.isEnabled() || !group.equals(arena.getGroup())
+                    || arenas.isEditing(arena.getId()) || matches.isPreparingArena(arena.getId())) continue;
+            GameMatch match = matches.getMatchForArena(arena.getId());
+            int count = match == null ? 0 : match.getConnectedCount();
+            if (match != null && (match.getState() != MatchState.WAITING
+                    && match.getState() != MatchState.STARTING
+                    || count >= arena.getMaximumPlayers())) continue;
+            if (best == null || count > occupancy
+                    || count == occupancy && arena.getId().compareTo(best.getId()) < 0) {
+                best = arena;
+                occupancy = count;
+            }
+        }
+        if (best == null) throw new IllegalStateException("Nenhuma arena disponivel no grupo '" + group + "'.");
+        return best.getId();
     }
 
     private boolean hasArenaAdmin(CommandSender sender) {

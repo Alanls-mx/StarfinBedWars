@@ -70,9 +70,10 @@ public final class ArenaRepository {
         ensureDirectory();
         File target = file(arena.getId());
         YamlConfiguration yaml = new YamlConfiguration();
-        yaml.set("version", 7);
+        yaml.set("version", 8);
         yaml.set("id", arena.getId());
         yaml.set("name", arena.getDisplayName());
+        yaml.set("group", arena.getGroup());
         yaml.set("source-world", arena.getSourceWorld());
         yaml.set("minimum-players", arena.getMinimumPlayers());
         yaml.set("countdown-seconds", arena.getCountdownSeconds());
@@ -201,11 +202,12 @@ public final class ArenaRepository {
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.load(file);
         int version = yaml.getInt("version", -1);
-        if (version < 1 || version > 7) {
+        if (version < 1 || version > 8) {
             throw new IOException("versao de arena nao suportada");
         }
         ArenaDefinition arena = new ArenaDefinition(yaml.getString("id"), yaml.getString("source-world"));
         arena.setDisplayName(yaml.getString("name", arena.getId()));
+        arena.setGroup(yaml.getString("group", "default"));
         arena.setMinimumPlayers(yaml.getInt("minimum-players", 2));
         arena.setCountdownSeconds(yaml.getInt("countdown-seconds", 30));
         arena.setEnabled(yaml.getBoolean("enabled", false));

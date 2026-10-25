@@ -4,6 +4,7 @@ import com.starfinplugins.bedwars.stats.StatsSettings;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -42,7 +43,8 @@ public final class MySqlNetworkRepository implements AutoCloseable {
                 + "server_id VARCHAR(32) NOT NULL, arena_id VARCHAR(32) NOT NULL,"
                 + "display_name VARCHAR(128) NOT NULL, source_world VARCHAR(64) NOT NULL,"
                 + "configuration_yaml MEDIUMTEXT NOT NULL, config_sha256 CHAR(64) NOT NULL,"
-                + "mode VARCHAR(16) NOT NULL, team_count INT NOT NULL, team_size INT NOT NULL,"
+                + "mode VARCHAR(16) NOT NULL, arena_group VARCHAR(32) NOT NULL DEFAULT 'default',"
+                + "team_count INT NOT NULL, team_size INT NOT NULL,"
                 + "generator_count INT NOT NULL,"
                 + "min_players INT NOT NULL, max_players INT NOT NULL, players INT NOT NULL,"
                 + "countdown_seconds INT NOT NULL, enabled TINYINT(1) NOT NULL,"
@@ -74,10 +76,28 @@ public final class MySqlNetworkRepository implements AutoCloseable {
                 + "INDEX idx_sbw_player_server (server_id,server_instance,online),"
                 + "INDEX idx_sbw_player_match (match_id,online)"
                 + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            ensureArenaGroup(connection);
             pool = next;
         } catch (SQLException | RuntimeException error) {
             next.close();
             throw error;
+        }
+    }
+
+    private void ensureArenaGroup(Connection connection) throws SQLException {
+        DatabaseMetaData metadata = connection.getMetaData();
+        try (ResultSet columns = metadata.getColumns(connection.getCatalog(), null,
+                "sbw_network_arenas", "arena_group")) {
+            if (columns.next()) return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE sbw_network_arenas ADD COLUMN arena_group"
+                + " VARCHAR(32) NOT NULL DEFAULT 'default'");
+        } catch (SQLException concurrentMigration) {
+            try (ResultSet columns = metadata.getColumns(connection.getCatalog(), null,
+                    "sbw_network_arenas", "arena_group")) {
+                if (!columns.next()) throw concurrentMigration;
+            }
         }
     }
 
@@ -164,13 +184,14 @@ public final class MySqlNetworkRepository implements AutoCloseable {
     private void upsertArenas(Connection connection, NetworkSnapshot snapshot, String token) throws SQLException {
         String query = "INSERT INTO sbw_network_arenas"
             + " (server_id,arena_id,display_name,source_world,configuration_yaml,config_sha256,"
-            + "mode,team_count,team_size,generator_count,min_players,max_players,players,countdown_seconds,"
+            + "mode,arena_group,team_count,team_size,generator_count,min_players,max_players,players,countdown_seconds,"
             + "enabled,editing,joinable,state,match_id,sync_token,updated_at,deleted_at)"
-            + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0) ON DUPLICATE KEY UPDATE"
+            + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0) ON DUPLICATE KEY UPDATE"
             + " display_name=VALUES(display_name),source_world=VALUES(source_world),"
             + " configuration_yaml=IF(config_sha256<>VALUES(config_sha256),"
             + " VALUES(configuration_yaml),configuration_yaml),config_sha256=VALUES(config_sha256),"
-            + " mode=VALUES(mode),team_count=VALUES(team_count),team_size=VALUES(team_size),"
+            + " mode=VALUES(mode),arena_group=VALUES(arena_group),"
+            + " team_count=VALUES(team_count),team_size=VALUES(team_size),"
             + " generator_count=VALUES(generator_count),"
             + " min_players=VALUES(min_players),max_players=VALUES(max_players),"
             + " players=VALUES(players),countdown_seconds=VALUES(countdown_seconds),"
@@ -187,6 +208,7 @@ public final class MySqlNetworkRepository implements AutoCloseable {
                 statement.setString(index++, arena.yaml);
                 statement.setString(index++, arena.configHash);
                 statement.setString(index++, arena.mode);
+                statement.setString(index++, arena.group);
                 statement.setInt(index++, arena.teamCount);
                 statement.setInt(index++, arena.teamSize);
                 statement.setInt(index++, arena.generatorCount);

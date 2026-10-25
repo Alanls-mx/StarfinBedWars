@@ -30,12 +30,20 @@ public final class NetworkSnapshot {
     }
 
     public static final class Arena {
-        public final String id, name, sourceWorld, yaml, configHash, mode, state, matchId;
+        public final String id, name, sourceWorld, yaml, configHash, mode, group, state, matchId;
         public final int teamCount, teamSize, generatorCount, minPlayers, maxPlayers, players, countdownSeconds;
         public final boolean enabled, editing, joinable;
 
         public Arena(String id, String name, String sourceWorld, String yaml,
                      String mode, int teamCount, int teamSize, int generatorCount, int minPlayers, int maxPlayers,
+                     int players, int countdownSeconds, boolean enabled, boolean editing,
+                     boolean joinable, String state, String matchId) {
+            this(id, name, sourceWorld, yaml, mode, "default", teamCount, teamSize, generatorCount,
+                minPlayers, maxPlayers, players, countdownSeconds, enabled, editing, joinable, state, matchId);
+        }
+
+        public Arena(String id, String name, String sourceWorld, String yaml,
+                     String mode, String group, int teamCount, int teamSize, int generatorCount, int minPlayers, int maxPlayers,
                      int players, int countdownSeconds, boolean enabled, boolean editing,
                      boolean joinable, String state, String matchId) {
             if (yaml == null || yaml.getBytes(StandardCharsets.UTF_8).length > 1024 * 1024) {
@@ -47,6 +55,7 @@ public final class NetworkSnapshot {
             this.yaml = yaml;
             this.configHash = sha256(yaml);
             this.mode = mode;
+            this.group = group;
             this.teamCount = teamCount;
             this.teamSize = teamSize;
             this.generatorCount = generatorCount;

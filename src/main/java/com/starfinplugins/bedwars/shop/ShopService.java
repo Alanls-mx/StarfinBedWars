@@ -16,6 +16,9 @@ import com.starfinplugins.bedwars.event.ShopPurchaseEvent;
 import com.starfinplugins.bedwars.match.MatchEngineService;
 import com.starfinplugins.bedwars.match.MatchEquipmentService;
 import com.starfinplugins.bedwars.service.ManagedService;
+import com.starfinplugins.bedwars.StarfinBedWarsPlugin;
+import com.starfinplugins.bedwars.stats.MatchStatisticsService;
+import com.starfinplugins.bedwars.stats.PlayerPreferences;
 import com.starfinplugins.bedwars.upgrades.TeamUpgradeService;
 import com.starfinplugins.bedwars.world.ManagedMobGuard;
 import com.starfinplugins.bedwars.world.SafeLocationResolver;
@@ -795,6 +798,15 @@ public final class ShopService implements ManagedService, Listener {
     }
 
     private Set<String> favoritesFor(UUID playerId) {
+        MatchStatisticsService stats = sharedStats();
+        PlayerPreferences preferences = stats == null ? null : stats.getCachedPreferences(playerId);
+        if (preferences != null && preferences.getQuickBuy() != null) {
+            Set<String> networkFavorites = new LinkedHashSet<String>();
+            for (String id : preferences.getQuickBuy()) {
+                if (settings.getItems().containsKey(id)) networkFavorites.add(id);
+            }
+            return networkFavorites;
+        }
         Set<String> saved = favorites.get(playerId);
         if (saved != null) return saved;
         Set<String> defaults = new LinkedHashSet<String>();
@@ -803,15 +815,30 @@ public final class ShopService implements ManagedService, Listener {
     }
 
     private void toggleFavorite(Player player, String itemId) {
-        Set<String> chosen = favorites.get(player.getUniqueId());
-        if (chosen == null) chosen = new LinkedHashSet<String>(favoritesFor(player.getUniqueId()));
+        Set<String> chosen = new LinkedHashSet<String>(favoritesFor(player.getUniqueId()));
         if (!chosen.add(itemId)) chosen.remove(itemId);
-        favorites.put(player.getUniqueId(), chosen);
-        try { saveFavorites(); }
-        catch (IOException error) {
-            plugin.getLogger().warning("Falha ao salvar favoritos de loja: " + error.getMessage());
-            player.sendMessage(ChatColor.RED + "Favorito alterado apenas nesta sessao.");
+        try {
+            MatchStatisticsService stats = sharedStats();
+            // Persist first; if the MySQL node is offline the local outbox retries safely.
+            if (stats != null && stats.isEnabled()) stats.setQuickBuy(player.getUniqueId(),
+                new ArrayList<String>(chosen));
+            favorites.put(player.getUniqueId(), chosen);
+            saveFavorites();
         }
+        catch (IOException error) {
+            plugin.getLogger().warning("Falha ao persistir favoritos de loja: " + error.getMessage());
+            player.sendMessage(ChatColor.RED + "Nao foi possivel persistir o favorito. Tente novamente.");
+        }
+    }
+
+    public List<String> getLegacyFavoriteIds(UUID playerId) {
+        Set<String> saved = favorites.get(playerId);
+        return saved == null ? null : new ArrayList<String>(saved);
+    }
+
+    private MatchStatisticsService sharedStats() {
+        return plugin instanceof StarfinBedWarsPlugin
+            ? ((StarfinBedWarsPlugin) plugin).getStatistics() : null;
     }
 
     private void loadFavorites() throws IOException {

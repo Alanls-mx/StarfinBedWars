@@ -24,6 +24,7 @@ public class MatchStatsTrackerTest {
         assertEquals(195, winner.xp);
         assertEquals(MatchResult.Outcome.LOSS, values.get(1).outcome);
         assertEquals(1, values.get(1).deaths);
+        assertEquals(1, values.get(1).finalDeaths);
     }
 
     @Test public void doesNotCountFriendlyFireOrCreditAbandonedWinner() {

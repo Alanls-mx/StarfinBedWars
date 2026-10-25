@@ -623,6 +623,14 @@ public final class ArenaService implements ManagedService {
         }
     }
 
+    /** Group used by the Bungee matchmaking catalog; does not alter active match rules. */
+    public void setGroup(ArenaDefinition arena, String group) throws IOException {
+        requireEditable(arena);
+        String previous = arena.getGroup();
+        arena.setGroup(group);
+        saveOrRestore(arena, () -> arena.setGroup(previous));
+    }
+
     public List<String> validate(ArenaDefinition arena) {
         return ArenaValidator.validate(arena, repository.getTemplateDirectory(arena.getId()),
             maximumRegionBlocks);

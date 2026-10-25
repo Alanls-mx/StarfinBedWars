@@ -32,6 +32,7 @@ public final class MatchStatsTracker {
         Entry dead = entries.get(victim);
         if (dead == null) return;
         dead.deaths++;
+        if (finalKill) dead.finalDeaths++;
         Entry attacker = entries.get(killer);
         if (attacker != null && attacker != dead && !attacker.team.equals(dead.team)) {
             attacker.kills++;
@@ -55,7 +56,7 @@ public final class MatchStatsTracker {
                 + e.finalKills * awards.finalKill + e.beds * awards.bed
                 + (outcome == MatchResult.Outcome.WIN ? awards.victory : 0L);
             results.add(new MatchResult(matchId, value.getKey(), e.name, e.kills,
-                e.finalKills, e.deaths, e.beds, outcome, xp));
+                e.finalKills, e.deaths, e.finalDeaths, e.beds, outcome, xp));
         }
         return results;
     }
@@ -63,7 +64,7 @@ public final class MatchStatsTracker {
     private static final class Entry {
         final String team;
         final String name;
-        int kills, finalKills, deaths, beds;
+        int kills, finalKills, deaths, finalDeaths, beds;
         boolean abandoned;
         Entry(String team, String name) { this.team = team; this.name = name; }
     }

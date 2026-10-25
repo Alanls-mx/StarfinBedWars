@@ -27,6 +27,14 @@ public class NetworkSnapshotTest {
         catch (UnsupportedOperationException expected) { }
     }
 
+    @Test public void publishesGroupWithoutChangingYamlHash() {
+        NetworkSnapshot.Arena grouped = new NetworkSnapshot.Arena(
+            "arena_1", "Arena", "world", "version: 8", "DUO", "ranked", 2, 2, 1,
+            2, 8, 0, 30, true, false, true, "AVAILABLE", null);
+        assertEquals("ranked", grouped.group);
+        assertEquals(arena("version: 8").configHash, grouped.configHash);
+    }
+
     private static NetworkSnapshot.Arena arena(String yaml) {
         return new NetworkSnapshot.Arena("arena_1", "Arena", "world", yaml, "DUO", 2, 2, 1,
             2, 8, 0, 30, true, false, true, "AVAILABLE", null);

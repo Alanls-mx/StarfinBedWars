@@ -12,14 +12,21 @@ public final class MatchResult {
     public final int kills;
     public final int finalKills;
     public final int deaths;
+    public final int finalDeaths;
     public final int beds;
     public final Outcome outcome;
     public final long xp;
 
     public MatchResult(UUID matchId, UUID playerId, String name, int kills, int finalKills,
                        int deaths, int beds, Outcome outcome, long xp) {
+        this(matchId, playerId, name, kills, finalKills, deaths, 0, beds, outcome, xp);
+    }
+
+    public MatchResult(UUID matchId, UUID playerId, String name, int kills, int finalKills,
+                       int deaths, int finalDeaths, int beds, Outcome outcome, long xp) {
         if (matchId == null || playerId == null || outcome == null || xp < 0
-                || kills < 0 || finalKills < 0 || deaths < 0 || beds < 0 || finalKills > kills) {
+                || kills < 0 || finalKills < 0 || deaths < 0 || finalDeaths < 0
+                || finalDeaths > deaths || beds < 0 || finalKills > kills) {
             throw new IllegalArgumentException("Resultado de partida invalido");
         }
         this.matchId = matchId;
@@ -28,6 +35,7 @@ public final class MatchResult {
         this.kills = kills;
         this.finalKills = finalKills;
         this.deaths = deaths;
+        this.finalDeaths = finalDeaths;
         this.beds = beds;
         this.outcome = outcome;
         this.xp = xp;

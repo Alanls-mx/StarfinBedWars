@@ -156,7 +156,7 @@ public final class NetworkRegistryService implements ManagedService, Listener {
                 : teamSize == 4 ? "SQUAD" : "CUSTOM";
             advertisements.add(new NetworkSnapshot.Arena(arena.getId(),
                 shortName(arena.getDisplayName()), arena.getSourceWorld(),
-                arenas.getStoredConfiguration(arena), mode, arena.getTeamList().size(), teamSize,
+                arenas.getStoredConfiguration(arena), mode, arena.getGroup(), arena.getTeamList().size(), teamSize,
                 arena.getGeneratorList().size(), arena.getMinimumPlayers(),
                 arena.getMaximumPlayers(), players, arena.getCountdownSeconds(),
                 arena.isEnabled(), editing, joinable, state,

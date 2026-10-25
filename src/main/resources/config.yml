@@ -195,6 +195,57 @@ tab:
 
 scoreboard:
   enabled: true
+  # Lobby PRINCIPAL: jogadores fora de qualquer arena. Separado de layouts.lobby
+  # (sala de espera de uma partida). Desative se o StarfinLobby for dono da sidebar.
+  main-lobby:
+    enabled: true
+    title: '&e&lBED WARS'
+    # Variaveis: {player}, {date}, {level}, {xp}, {xp_current}, {xp_required},
+    # {xp_bar}, {games}, {wins}, {kills}, {final_kills}, {beds}, {status},
+    # {language}, {footer}. Os numeros sao obtidos do cache assincrono MySQL.
+    lines:
+      - '{date}'
+      - ''
+      - '&fNivel: &e{level}'
+      - '&fXP: &b{xp_current}/{xp_required}'
+      - '{xp_bar}'
+      - ''
+      - '&fPartidas: &a{games}'
+      - '&fVitorias: &a{wins}'
+      - '&fAbates: &a{kills}'
+      - '&fAbates finais: &a{final_kills}'
+      - '&fCamas: &a{beds}'
+      - ''
+      - '{footer}'
+    languages:
+      en_US:
+        - '{date}'
+        - ''
+        - '&fLevel: &e{level}'
+        - '&fXP: &b{xp_current}/{xp_required}'
+        - '{xp_bar}'
+        - ''
+        - '&fGames: &a{games}'
+        - '&fWins: &a{wins}'
+        - '&fKills: &a{kills}'
+        - '&fFinal kills: &a{final_kills}'
+        - '&fBeds: &a{beds}'
+        - ''
+        - '{footer}'
+      es_ES:
+        - '{date}'
+        - ''
+        - '&fNivel: &e{level}'
+        - '&fXP: &b{xp_current}/{xp_required}'
+        - '{xp_bar}'
+        - ''
+        - '&fPartidas: &a{games}'
+        - '&fVictorias: &a{wins}'
+        - '&fBajas: &a{kills}'
+        - '&fBajas finales: &a{final_kills}'
+        - '&fCamas: &a{beds}'
+        - ''
+        - '{footer}'
   preset: CLASSIC # CLASSIC or LEGACY
   title: '&e&lBED WARS'
   footer: '&estarfinplugins&f.com.br'
