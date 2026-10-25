@@ -1,5 +1,9 @@
 package com.starfinplugins.bedwars.match;
 
+import com.starfinplugins.bedwars.StarfinBedWarsPlugin;
+import com.starfinplugins.bedwars.stats.MatchStatisticsService;
+import com.starfinplugins.bedwars.stats.StatsProfile;
+import com.starfinplugins.bedwars.stats.XpProgression;
 import com.starfinplugins.bedwars.domain.match.GameMatch;
 import com.starfinplugins.bedwars.domain.match.GameParticipant;
 import com.starfinplugins.bedwars.domain.match.GameTeam;
@@ -39,8 +43,11 @@ public final class MatchPresentationService implements ManagedService, Listener 
     private final Plugin plugin;
     private final MatchEngineService matches;
     private final ResourceGeneratorService generators;
+    private final TabSkinService skins;
     private final Map<UUID, Scoreboard> previousBoards = new HashMap<UUID, Scoreboard>();
     private final Map<UUID, Scoreboard> activeBoards = new HashMap<UUID, Scoreboard>();
+    /** Separate from the WAITING arena lobby; these boards show network-wide profile stats. */
+    private final Map<UUID, Scoreboard> mainLobbyBoards = new HashMap<UUID, Scoreboard>();
     private final Map<UUID, String> tabContents = new HashMap<UUID, String>();
     private boolean tabAvailable = true;
     private BukkitTask refreshTask;
@@ -50,6 +57,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
         this.plugin = plugin;
         this.matches = matches;
         this.generators = generators;
+        this.skins = new TabSkinService(plugin, matches);
     }
 
     @Override
@@ -57,6 +65,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
 
     @Override
     public void start() {
+        skins.start();
         Bukkit.getPluginManager().registerEvents(this, plugin);
         refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override
@@ -72,8 +81,10 @@ public final class MatchPresentationService implements ManagedService, Listener 
         refreshTask = null;
         org.bukkit.event.HandlerList.unregisterAll(this);
         for (Player player : Bukkit.getOnlinePlayers()) restoreBoard(player);
+        skins.stop();
         previousBoards.clear();
         activeBoards.clear();
+        mainLobbyBoards.clear();
         tabContents.clear();
     }
 
@@ -83,22 +94,54 @@ public final class MatchPresentationService implements ManagedService, Listener 
         Player actor = participant == null ? null : Bukkit.getPlayer(participant.getPlayerId());
         switch (event.getType()) {
             case PLAYER_JOINED:
-                notifyMatch(event.getMatch(), ChatColor.GREEN + name(actor) + " entrou na partida.",
-                    participant == null ? null : participant.getPlayerId());
-                if (actor != null) actor.sendMessage(ChatColor.GREEN + "Voce entrou em "
-                    + event.getMatch().getArena().getDisplayName() + ".");
+                notifyMatch(event.getMatch(), message("messages.player-joined",
+                    "&7{player} &eentrou (&b{on}&e/&b{max}&e)!",
+                    "player", name(actor),
+                    "on", Integer.toString(event.getMatch().getConnectedCount()),
+                    "max", Integer.toString(event.getMatch().getArena().getMaximumPlayers())));
+                if (actor != null) actor.sendMessage(message("messages.you-joined",
+                    "&aVoce entrou no mapa &e{arena}&a.",
+                    "arena", event.getMatch().getArena().getDisplayName()));
                 break;
             case PLAYER_LEFT:
-                notifyMatch(event.getMatch(), ChatColor.YELLOW + name(actor) + " saiu da partida.");
+                notifyMatch(event.getMatch(), message("messages.player-left",
+                    "&7{player} &csaiu da partida.",
+                    "player", name(actor)));
                 break;
             case PLAYER_RECONNECTED:
-                if (actor != null) actor.sendMessage(ChatColor.GREEN + "Reconexao a partida concluida.");
+                if (actor != null) actor.sendMessage(message("messages.reconnected",
+                    "&aVoce retornou a partida!"));
+                break;
+            case COUNTDOWN_STARTED:
+                notifyMatch(event.getMatch(), message("messages.lobby-ready",
+                    "&aJogadores suficientes! &ePreparando inicio da partida."));
                 break;
             case COUNTDOWN_CANCELLED:
-                notifyMatch(event.getMatch(), ChatColor.RED + "Contagem cancelada: faltam jogadores.");
+                notifyMatch(event.getMatch(), message("messages.countdown-cancelled",
+                    "&cContagem cancelada: aguardando mais jogadores."));
                 break;
             case STARTED:
-                notifyMatch(event.getMatch(), ChatColor.GOLD + "A partida comecou!");
+                // The engine owns the single start announcement. Presentation provides
+                // only the configurable onboarding tutorial, once per match start.
+                java.util.List<String> tutorial = plugin.getConfig()
+                    .getStringList("messages.start-tutorial");
+                if (tutorial.isEmpty()) {
+                    tutorial = java.util.Arrays.asList(
+                        "&8&m--------------------------------",
+                        "&e&lBED WARS &7- &fProteja sua cama e destrua as inimigas.",
+                        "&7Colete recursos, compre itens e melhore sua equipe.",
+                        "&8&m--------------------------------");
+                }
+                for (GameParticipant member : event.getMatch().getParticipantList()) {
+                    Player viewer = Bukkit.getPlayer(member.getPlayerId());
+                    if (viewer == null || !viewer.isOnline()
+                            || viewer.getWorld() != matches.getWorld(event.getMatch().getId())) continue;
+                    for (String line : tutorial) {
+                        viewer.sendMessage(ChatColor.translateAlternateColorCodes('&',
+                            MatchMessageTemplates.format(line,
+                                "arena", event.getMatch().getArena().getDisplayName())));
+                    }
+                }
                 break;
             case BED_DESTROYED:
                 notifyBedDestroyed(event);
@@ -150,25 +193,38 @@ public final class MatchPresentationService implements ManagedService, Listener 
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
+        skins.onQuit(event.getPlayer());
         UUID id = event.getPlayer().getUniqueId();
         Scoreboard previous = previousBoards.remove(id);
-        activeBoards.remove(id);
+        Scoreboard owned = activeBoards.remove(id);
+        if (owned == null) owned = mainLobbyBoards.remove(id);
+        else mainLobbyBoards.remove(id);
         tabContents.remove(id);
-        if (previous != null) event.getPlayer().setScoreboard(previous);
+        if (previous != null && event.getPlayer().getScoreboard() == owned)
+            event.getPlayer().setScoreboard(previous);
     }
 
     private void refresh(Player player) {
         GameMatch match = matches.getMatchForPlayer(player.getUniqueId());
         if (match == null) match = matches.getSpectatedMatch(player.getUniqueId());
         if (match == null) {
-            restoreBoard(player);
+            if (plugin.getConfig().getBoolean("scoreboard.main-lobby.enabled", true)) {
+                renderMainLobby(player);
+            } else if (activeBoards.containsKey(player.getUniqueId())
+                    || mainLobbyBoards.containsKey(player.getUniqueId())) {
+                restoreBoard(player, false);
+            }
+            skins.refreshLobby(player);
+            updateLobbyTab(player);
             return;
         }
         Scoreboard board = activeBoards.get(player.getUniqueId());
         if (board == null) {
             ScoreboardManager manager = Bukkit.getScoreboardManager();
             if (manager == null) return;
-            previousBoards.put(player.getUniqueId(), player.getScoreboard());
+            if (!previousBoards.containsKey(player.getUniqueId()))
+                previousBoards.put(player.getUniqueId(), player.getScoreboard());
+            mainLobbyBoards.remove(player.getUniqueId());
             board = manager.getNewScoreboard();
             Objective objective = board.registerNewObjective("sbw", "dummy");
             objective.setDisplaySlot(DisplaySlot.SIDEBAR);
@@ -193,6 +249,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
             renderLobby(board, match);
         }
         syncNameTags(board, match);
+        skins.refresh(player, match);
         updateTab(player, match);
     }
 
@@ -216,6 +273,26 @@ public final class MatchPresentationService implements ManagedService, Listener 
         } catch (RuntimeException error) {
             tabAvailable = false;
             plugin.getLogger().warning("Cabecalho TAB desativado: " + error.getMessage());
+        }
+    }
+
+    private void updateLobbyTab(Player player) {
+        if (!tabAvailable || !plugin.getConfig().getBoolean("tab.enabled", true)
+                || !plugin.getConfig().getBoolean("tab.lobby.enabled", true)) return;
+        Map<String, String> tokens = new HashMap<String, String>();
+        tokens.put("footer", brandFooter());
+        String header = formatTabText(plugin.getConfig().getString("tab.lobby.header",
+            "&b&lSTARFIN BEDWARS\\n{footer}"), tokens);
+        String footer = formatTabText(plugin.getConfig().getString("tab.lobby.footer",
+            "{footer}"), tokens);
+        String key = header + "\u0000" + footer;
+        if (key.equals(tabContents.get(player.getUniqueId()))) return;
+        try {
+            TabHeaderV1_8_R3.send(player, header, footer);
+            tabContents.put(player.getUniqueId(), key);
+        } catch (RuntimeException error) {
+            tabAvailable = false;
+            plugin.getLogger().warning("Cabecalho TAB do lobby desativado: " + error.getMessage());
         }
     }
 
@@ -278,20 +355,68 @@ public final class MatchPresentationService implements ManagedService, Listener 
         }
     }
 
-    private void renderMain(Scoreboard board) {
-        List<String> lines = new ArrayList<String>();
-        lines.add(dateLine(null));
-        lines.add("");
-        lines.add(ChatColor.WHITE + "Nivel: " + ChatColor.YELLOW + "0");
-        lines.add(ChatColor.WHITE + "Progresso: " + ChatColor.AQUA + "0/5k");
-        lines.add(ChatColor.DARK_GRAY + "[----------]");
-        lines.add("");
-        lines.add(ChatColor.WHITE + "Tokens: " + ChatColor.GREEN + "0");
-        lines.add(ChatColor.WHITE + "Abates: " + ChatColor.GREEN + "0");
-        lines.add(ChatColor.WHITE + "Vitorias: " + ChatColor.GREEN + "0");
-        lines.add("");
-        lines.add(brandFooter());
-        renderLines(board, boardTitle(), lines);
+    private void renderMainLobby(Player player) {
+        UUID id = player.getUniqueId();
+        Scoreboard board = mainLobbyBoards.get(id);
+        if (board == null) {
+            ScoreboardManager manager = Bukkit.getScoreboardManager();
+            if (manager == null) return;
+            if (!previousBoards.containsKey(id)) previousBoards.put(id, player.getScoreboard());
+            activeBoards.remove(id);
+            board = manager.getNewScoreboard();
+            Objective objective = board.registerNewObjective("sbw", "dummy");
+            objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+            mainLobbyBoards.put(id, board);
+        }
+        if (player.getScoreboard() != board) player.setScoreboard(board);
+        MatchStatisticsService stats = plugin instanceof StarfinBedWarsPlugin
+            ? ((StarfinBedWarsPlugin) plugin).getStatistics() : null;
+        StatsProfile profile = stats == null ? null : stats.getCachedProfile(id);
+        XpProgression.Progress xp = stats == null ? new XpProgression(1000, 250).progress(0)
+            : stats.getProgress(profile == null ? 0 : profile.totalXp);
+        long games = profile == null ? 0 : profile.games;
+        long wins = profile == null ? 0 : profile.wins;
+        long kills = profile == null ? 0 : profile.kills;
+        long finalKills = profile == null ? 0 : profile.finalKills;
+        long beds = profile == null ? 0 : profile.beds;
+        String language = stats == null ? "pt_BR" : stats.getLanguage(id);
+        Map<String, String> tokens = new HashMap<String, String>();
+        tokens.put("date", dateLine(null));
+        tokens.put("player", player.getName());
+        tokens.put("level", Integer.toString(xp.level));
+        tokens.put("xp", Long.toString(profile == null ? 0 : profile.totalXp));
+        tokens.put("xp_current", Long.toString(xp.current));
+        tokens.put("xp_required", Long.toString(xp.required));
+        tokens.put("xp_bar", progressBar(xp.current, xp.required));
+        tokens.put("games", Long.toString(games));
+        tokens.put("wins", Long.toString(wins));
+        tokens.put("kills", Long.toString(kills));
+        tokens.put("final_kills", Long.toString(finalKills));
+        tokens.put("beds", Long.toString(beds));
+        tokens.put("language", language);
+        tokens.put("footer", brandFooter());
+        tokens.put("status", stats == null || !stats.isEnabled() ? "&cMySQL desativado"
+            : profile == null ? "&eCarregando..." : "&aOnline");
+        String path = "scoreboard.main-lobby.languages." + language;
+        if (plugin.getConfig().getStringList(path).isEmpty()) path = "scoreboard.main-lobby.lines";
+        List<String> lines = configuredLines(path, Arrays.asList(
+            "{date}", "", "&fNivel: &e{level}", "&fXP: &b{xp_current}/{xp_required}",
+            "{xp_bar}", "", "&fPartidas: &a{games}", "&fVitorias: &a{wins}",
+            "&fAbates: &a{kills}", "&fCamas: &a{beds}", "", "{footer}"), tokens, null);
+        String title = ChatColor.translateAlternateColorCodes('&',
+            plugin.getConfig().getString("scoreboard.main-lobby.title", "&e&lBED WARS"));
+        renderLines(board, title, lines);
+    }
+
+    private static String progressBar(long current, long required) {
+        int filled = required <= 0 ? 0 : (int) Math.max(0, Math.min(10,
+            (int) (10.0D * current / required)));
+        StringBuilder bar = new StringBuilder("&a");
+        for (int i = 0; i < 10; i++) {
+            if (i == filled) bar.append("&7");
+            bar.append('|');
+        }
+        return bar.toString();
     }
 
     private void renderLobby(Scoreboard board, GameMatch match) {
@@ -615,15 +740,28 @@ public final class MatchPresentationService implements ManagedService, Listener 
     }
 
     private void restoreBoard(Player player) {
+        restoreBoard(player, true);
+    }
+
+    private void restoreBoard(Player player, boolean clearTabHeader) {
+        skins.restore(player);
         UUID id = player.getUniqueId();
-        if (tabContents.remove(id) != null && tabAvailable) {
+        if (tabContents.remove(id) != null && tabAvailable && clearTabHeader) {
             try { TabHeaderV1_8_R3.send(player, "", ""); }
             catch (RuntimeException error) { tabAvailable = false; }
         }
-        if (!activeBoards.containsKey(id)) return;
+        Scoreboard ours = activeBoards.get(id);
+        if (ours == null) ours = mainLobbyBoards.get(id);
+        if (ours == null) return;
         Scoreboard previous = previousBoards.remove(id);
         activeBoards.remove(id);
-        if (previous != null) player.setScoreboard(previous);
+        mainLobbyBoards.remove(id);
+        if (previous != null && player.getScoreboard() == ours) player.setScoreboard(previous);
+    }
+
+    private String message(String path, String fallback, String... tokens) {
+        return ChatColor.translateAlternateColorCodes('&',
+            MatchMessageTemplates.format(plugin.getConfig().getString(path, fallback), tokens));
     }
 
     private void notifyMatch(GameMatch match, String message) {

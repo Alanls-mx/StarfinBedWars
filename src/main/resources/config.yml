@@ -6,6 +6,86 @@ general:
 match:
   respawn-seconds: 3
   spawn-opening-seconds: 10
+  tnt-auto-prime: true # Colocar TNT durante a partida acende automaticamente o pavio.
+  tnt-fuse-ticks: 40 # 2 segundos; entre 1 e 200 ticks.
+  # Vitoria: 9 segundos para os fogos antes de retornar ao lobby.
+  # Empates e encerramentos sem vencedor continuam com 5 segundos.
+  victory-celebration-seconds: 9
+
+next-match:
+  enabled: true # Oferece jogar novamente no mesmo modo ou escolher arena apos o resultado.
+
+# Itens especiais do BedWars classico (compra configurada em shop.yml).
+special-items:
+  enabled: true
+  # Permanente por padrao, inclusive para configuracoes antigas com 30 segundos.
+  defender-persistent: true
+  # So utilizado se defender-persistent estiver false (0 significa ilimitado).
+  defender-lifetime-seconds: 0
+  magic-milk-seconds: 30
+
+  # Ovo de Ponte: passagem reforcada na cor da equipe.
+  # width aceita 1, 3 ou 5; thickness aceita 1 ou 2.
+  bridge-egg:
+    width: 3
+    thickness: 2
+    max-blocks: 480
+    max-ticks: 70
+    # A ponte permanece por 5 segundos depois que o ovo termina de construir.
+    decay-delay-seconds: 5
+    # Cada secao construida desaparece em ordem, do inicio ate a ponta.
+    # 3 ticks = 0.15 segundo a 20 TPS.
+    decay-interval-ticks: 3
+
+  # Defensor de Sonhos: 0.75 reduz 25% do recuo horizontal,
+  # 0.85 reduz 15% do vertical. 1.0 = comportamento vanilla.
+  defender-knockback:
+    horizontal: 0.75
+    vertical: 0.85
+
+# Match Point inicia com 30 minutos de partida: camas quebram e um dragao
+# invulneravel destroi estruturas apenas na instancia temporaria do mapa.
+match-point:
+  enabled: true
+  after-minutes: 30
+  message: '&5&lMATCH POINT! &cTodas as camas foram destruídas! &dO dragão chegou!'
+  dragon-height-offset: 3
+  # Tamanho do proximo trecho de voo na rota natural do dragao (0.03 a 0.20).
+  dragon-angular-speed: 0.065
+  # Distancia maxima para considerar um waypoint visitado (2 a 5 blocos).
+  # Evita o dragao ignorar as ilhas antes de chegar perto dos blocos.
+  dragon-waypoint-reach: 4.0
+  # Voo em X sobre toda a area MAIN (pos1/pos2), alternando diagonais.
+  # Distancia entre waypoints. Nao ha varredura em grade.
+  dragon-patrol-spacing: 40
+  # Explosoes pequenas e CIRCULARES (estilo TNT), nao em X.
+  # Intervalo 40 ticks = 2 segundos em 20 TPS.
+  dragon-blast-interval-ticks: 40
+  dragon-blast-radius: 3
+  dragon-blast-depth: 1
+  dragon-blast-blocks: 8
+  # So explode depois de avancar alguns blocos.
+  dragon-blast-min-movement: 5.0
+  # Metas contadas desde o inicio do Match Point. Referencia:
+  # total de blocos existentes na MAIN (pos1/pos2), excluindo ar e bedrock.
+  # Caso o servidor fique atrasado, ele tenta recuperar o progresso em lotes.
+  demolition:
+    partial-minutes: 5
+    partial-percent: 80
+    complete-minutes: 8
+    survey-positions-per-tick: 7000
+    max-blocks-per-tick: 220
+  # Raios visuais que tambem destroem estruturas durante o Match Point.
+  # Desativar com lightning.enabled: false sem alterar as metas de destruicao.
+  lightning:
+    enabled: true
+    interval-ticks: 60
+    radius: 3
+    max-blocks-per-strike: 24
+  # Barra MATCH POINT fixa perto da camera, mesmo olhando para longe do dragao.
+  bossbar-enabled: true
+  dragon-damage-radius: 5.0
+  dragon-damage: 5.0
 
 arena-bounds:
   default-width: 280
@@ -96,6 +176,7 @@ match-chat:
 
 tab:
   enabled: true
+  isolate-matches: true # Lobby principal e cada partida mostram apenas seus proprios jogadores.
   # Placeholders: {arena}, {mode}, {players}, {max}, {footer}. Use \n para novas linhas.
   header: '&b&lSTARFIN BEDWARS\n{footer}'
   footer: '{footer}' # Usa scoreboard.footer; voce tambem pode escrever o texto diretamente aqui.
@@ -103,9 +184,68 @@ tab:
   team-prefix: '[{initial}] ' # {initial}, {team}; cor da equipe aplicada automaticamente.
   show-spectators: true
   spectator-prefix: '&7[S] '
+  skins:
+    enabled: true # Icones reais para contas originais e nomes premium em servidores offline.
+    fallback-player: '' # Skin padrao para nomes piratas sem perfil premium; vazio mantem Steve/Alex.
+    aliases: {} # Exemplo: MeuJogadorPirata: AlanLS_
+  lobby:
+    enabled: true # Mostra o TAB configurado tambem depois de sair da partida.
+    header: '&b&lSTARFIN BEDWARS\n{footer}'
+    footer: '{footer}'
 
 scoreboard:
   enabled: true
+  # Lobby PRINCIPAL: jogadores fora de qualquer arena. Separado de layouts.lobby
+  # (sala de espera de uma partida). Desative se o StarfinLobby for dono da sidebar.
+  main-lobby:
+    enabled: true
+    title: '&e&lBED WARS'
+    # Variaveis: {player}, {date}, {level}, {xp}, {xp_current}, {xp_required},
+    # {xp_bar}, {games}, {wins}, {kills}, {final_kills}, {beds}, {status},
+    # {language}, {footer}. Os numeros sao obtidos do cache assincrono MySQL.
+    lines:
+      - '{date}'
+      - ''
+      - '&fNivel: &e{level}'
+      - '&fXP: &b{xp_current}/{xp_required}'
+      - '{xp_bar}'
+      - ''
+      - '&fPartidas: &a{games}'
+      - '&fVitorias: &a{wins}'
+      - '&fAbates: &a{kills}'
+      - '&fAbates finais: &a{final_kills}'
+      - '&fCamas: &a{beds}'
+      - ''
+      - '{footer}'
+    languages:
+      en_US:
+        - '{date}'
+        - ''
+        - '&fLevel: &e{level}'
+        - '&fXP: &b{xp_current}/{xp_required}'
+        - '{xp_bar}'
+        - ''
+        - '&fGames: &a{games}'
+        - '&fWins: &a{wins}'
+        - '&fKills: &a{kills}'
+        - '&fFinal kills: &a{final_kills}'
+        - '&fBeds: &a{beds}'
+        - ''
+        - '{footer}'
+      es_ES:
+        - '{date}'
+        - ''
+        - '&fNivel: &e{level}'
+        - '&fXP: &b{xp_current}/{xp_required}'
+        - '{xp_bar}'
+        - ''
+        - '&fPartidas: &a{games}'
+        - '&fVictorias: &a{wins}'
+        - '&fBajas: &a{kills}'
+        - '&fBajas finales: &a{final_kills}'
+        - '&fCamas: &a{beds}'
+        - ''
+        - '{footer}'
   preset: CLASSIC # CLASSIC or LEGACY
   title: '&e&lBED WARS'
   footer: '&estarfinplugins&f.com.br'
@@ -157,19 +297,28 @@ equipment:
   tool-minimum: WOOD
 
 shop:
-  category-order: [FAVORITES, SWORDS, ARMOR, TOOLS, BLOCKS, BOWS, POTIONS, UTILITIES, SPECIAL]
+  # Maximo de caracteres visiveis por linha da descricao (18 a 40).
+  # Linhas menores evitam tooltips fora da tela em resolucoes baixas.
+  description-line-length: 28
+  category-order: [FAVORITES, BLOCKS, COMBAT, ARMOR, TOOLS, BOWS, POTIONS, UTILITIES]
   category-icons:
     FAVORITES: NETHER_STAR
-    SWORDS: IRON_SWORD
-    ARMOR: DIAMOND_CHESTPLATE
+    BLOCKS: STAINED_CLAY
+    COMBAT: GOLD_SWORD
+    ARMOR: CHAINMAIL_BOOTS
     TOOLS: IRON_PICKAXE
-    BLOCKS: WOOL
     BOWS: BOW
-    POTIONS: POTION
+    POTIONS: BREWING_STAND_ITEM
     UTILITIES: TNT
-    SPECIAL: BLAZE_POWDER
 
 visuals:
+  lobby-countdown:
+    start-at: 5
+    title: '&e&lINICIANDO'
+    subtitle: '&fA partida comeca em &e{time}&fs.'
+    cancelled: '&cAguardando mais jogadores...'
+    sound: NOTE_PLING
+    sound-enabled: true
   countdown:
     start-at: 5
     subtitle: '&ePrepare-se!'
@@ -190,9 +339,86 @@ visuals:
     sound: FIREWORK_LAUNCH
     sound-enabled: true
     particles: 6
+    celebration:
+      enabled: true
+      fireworks-per-burst: 4
+      interval-ticks: 10
+      radius: 6
+  death:
+    title: '&c&lVOCE MORREU!'
+    subtitle: '&eRenascendo em &c{time} &esegundos.'
   defeat:
     title: '&c&lDERROTA!'
     subtitle: '&7Sua equipe foi eliminada!'
   draw:
     title: '&ePartida encerrada'
     subtitle: '&7Sem equipe vencedora'
+
+# Mensagens originais Starfin inspiradas na organizacao do BedWars1058.
+# Placeholders: {player}, {on}, {max}, {time}, {arena}, {killer}.
+messages:
+  # Mensagens da loja. {item} usa o nome configurado em shop.yml.
+  # Reaplique a cor apos placeholders com nome colorido, se desejar.
+  shop:
+    unavailable: '&cA partida nao esta disponivel para compras.'
+    special-disabled: '&cItens especiais estao desabilitados.'
+    already-owned: '&eVoce ja possui este nivel de equipamento ou superior.'
+    inventory-full: '&cLibere espaco no inventario antes de comprar.'
+    insufficient: '&cRecursos insuficientes.'
+    delivery-failed: '&cCompra cancelada: nao foi possivel entregar o item.'
+    purchased: '&aComprado: &f{item}&a.'
+  upgrades:
+    unavailable: '&cA partida nao esta disponivel.'
+    max-level: '&cEsta melhoria ja esta no nivel maximo.'
+    forge-max: '&cOs geradores da equipe ja estao no nivel maximo.'
+    insufficient: '&cDiamantes insuficientes.'
+    forge-failed: '&cNao foi possivel melhorar os geradores.'
+    already-owned: '&cEsta melhoria ja foi comprada.'
+    purchased: '&aMelhoria comprada: &f{upgrade} {level}&a.'
+    queue-full: '&cA fila de armadilhas da equipe esta cheia.'
+    trap-failed: '&cNao foi possivel adicionar a armadilha.'
+    trap-purchased: '&aArmadilha adicionada a fila da equipe.'
+    names:
+      sharpness: 'Afiacao'
+      protection: 'Protecao'
+      haste: 'Pressa'
+      forge: 'Forja'
+      heal_pool: 'Poco de cura'
+  player-joined: '&7{player} &eentrou (&b{on}&e/&b{max}&e)!'
+  player-left: '&7{player} &csaiu da partida.'
+  you-joined: '&aVoce entrou no mapa &e{arena}&a.'
+  reconnected: '&aVoce retornou a partida!'
+  lobby-ready: '&aJogadores suficientes! &eA partida esta sendo preparada.'
+  lobby-countdown: '&eA partida comeca em &6{time} &esegundos!'
+  spawn-preparing: '&eAs equipes estao nas bases. Aguarde a abertura das barreiras.'
+  spawn-countdown: '&eAs barreiras abrem em &6{time} &esegundos!'
+  countdown-cancelled: '&cContagem cancelada! Aguardando mais jogadores.'
+  match-started: '&a&lA PARTIDA COMECOU! &7Proteja sua cama e elimine as equipes adversarias!'
+  own-bed: '&cVocê não pode destruir sua própria cama!'
+  boundary-height: '&cVocê atingiu o limite de altura desta arena!'
+  boundary-edge: '&cVocê chegou ao limite da arena! Não é possível sair do mapa.'
+  boundary-warning-cooldown-seconds: 4
+  respawn-countdown: '&eVoce renascera em &c{time} &esegundos.'
+  respawned: '&aVoce renasceu!'
+  you-eliminated: '&cVoce foi eliminado! Sua cama ja foi destruida.'
+  start-tutorial:
+    - '&8&m--------------------------------'
+    - '&e&lBED WARS &7- &fProteja sua cama e destrua as inimigas.'
+    - '&7Colete recursos, compre itens e melhore sua equipe.'
+    - '&8&m--------------------------------'
+  death:
+    void: '&7{player} &7caiu no void.'
+    void-killer: '&7{player} &7foi derrubado no void por &e{killer}&7.'
+    fall: '&7{player} &7morreu de queda.'
+    fall-killer: '&7{player} &7foi derrubado por &e{killer}&7.'
+    fire: '&7{player} &7morreu queimado.'
+    lava: '&7{player} &7caiu na lava.'
+    drowning: '&7{player} &7se afogou.'
+    explosion: '&7{player} &7foi explodido.'
+    explosion-killer: '&7{player} &7foi explodido por &e{killer}&7.'
+    projectile: '&7{player} &7foi atingido por um projetil.'
+    projectile-killer: '&7{player} &7foi atingido por &e{killer}&7.'
+    combat: '&7{player} &7morreu em combate.'
+    combat-killer: '&7{player} &7foi eliminado por &e{killer}&7.'
+    generic: '&7{player} &7morreu.'
+    generic-killer: '&7{player} &7foi eliminado por &e{killer}&7.'

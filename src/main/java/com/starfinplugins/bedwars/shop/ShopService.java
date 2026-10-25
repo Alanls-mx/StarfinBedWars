@@ -1,6 +1,7 @@
 package com.starfinplugins.bedwars.shop;
 
 import com.starfinplugins.bedwars.arena.ArenaService;
+import com.starfinplugins.bedwars.config.PlayerFeedback;
 import com.starfinplugins.bedwars.domain.arena.Position;
 import com.starfinplugins.bedwars.domain.arena.TeamDefinition;
 import com.starfinplugins.bedwars.domain.economy.ResourceType;
@@ -15,15 +16,21 @@ import com.starfinplugins.bedwars.event.ShopPurchaseEvent;
 import com.starfinplugins.bedwars.match.MatchEngineService;
 import com.starfinplugins.bedwars.match.MatchEquipmentService;
 import com.starfinplugins.bedwars.service.ManagedService;
+import com.starfinplugins.bedwars.StarfinBedWarsPlugin;
+import com.starfinplugins.bedwars.stats.MatchStatisticsService;
+import com.starfinplugins.bedwars.stats.PlayerPreferences;
 import com.starfinplugins.bedwars.upgrades.TeamUpgradeService;
 import com.starfinplugins.bedwars.world.ManagedMobGuard;
 import com.starfinplugins.bedwars.world.SafeLocationResolver;
 import com.starfinplugins.bedwars.shop.npc.ShopNpcFactoryV1_8_R3;
+import com.starfinplugins.bedwars.shop.special.SpecialItemService;
+import com.starfinplugins.bedwars.shop.special.SpecialItemType;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.LinkedHashSet;
 import java.util.EnumMap;
@@ -53,6 +60,9 @@ import org.bukkit.event.entity.EntityTargetEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerInteractAtEntityEvent;
+import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
+import org.bukkit.event.EventPriority;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.SkullMeta;
@@ -73,6 +83,13 @@ public final class ShopService implements ManagedService, Listener {
     private final Map<UUID, Set<String>> spawnedKinds = new HashMap<UUID, Set<String>>();
     private final Map<UUID, Location> npcAnchors = new HashMap<UUID, Location>();
     private final Map<UUID, ArmorStand> npcBodies = new HashMap<UUID, ArmorStand>();
+    /** Entity groups keyed by match and logical shop kind for safe self-repair. */
+    private final Map<UUID, Map<String, List<Entity>>> shopGroups =
+        new HashMap<UUID, Map<String, List<Entity>>>();
+    private int maintenanceTicks;
+    /** Debounce superclass and armor-manipulation packets in the same server tick. */
+    private final Set<UUID> pendingOpen = new HashSet<UUID>();
+    private final Map<UUID, BukkitTask> pendingShopRefresh = new HashMap<UUID, BukkitTask>();
     private ShopSettings settings;
     private ManagedMobGuard mobGuard;
     private MatchEquipmentService equipment;
@@ -109,11 +126,26 @@ public final class ShopService implements ManagedService, Listener {
         if (anchorCheck != null) anchorCheck.cancel();
         anchorCheck = null;
         for (UUID matchId : new ArrayList<UUID>(shopEntities.keySet())) removeShops(matchId);
-        ShopNpcFactoryV1_8_R3.unregisterType();
+        try {
+            ShopNpcFactoryV1_8_R3.unregisterType();
+        } catch (RuntimeException | LinkageError error) {
+            // If the running JAR was replaced/corrupted or the NPC class was
+            // omitted, shutdown must still release inventories and services.
+            // Log the actual packaging problem instead of aborting onDisable.
+            plugin.getLogger().log(java.util.logging.Level.SEVERE,
+                "A classe NMS dos NPCs nao esta acessivel no JAR carregado. "
+                    + "Pare o servidor, recompile com mvn -B verify e copie o JAR "
+                    + "somente com o servidor desligado.", error);
+        }
         shopEntities.clear();
         spawnedKinds.clear();
         npcAnchors.clear();
         npcBodies.clear();
+        shopGroups.clear();
+        pendingOpen.clear();
+        for (BukkitTask task : pendingShopRefresh.values()) task.cancel();
+        pendingShopRefresh.clear();
+        maintenanceTicks = 0;
         favorites.clear();
     }
 
@@ -192,7 +224,14 @@ public final class ShopService implements ManagedService, Listener {
     private void trySpawnShop(GameMatch match, World world, Position position, Position fallback,
                               String name,
                               String kind, List<Entity> created, Set<String> kinds) {
-        if (kinds.contains(kind)) return;
+        if (kinds.contains(kind)) {
+            Map<String, List<Entity>> groups = shopGroups.get(match.getId());
+            List<Entity> current = groups == null ? null : groups.get(kind);
+            if (isShopGroupHealthy(current)) return;
+            plugin.getLogger().warning("Recriando NPC de loja inacessivel ou incompleto: partida="
+                + match.getId() + " tipo=" + kind + ".");
+            removeShopGroup(match.getId(), kind, created, kinds);
+        }
         if (position == null) {
             if (fallback == null) {
                 plugin.getLogger().warning("NPC sem posicao: arena=" + match.getArena().getId()
@@ -207,6 +246,7 @@ public final class ShopService implements ManagedService, Listener {
         int before = created.size();
         try {
             spawnShop(match, world, position, name, kind, created);
+            rememberShopGroup(match.getId(), kind, created, before);
             kinds.add(kind);
         } catch (RuntimeException error) {
             rollbackCreated(created, before);
@@ -218,6 +258,7 @@ public final class ShopService implements ManagedService, Listener {
             if (fallback != null) {
                 try {
                     spawnShop(match, world, fallback, name, kind, created);
+                    rememberShopGroup(match.getId(), kind, created, before);
                     kinds.add(kind);
                     plugin.getLogger().warning("NPC " + kind
                         + " criado perto do spawn da equipe apos falha no ponto configurado.");
@@ -229,6 +270,61 @@ public final class ShopService implements ManagedService, Listener {
                 }
             }
         }
+    }
+
+    private void rememberShopGroup(UUID matchId, String kind, List<Entity> all, int from) {
+        Map<String, List<Entity>> groups = shopGroups.get(matchId);
+        if (groups == null) {
+            groups = new HashMap<String, List<Entity>>();
+            shopGroups.put(matchId, groups);
+        }
+        groups.put(kind, new ArrayList<Entity>(all.subList(from, all.size())));
+    }
+
+    private boolean isShopGroupHealthy(List<Entity> group) {
+        if (group == null || group.isEmpty()) return false;
+        boolean foundVillager = false;
+        boolean foundBody = false;
+        String expectedOwnership = null;
+        for (Entity entity : group) {
+            if (entity == null || !entity.isValid() || entity.isDead()) return false;
+            // Text-only holograms are intentionally untagged: only clickable
+            // Villagers and equipped ArmorStand bodies need shop ownership.
+            boolean clickable = entity instanceof Villager
+                || entity instanceof ArmorStand && !((ArmorStand) entity).isMarker();
+            if (clickable) {
+                String owner = ownedMetadata(entity);
+                if (owner == null) return false;
+                if (expectedOwnership == null) expectedOwnership = owner;
+                else if (!expectedOwnership.equals(owner)) return false;
+            }
+            if (entity instanceof Villager) foundVillager = true;
+            if (entity instanceof ArmorStand && !((ArmorStand) entity).isMarker()) {
+                ArmorStand body = (ArmorStand) entity;
+                if (body.getHelmet() == null || body.getHelmet().getType() == Material.AIR
+                        || body.getChestplate() == null || body.getChestplate().getType() == Material.AIR
+                        || body.getLeggings() == null || body.getLeggings().getType() == Material.AIR) {
+                    return false;
+                }
+                foundBody = true;
+            }
+        }
+        return foundVillager && foundBody;
+    }
+
+    private void removeShopGroup(UUID matchId, String kind, List<Entity> all, Set<String> kinds) {
+        Map<String, List<Entity>> groups = shopGroups.get(matchId);
+        List<Entity> removed = groups == null ? null : groups.remove(kind);
+        if (removed != null) {
+            for (Entity entity : removed) {
+                all.remove(entity);
+                npcAnchors.remove(entity.getUniqueId());
+                npcBodies.remove(entity.getUniqueId());
+                if (mobGuard != null) mobGuard.forget(entity);
+                if (entity.isValid()) entity.remove();
+            }
+        }
+        kinds.remove(kind);
     }
 
     private void rollbackCreated(List<Entity> created, int before) {
@@ -372,6 +468,7 @@ public final class ShopService implements ManagedService, Listener {
 
     private void removeShops(UUID matchId) {
         spawnedKinds.remove(matchId);
+        shopGroups.remove(matchId);
         List<Entity> entities = shopEntities.remove(matchId);
         if (entities == null) return;
         for (Entity entity : entities) {
@@ -385,6 +482,15 @@ public final class ShopService implements ManagedService, Listener {
     }
 
     private void correctExternalDisplacement() {
+        // Rescan periodically so externally removed or chunk-unloaded NPCs are repaired.
+        if (++maintenanceTicks >= 10) {
+            maintenanceTicks = 0;
+            for (UUID matchId : new ArrayList<UUID>(shopEntities.keySet())) {
+                World world = matches.getWorld(matchId);
+                GameMatch live = world == null ? null : matches.getMatchInWorld(world);
+                if (live != null && live.getState() == MatchState.IN_GAME) spawnShops(live);
+            }
+        }
         for (List<Entity> entities : shopEntities.values()) {
             for (Entity entity : entities) {
                 if (!(entity instanceof Villager) || !entity.isValid()) continue;
@@ -418,37 +524,107 @@ public final class ShopService implements ManagedService, Listener {
         }
     }
 
-    @EventHandler
-    public void onShopClick(PlayerInteractEntityEvent event) {
-        Entity clicked = event.getRightClicked();
-        String shopData = ownedMetadata(clicked);
-        if (shopData == null) return;
+    /**
+     * ArmorStand equipment packets may not produce the same superclass event on
+     * every 1.8.8 server. Cancel the swap and route the click explicitly.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onShopArmorStandManipulate(PlayerArmorStandManipulateEvent event) {
+        String data = shopClickData(event.getRightClicked());
+        if (data == null) return;
         event.setCancelled(true);
-        String[] shopParts = shopData.split("\\|", 2);
-        if (shopParts.length != 2) return;
-        Player player = event.getPlayer();
+        requestShopMenu(event.getPlayer(), event.getRightClicked(), data);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onShopClickAt(PlayerInteractAtEntityEvent event) {
+        String data = shopClickData(event.getRightClicked());
+        if (data == null) return;
+        event.setCancelled(true);
+        requestShopMenu(event.getPlayer(), event.getRightClicked(), data);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onShopClick(PlayerInteractEntityEvent event) {
+        String data = shopClickData(event.getRightClicked());
+        if (data == null) return;
+        event.setCancelled(true);
+        requestShopMenu(event.getPlayer(), event.getRightClicked(), data);
+    }
+
+    /**
+     * Resolve clickability from the active entity registry as well as metadata.
+     * On chunk reloads a live entity can lose Bukkit metadata without losing
+     * its identity. Only entities registered to this service are recovered.
+     */
+    private String shopClickData(Entity clicked) {
+        if (clicked == null) return null;
+        String tagged = ownedMetadata(clicked);
+        if (tagged != null) return tagged;
+        for (Map.Entry<UUID, Map<String, List<Entity>>> match : shopGroups.entrySet()) {
+            for (Map.Entry<String, List<Entity>> group : match.getValue().entrySet()) {
+                for (Entity entity : group.getValue()) {
+                    if (entity != null && entity.getUniqueId().equals(clicked.getUniqueId())
+                            && clicked.getWorld() == matches.getWorld(match.getKey())) {
+                        return match.getKey().toString() + "|" + group.getKey();
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private void requestShopMenu(final Player player, final Entity clicked, String data) {
+        final ShopNpcRoute route = ShopNpcRoute.parse(data);
+        if (route == null) return;
+        final UUID matchId = route.getMatchId();
+
         GameMatch match = matches.getMatchForPlayer(player.getUniqueId());
-        if (match == null || !match.getId().toString().equals(shopParts[0])
-                || match.getState() != MatchState.IN_GAME) {
-            player.sendMessage(ChatColor.RED + "Esta loja pertence a uma partida encerrada.");
+        if (match == null || match.getState() != MatchState.IN_GAME) {
+            player.sendMessage(ChatColor.RED + "Esta loja nao pertence a sua partida ativa.");
             return;
         }
         GameParticipant participant = match.getParticipant(player.getUniqueId());
         if (participant == null || participant.getState() != ParticipantState.CONNECTED
-                || player.getWorld() != matches.getWorld(match.getId())) {
-            player.sendMessage(ChatColor.RED + "Voce nao pode usar esta loja agora.");
+                || player.getWorld() != matches.getWorld(matchId)
+                || clicked.getWorld() != player.getWorld()
+                || clicked.getLocation().distanceSquared(player.getLocation()) > 36.0D
+                || !route.canAccess(match.getId(), participant.getTeamId())) {
+            player.sendMessage(ChatColor.RED + "Voce nao pode utilizar esta loja agora.");
             return;
         }
-        String[] shopKind = shopParts[1].split(":", 2);
-        if (shopKind.length == 2 && !shopKind[1].equals(participant.getTeamId())) {
-            player.sendMessage(ChatColor.RED + "Esta loja pertence a outra equipe.");
-            return;
-        }
-        if (shopKind[0].startsWith("upgrades")) {
-            upgrades.openShop(player, match, participant.getTeamId());
-            return;
-        }
-        openMenu(player, ClassicShopMenu.Category.FAVORITES, 0, false);
+        if (!pendingOpen.add(player.getUniqueId())) return;
+        final boolean upgradesMenu = route.isUpgrades();
+
+        // Do not open inventory within the armor stand interaction packet: in 1.8
+        // the vanilla equipment/merchant processing can immediately close it.
+        Bukkit.getScheduler().runTask(plugin, new Runnable() {
+            @Override public void run() {
+                pendingOpen.remove(player.getUniqueId());
+                if (!player.isOnline()) return;
+                GameMatch current = matches.getMatchForPlayer(player.getUniqueId());
+                if (current == null || !current.getId().equals(matchId)
+                        || current.getState() != MatchState.IN_GAME
+                        || player.getWorld() != matches.getWorld(matchId)) return;
+                GameParticipant currentParticipant = current.getParticipant(player.getUniqueId());
+                if (currentParticipant == null
+                        || currentParticipant.getState() != ParticipantState.CONNECTED) return;
+                // The NPC may belong to an enemy island. Any purchase still
+                // targets the current player's team, never the NPC's island.
+                final String purchaserTeamId = route.getPurchasingTeamId(
+                    current.getId(), currentParticipant.getTeamId());
+                if (purchaserTeamId == null) return;
+                try {
+                    if (upgradesMenu) upgrades.openShop(player, current, purchaserTeamId);
+                    else openMenu(player, ClassicShopMenu.Category.FAVORITES, 0, false);
+                } catch (RuntimeException error) {
+                    plugin.getLogger().log(java.util.logging.Level.SEVERE,
+                        "Falha ao abrir " + (upgradesMenu ? "Upgrades" : "Shop")
+                            + " para " + player.getUniqueId() + " na partida " + matchId, error);
+                    player.sendMessage(ChatColor.RED + "Falha ao abrir a loja. Avise um administrador.");
+                }
+            }
+        });
     }
 
     @EventHandler
@@ -462,38 +638,44 @@ public final class ShopService implements ManagedService, Listener {
         Player player = (Player) event.getWhoClicked();
         int slot = event.getRawSlot();
         if (slot <= 8 && menu.getCategoryAt(slot) != null) {
-            reopenLater(player, menu.getCategoryAt(slot), 0, menu.isEditing());
+            ClassicShopMenu.Category selected = menu.getCategoryAt(slot);
+            debugShop("Categoria clicada: " + selected + " por " + player.getName());
+            refreshLater(player, menu, selected, 0, menu.isEditing());
             return;
         }
         if (slot == 45 && menu.getPage() > 0) {
-            reopenLater(player, menu.getCategory(), menu.getPage() - 1, menu.isEditing());
+            refreshLater(player, menu, menu.getCategory(), menu.getPage() - 1, menu.isEditing());
             return;
         }
         if (slot == 53 && menu.getPage() + 1 < menu.getPageCount()) {
-            reopenLater(player, menu.getCategory(), menu.getPage() + 1, menu.isEditing());
+            refreshLater(player, menu, menu.getCategory(), menu.getPage() + 1, menu.isEditing());
             return;
         }
         if (slot == 49) {
-            reopenLater(player, menu.getCategory(), menu.getPage(), !menu.isEditing());
+            refreshLater(player, menu, menu.getCategory(), menu.getPage(), !menu.isEditing());
             return;
         }
         if (slot == 50) {
             Bukkit.getScheduler().runTask(plugin, new Runnable() {
-                @Override public void run() { if (player.isOnline()) player.closeInventory(); }
+                @Override public void run() {
+                    if (isViewingMenu(player, menu)) {
+                        player.closeInventory();
+                    }
+                }
             });
             return;
         }
         ShopItemDefinition definition = menu.getEntry(event.getRawSlot());
         if (definition == null) return;
-        if (menu.isEditing()) {
+        if (menu.isEditing() || event.isShiftClick()) {
             toggleFavorite(player, definition.getId());
-            reopenLater(player, menu.getCategory(), menu.getPage(), true);
+            refreshLater(player, menu, menu.getCategory(), menu.getPage(), menu.isEditing());
             return;
         }
         purchase(player, definition);
         if (player.getOpenInventory() != null
                 && player.getOpenInventory().getTopInventory().getHolder() == menu) {
-            reopenLater(player, menu.getCategory(), menu.getPage(), false);
+            refreshLater(player, menu, menu.getCategory(), menu.getPage(), false);
         }
     }
 
@@ -505,15 +687,23 @@ public final class ShopService implements ManagedService, Listener {
     private void openMenu(Player player, ClassicShopMenu.Category category, int page, boolean editing) {
         ClassicShopMenu menu = new ClassicShopMenu(player, settings.getItems().values(),
             favoritesFor(player.getUniqueId()), category, page, editing,
-            categoryOrder(), categoryIcons());
+            categoryOrder(), categoryIcons(),
+            plugin.getConfig().getInt("shop.description-line-length", 28));
         player.openInventory(menu.getInventory());
     }
 
     private List<ClassicShopMenu.Category> categoryOrder() {
         List<String> configured = plugin.getConfig().getStringList("shop.category-order");
+        if (configured.equals(java.util.Arrays.asList("FAVORITES", "SWORDS", "ARMOR", "TOOLS",
+                "BLOCKS", "BOWS", "POTIONS", "UTILITIES", "SPECIAL"))) {
+            configured = java.util.Arrays.asList("FAVORITES", "BLOCKS", "COMBAT", "ARMOR",
+                "TOOLS", "BOWS", "POTIONS", "UTILITIES");
+        }
         List<ClassicShopMenu.Category> order = new ArrayList<ClassicShopMenu.Category>();
         for (String value : configured) {
             try {
+                if ("SWORDS".equalsIgnoreCase(value)) value = "COMBAT";
+                if ("SPECIAL".equalsIgnoreCase(value)) value = "UTILITIES";
                 ClassicShopMenu.Category category = ClassicShopMenu.Category.valueOf(
                     value.toUpperCase(Locale.ROOT));
                 if (!order.contains(category)) order.add(category);
@@ -532,6 +722,19 @@ public final class ShopService implements ManagedService, Listener {
             new EnumMap<ClassicShopMenu.Category, Material>(ClassicShopMenu.Category.class);
         for (ClassicShopMenu.Category category : ClassicShopMenu.Category.values()) {
             String value = plugin.getConfig().getString("shop.category-icons." + category.name());
+            if (category == ClassicShopMenu.Category.COMBAT && value == null) {
+                value = plugin.getConfig().getString("shop.category-icons.SWORDS");
+                if ("IRON_SWORD".equals(value)) value = "GOLD_SWORD";
+            }
+            if (category == ClassicShopMenu.Category.BLOCKS && "WOOL".equals(value)) {
+                value = "STAINED_CLAY";
+            }
+            if (category == ClassicShopMenu.Category.ARMOR && "DIAMOND_CHESTPLATE".equals(value)) {
+                value = "CHAINMAIL_BOOTS";
+            }
+            if (category == ClassicShopMenu.Category.POTIONS && "POTION".equals(value)) {
+                value = "BREWING_STAND_ITEM";
+            }
             if (value == null) continue;
             try { icons.put(category, Material.valueOf(value.toUpperCase(Locale.ROOT))); }
             catch (IllegalArgumentException invalid) {
@@ -541,16 +744,74 @@ public final class ShopService implements ManagedService, Listener {
         return icons;
     }
 
-    private void reopenLater(final Player player, final ClassicShopMenu.Category category,
-                             final int page, final boolean editing) {
-        Bukkit.getScheduler().runTask(plugin, new Runnable() {
+    /**
+     * Bukkit may return an Inventory wrapper distinct from the one originally
+     * passed to Player.openInventory(). Check stable InventoryHolder ownership
+     * instead of Java object identity of Inventory wrappers.
+     */
+    private void debugShop(String text) {
+        if (plugin.getConfig().getBoolean("general.debug", false)) {
+            plugin.getLogger().info("[Shop] " + text);
+        }
+    }
+
+    private boolean isViewingMenu(Player player, ClassicShopMenu menu) {
+        if (player == null || !player.isOnline() || player.getOpenInventory() == null) {
+            return false;
+        }
+        Inventory active = player.getOpenInventory().getTopInventory();
+        return ShopInventoryGuard.isSameShop(active, menu);
+    }
+
+    /** Refresh contents on the existing 54-slot window; NEVER replace the
+     * container while Bukkit is processing the prior WindowClick packet. */
+    private void refreshLater(final Player player, final ClassicShopMenu menu,
+                              final ClassicShopMenu.Category category,
+                              final int page, final boolean editing) {
+        final UUID playerId = player.getUniqueId();
+        BukkitTask previous = pendingShopRefresh.remove(playerId);
+        if (previous != null) previous.cancel();
+        BukkitTask task = Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override public void run() {
-                if (player.isOnline()) openMenu(player, category, page, editing);
+                pendingShopRefresh.remove(playerId);
+                if (!player.isOnline()) return;
+                try {
+                    // Refreshing a retained inventory is safe even if the player closed
+                    // it in the meantime; never silently suppress a tab click because
+                    // Paper/Spigot exposes a new Inventory wrapper for the same window.
+                    menu.refresh(player, settings.getItems().values(), favoritesFor(playerId),
+                        category, page, editing, categoryOrder(), categoryIcons());
+                    debugShop("Categoria exibida: " + category + " pagina " + menu.getPage()
+                        + " para " + player.getName() + " itens=" + menu.getEntries().size());
+                    // Bukkit delivers item changes to viewers of the same inventory.
+                    // Do not call updateInventory(): it resynchronizes the player view.
+                } catch (RuntimeException error) {
+                    plugin.getLogger().log(java.util.logging.Level.SEVERE,
+                        "Falha ao atualizar categoria " + category + " da loja para "
+                            + player.getUniqueId(), error);
+                    player.sendMessage(ChatColor.RED
+                        + "Nao foi possivel atualizar a loja. Avise um administrador.");
+                }
             }
         });
+        pendingShopRefresh.put(playerId, task);
     }
 
     private Set<String> favoritesFor(UUID playerId) {
+        MatchStatisticsService stats = sharedStats();
+        PlayerPreferences preferences = stats == null ? null : stats.getCachedPreferences(playerId);
+        if (preferences != null) {
+            Set<String> networkFavorites = new LinkedHashSet<String>();
+            if (preferences.getQuickBuy() == null) {
+                for (ShopItemDefinition item : settings.getQuickBuyItems())
+                    networkFavorites.add(item.getId());
+                return networkFavorites;
+            }
+            for (String id : preferences.getQuickBuy()) {
+                if (settings.getItems().containsKey(id)) networkFavorites.add(id);
+            }
+            return networkFavorites;
+        }
         Set<String> saved = favorites.get(playerId);
         if (saved != null) return saved;
         Set<String> defaults = new LinkedHashSet<String>();
@@ -559,15 +820,30 @@ public final class ShopService implements ManagedService, Listener {
     }
 
     private void toggleFavorite(Player player, String itemId) {
-        Set<String> chosen = favorites.get(player.getUniqueId());
-        if (chosen == null) chosen = new LinkedHashSet<String>(favoritesFor(player.getUniqueId()));
+        Set<String> chosen = new LinkedHashSet<String>(favoritesFor(player.getUniqueId()));
         if (!chosen.add(itemId)) chosen.remove(itemId);
-        favorites.put(player.getUniqueId(), chosen);
-        try { saveFavorites(); }
-        catch (IOException error) {
-            plugin.getLogger().warning("Falha ao salvar favoritos de loja: " + error.getMessage());
-            player.sendMessage(ChatColor.RED + "Favorito alterado apenas nesta sessao.");
+        try {
+            MatchStatisticsService stats = sharedStats();
+            // Persist first; if the MySQL node is offline the local outbox retries safely.
+            if (stats != null && stats.isEnabled()) stats.setQuickBuy(player.getUniqueId(),
+                new ArrayList<String>(chosen));
+            favorites.put(player.getUniqueId(), chosen);
+            saveFavorites();
         }
+        catch (IOException error) {
+            plugin.getLogger().warning("Falha ao persistir favoritos de loja: " + error.getMessage());
+            player.sendMessage(ChatColor.RED + "Nao foi possivel persistir o favorito. Tente novamente.");
+        }
+    }
+
+    public List<String> getLegacyFavoriteIds(UUID playerId) {
+        Set<String> saved = favorites.get(playerId);
+        return saved == null ? null : new ArrayList<String>(saved);
+    }
+
+    private MatchStatisticsService sharedStats() {
+        return plugin instanceof StarfinBedWarsPlugin
+            ? ((StarfinBedWarsPlugin) plugin).getStatistics() : null;
     }
 
     private void loadFavorites() throws IOException {
@@ -614,40 +890,51 @@ public final class ShopService implements ManagedService, Listener {
                 || participant.getState() != ParticipantState.CONNECTED
                 || player.getWorld() != matches.getWorld(match.getId())) {
             player.closeInventory();
-            player.sendMessage(ChatColor.RED + "A partida nao esta disponivel para compras.");
+            feedback(player, "unavailable", "&cA partida nao esta disponivel para compras.");
+            return;
+        }
+        if (SpecialItemType.byId(definition.getId()) != null
+                && !plugin.getConfig().getBoolean("special-items.enabled", true)) {
+            feedback(player, "special-disabled", "&cItens especiais estao desabilitados.");
             return;
         }
         ItemStack product = createProduct(definition, match, participant);
         boolean permanent = equipment != null && equipment.isPermanent(product.getType());
         if (permanent && !equipment.canImprove(participant, product.getType())) {
-            player.sendMessage(ChatColor.YELLOW + "Voce ja possui este nivel de equipamento ou superior.");
+            feedback(player, "already-owned", "&eVoce ja possui este nivel de equipamento ou superior.");
             return;
         }
         if (!permanent && !canFit(player, product)) {
-            player.sendMessage(ChatColor.RED + "Libere espaco no inventario antes de comprar.");
+            feedback(player, "inventory-full", "&cLibere espaco no inventario antes de comprar.");
             return;
         }
         ItemStack[] backup = InventoryEconomy.snapshot(player);
         if (!InventoryEconomy.charge(player, definition.getCostType(), definition.getCost())) {
-            player.sendMessage(ChatColor.RED + "Recursos insuficientes.");
+            feedback(player, "insufficient", "&cRecursos insuficientes.");
             return;
         }
         if (permanent) {
             equipment.purchased(player, match, participant, product.getType());
             Bukkit.getPluginManager().callEvent(new ShopPurchaseEvent(match, player.getUniqueId(), definition));
-            player.sendMessage(ChatColor.GREEN + "Comprado: " + definition.getDisplayName() + ".");
+            feedback(player, "purchased", "&aComprado: &f{item}&a.",
+                "item", definition.getDisplayName());
             purchaseSound(player);
             return;
         }
         Map<Integer, ItemStack> leftovers = player.getInventory().addItem(product);
         if (!leftovers.isEmpty()) {
             InventoryEconomy.restore(player, backup);
-            player.sendMessage(ChatColor.RED + "Compra cancelada: nao foi possivel entregar o item.");
+            feedback(player, "delivery-failed", "&cCompra cancelada: nao foi possivel entregar o item.");
             return;
         }
         Bukkit.getPluginManager().callEvent(new ShopPurchaseEvent(match, player.getUniqueId(), definition));
-        player.sendMessage(ChatColor.GREEN + "Comprado: " + definition.getDisplayName() + ".");
+        feedback(player, "purchased", "&aComprado: &f{item}&a.",
+                "item", definition.getDisplayName());
         purchaseSound(player);
+    }
+
+    private void feedback(Player player, String key, String fallback, String... tokens) {
+        PlayerFeedback.send(plugin, player, "messages.shop." + key, fallback, tokens);
     }
 
     private void purchaseSound(Player player) {
@@ -668,8 +955,15 @@ public final class ShopService implements ManagedService, Listener {
             data = match.getTeam(participant.getTeamId()).getDefinition().getColorData();
         }
         ItemStack item = new ItemStack(definition.getMaterial(), definition.getAmount(), data);
+        if ("knockback-stick".equals(definition.getId())) {
+            item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.KNOCKBACK, 1);
+        } else if ("bow-power".equals(definition.getId())) {
+            item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.ARROW_DAMAGE, 1);
+        } else if ("bow-punch".equals(definition.getId())) {
+            item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.ARROW_KNOCKBACK, 1);
+        }
         upgrades.applyItemUpgrade(match, participant, item);
-        return item;
+        return SpecialItemService.decoratePurchase(definition.getId(), item);
     }
 
     private boolean canFit(Player player, ItemStack product) {

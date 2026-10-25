@@ -151,6 +151,22 @@ public class ArenaDomainTest {
         assertEquals(null, team.consumeTrap());
     }
 
+    @Test
+    public void queuedTrapKeepsItsPurchasedLevelUntilTriggered() {
+        com.starfinplugins.bedwars.domain.match.GameTeam team =
+            new com.starfinplugins.bedwars.domain.match.GameTeam(
+                new TeamDefinition("red", "Vermelho", "c", 1));
+        assertTrue(team.addTrap(TeamTrapType.MINING_FATIGUE, 3));
+        assertEquals(1, team.getQueuedTrapLevel(TeamTrapType.MINING_FATIGUE));
+        assertTrue(team.upgradeQueuedTrap(TeamTrapType.MINING_FATIGUE, 2));
+        assertFalse(team.upgradeQueuedTrap(TeamTrapType.MINING_FATIGUE, 2));
+        com.starfinplugins.bedwars.domain.match.GameTeam.QueuedTrap triggered =
+            team.consumeQueuedTrap();
+        assertEquals(TeamTrapType.MINING_FATIGUE, triggered.getType());
+        assertEquals(2, triggered.getLevel());
+        assertEquals(0, team.getQueuedTrapLevel(TeamTrapType.MINING_FATIGUE));
+    }
+
     private ArenaDefinition arena(int capacity) {
         ArenaDefinition arena = new ArenaDefinition("test", "world");
         arena.setRegion(ArenaRegionType.MAIN, new ArenaRegion("world", -16, 0, -16, 16, 127, 16));

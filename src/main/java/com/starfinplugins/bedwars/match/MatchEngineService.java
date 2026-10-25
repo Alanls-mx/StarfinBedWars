@@ -1,5 +1,6 @@
 package com.starfinplugins.bedwars.match;
 
+import com.starfinplugins.bedwars.StarfinBedWarsPlugin;
 import com.starfinplugins.bedwars.arena.ArenaService;
 import com.starfinplugins.bedwars.domain.arena.ArenaDefinition;
 import com.starfinplugins.bedwars.domain.arena.ArenaRegion;
@@ -15,6 +16,7 @@ import com.starfinplugins.bedwars.domain.match.MatchEndReason;
 import com.starfinplugins.bedwars.domain.match.MatchState;
 import com.starfinplugins.bedwars.domain.match.ParticipantState;
 import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
+import com.starfinplugins.bedwars.event.MatchCombatDeathEvent;
 import com.starfinplugins.bedwars.service.ManagedService;
 import com.starfinplugins.bedwars.reconnect.ReconnectService;
 import com.starfinplugins.bedwars.reconnect.ReconnectSession;
@@ -47,6 +49,7 @@ import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
@@ -68,7 +71,9 @@ public final class MatchEngineService implements ManagedService, Listener {
     private final Map<UUID, GameMatch> byPlayer = new java.util.concurrent.ConcurrentHashMap<UUID, GameMatch>();
     private final Map<UUID, GameMatch> spectators = new java.util.concurrent.ConcurrentHashMap<UUID, GameMatch>();
     private final Map<UUID, World> matchWorlds = new HashMap<UUID, World>();
+    private final Map<UUID, Set<String>> playerWater = new HashMap<UUID, Set<String>>();
     private final Map<UUID, Set<String>> playerPlacedBlocks = new HashMap<UUID, Set<String>>();
+    private final BridgeBlockOwnership bridgeBlockOwners = new BridgeBlockOwnership();
     private final Set<String> unknownBedWarnings = new HashSet<String>();
     private final Map<UUID, Location> returnLocations = new HashMap<UUID, Location>();
     private final Map<UUID, GameMode> returnGameModes = new HashMap<UUID, GameMode>();
@@ -81,13 +86,20 @@ public final class MatchEngineService implements ManagedService, Listener {
     private final Map<String, Boolean> loading = new HashMap<String, Boolean>();
     private final Map<UUID, BukkitTask> respawnTasks = new HashMap<UUID, BukkitTask>();
     private final Map<UUID, Long> fallProtectionUntil = new HashMap<UUID, Long>();
+    /** setHealth(0) does not reliably report DamageCause.VOID on Spigot 1.8.8. */
+    private final Map<UUID, UUID> forcedVoidDeaths = new HashMap<UUID, UUID>();
+    private final ArenaBoundaryWarnings boundaryWarnings = new ArenaBoundaryWarnings();
     private boolean started;
     private ReconnectService reconnect;
     private MatchEquipmentService equipment;
+    private ParticipantInventoryService participantInventory;
     private final Map<UUID, RecentAttacker> lastAttackers = new HashMap<UUID, RecentAttacker>();
 
     public void setReconnect(ReconnectService reconnect) { this.reconnect = reconnect; }
     public void setEquipment(MatchEquipmentService equipment) { this.equipment = equipment; }
+    public void setParticipantInventory(ParticipantInventoryService inventory) {
+        this.participantInventory = inventory;
+    }
 
     public MatchEngineService(Plugin plugin, ArenaService arenas, int respawnSeconds) {
         this(plugin, arenas, respawnSeconds, 10);
@@ -125,6 +137,8 @@ public final class MatchEngineService implements ManagedService, Listener {
         spawnOpeningValues.clear();
         respawnTasks.clear();
         fallProtectionUntil.clear();
+        forcedVoidDeaths.clear();
+        boundaryWarnings.clear();
         for (GameMatch match : byArena.values()) {
             World world = matchWorlds.get(match.getId());
             if (world != null) {
@@ -154,6 +168,8 @@ public final class MatchEngineService implements ManagedService, Listener {
         lastAttackers.clear();
         matchWorlds.clear();
         playerPlacedBlocks.clear();
+        playerWater.clear();
+        bridgeBlockOwners.clear();
         unknownBedWarnings.clear();
         returnLocations.clear();
         returnGameModes.clear();
@@ -167,6 +183,10 @@ public final class MatchEngineService implements ManagedService, Listener {
 
     public boolean hasPlayer(UUID playerId) {
         return byPlayer.containsKey(playerId) || spectators.containsKey(playerId);
+    }
+
+    public boolean hasPendingReconnect(UUID playerId) {
+        return reconnect != null && reconnect.hasPending(playerId);
     }
 
     public World getWorld(UUID matchId) {
@@ -200,6 +220,11 @@ public final class MatchEngineService implements ManagedService, Listener {
 
     public boolean isArenaActive(String arenaId) {
         return arenaId != null && byArena.containsKey(arenaId);
+    }
+
+    /** Returns only a currently active match for this configured arena. */
+    public GameMatch getMatchForArena(String arenaId) {
+        return arenaId == null ? null : byArena.get(arenaId);
     }
 
     public boolean isSpectating(UUID playerId) {
@@ -236,15 +261,47 @@ public final class MatchEngineService implements ManagedService, Listener {
             throw new IllegalStateException("Arena temporariamente indisponivel durante o modo de edicao.");
         }
         GameMatch match = byArena.get(arena.getId());
+        if (!ArenaAvailability.isJoinable(arena, match, false,
+                isPreparingArena(arena.getId()), isOpeningSpawns(arena.getId()))) {
+            throw new IllegalStateException("A arena nao aceita novos jogadores neste momento.");
+        }
         if (match != null) {
             addPlayer(match, player);
             return;
         }
-        if (Boolean.TRUE.equals(loading.get(arena.getId()))) {
-            throw new IllegalStateException("A instancia da arena esta sendo preparada.");
-        }
         loading.put(arena.getId(), true);
-        arenas.getWorlds().createInstance(arena, new ArenaServiceWorldCallback(arena, player));
+        refreshNetworkCatalog();
+        try {
+            arenas.getWorlds().createInstance(arena, new ArenaServiceWorldCallback(arena, player));
+        } catch (RuntimeException failure) {
+            loading.remove(arena.getId());
+            refreshNetworkCatalog();
+            throw failure;
+        }
+    }
+
+    private void refreshNetworkCatalog() {
+        if (!(plugin instanceof StarfinBedWarsPlugin)) return;
+        com.starfinplugins.bedwars.network.NetworkRegistryService network =
+            ((StarfinBedWarsPlugin) plugin).getNetworkRegistry();
+        if (network != null) network.refresh();
+    }
+
+    /** True while the disposable world for this arena is being prepared. */
+    public boolean isPreparingArena(String arenaId) {
+        return arenaId != null && Boolean.TRUE.equals(loading.get(arenaId));
+    }
+
+    public boolean isOpeningSpawns(String arenaId) {
+        return arenaId != null && spawnOpeningTasks.containsKey(arenaId);
+    }
+
+    public Set<UUID> getDirectSpectators(GameMatch match) {
+        Set<UUID> ids = new HashSet<UUID>();
+        if (match == null) return ids;
+        for (Map.Entry<UUID, GameMatch> entry : spectators.entrySet())
+            if (entry.getValue() == match) ids.add(entry.getKey());
+        return ids;
     }
 
     public void spectate(Player player, String arenaId) {
@@ -274,7 +331,7 @@ public final class MatchEngineService implements ManagedService, Listener {
             throw new IllegalStateException("O servidor recusou o teleporte para espectador.");
         }
         spectators.put(player.getUniqueId(), match);
-        fire(MatchLifecycleEvent.Type.SPECTATOR_JOINED, match, null, null);
+        fire(MatchLifecycleEvent.Type.SPECTATOR_JOINED, match, player.getUniqueId());
     }
 
     public void leave(Player player) {
@@ -282,7 +339,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         GameMatch spectatedMatch = spectators.remove(player.getUniqueId());
         if (spectatedMatch != null) {
             teleportToReturn(player);
-            fire(MatchLifecycleEvent.Type.SPECTATOR_LEFT, spectatedMatch, null, null);
+            fire(MatchLifecycleEvent.Type.SPECTATOR_LEFT, spectatedMatch, player.getUniqueId());
             return;
         }
         GameMatch match = byPlayer.get(player.getUniqueId());
@@ -323,11 +380,15 @@ public final class MatchEngineService implements ManagedService, Listener {
         GameParticipant participant = match.getParticipant(player.getUniqueId());
         World world = matchWorlds.get(match.getId());
         Location spawn = arenas.toLocation(match.getArena().getLobby(), world);
+        if (participantInventory != null) participantInventory.capture(player);
         player.setGameMode(GameMode.SURVIVAL);
         if (!player.teleport(spawn)) {
             match.removeWaitingParticipant(player.getUniqueId());
             byPlayer.remove(player.getUniqueId());
             teleportToReturn(player);
+            if (participantInventory != null) {
+                participantInventory.discardCapture(player.getUniqueId());
+            }
             throw new IllegalStateException("O servidor recusou o teleporte para a arena.");
         }
         fire(MatchLifecycleEvent.Type.PLAYER_JOINED, match, participant, participant.getTeamId());
@@ -358,6 +419,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (countdowns.containsKey(id)) return;
         match.transition(MatchState.STARTING);
         countdownValues.put(id, match.getArena().getCountdownSeconds());
+        fire(MatchLifecycleEvent.Type.COUNTDOWN_STARTED, match, null, null);
         countdowns.put(id, Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override
             public void run() {
@@ -371,18 +433,20 @@ public final class MatchEngineService implements ManagedService, Listener {
                     updateCountdown(match);
                     return;
                 }
-                if (remaining <= 1) {
+                if (remaining <= 0) {
                     cancel(countdowns.remove(match.getArena().getId()));
                     countdownValues.remove(match.getArena().getId());
                     beginSpawnOpening(match);
                     return;
                 }
-                if (remaining <= 10 || remaining % 10 == 0) {
-                    broadcast(match, "Lobby fecha em " + remaining + "s.");
+                if (remaining <= 5 || remaining % 10 == 0) {
+                    announce(match, "messages.lobby-countdown",
+                        "&eA partida comeca em &6{time} &esegundos!",
+                        "time", Integer.toString(remaining));
                 }
                 countdownValues.put(match.getArena().getId(), remaining - 1);
             }
-        }, 20L, 20L));
+        }, 0L, 20L));
     }
 
     private void beginSpawnOpening(final GameMatch match) {
@@ -441,7 +505,8 @@ public final class MatchEngineService implements ManagedService, Listener {
         fire(MatchLifecycleEvent.Type.SPAWN_OPENING, match, null, null);
         final String arenaId = match.getArena().getId();
         spawnOpeningValues.put(arenaId, spawnOpeningSeconds);
-        broadcast(match, "Os spawns abrem em " + spawnOpeningSeconds + " segundos.");
+        announce(match, "messages.spawn-preparing",
+            "&eAs equipes estao nas bases. Aguarde a abertura das barreiras.");
         spawnOpeningTasks.put(arenaId, Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override public void run() {
                 Integer remaining = spawnOpeningValues.get(arenaId);
@@ -459,19 +524,20 @@ public final class MatchEngineService implements ManagedService, Listener {
                     updateCountdown(match);
                     return;
                 }
-                if (remaining <= 1) {
-                    broadcast(match, "Os spawns abrem em 1 segundo.");
+                if (remaining <= 0) {
                     cancel(spawnOpeningTasks.remove(arenaId));
                     spawnOpeningValues.remove(arenaId);
                     startMatch(match);
                     return;
                 }
-                if (remaining <= 10 || remaining % 5 == 0) {
-                    broadcast(match, "Os spawns abrem em " + remaining + " segundos.");
+                if (remaining <= 5 || remaining % 5 == 0) {
+                    announce(match, "messages.spawn-countdown",
+                        "&eAs barreiras abrem em &6{time} &esegundos!",
+                        "time", Integer.toString(remaining));
                 }
                 spawnOpeningValues.put(arenaId, remaining - 1);
             }
-        }, 20L, 20L));
+        }, 0L, 20L));
     }
 
     private void startMatch(GameMatch match) {
@@ -490,7 +556,8 @@ public final class MatchEngineService implements ManagedService, Listener {
             if (player != null) player.setFallDistance(0.0F);
         }
         match.transition(MatchState.IN_GAME);
-        broadcast(match, "A partida comecou!");
+        announce(match, "messages.match-started",
+            "&a&lA PARTIDA COMECOU! &7Proteja sua cama e destrua as adversarias.");
         fire(MatchLifecycleEvent.Type.STARTED, match, null, null);
     }
 
@@ -538,10 +605,13 @@ public final class MatchEngineService implements ManagedService, Listener {
     private void finish(GameMatch match, MatchEndReason reason, String winner) {
         if (!match.finish(reason, winner)) return;
         playerPlacedBlocks.remove(match.getId());
+        playerWater.remove(match.getId());
+        bridgeBlockOwners.clearMatch(match.getId());
         unknownBedWarnings.removeIf(key -> key.startsWith(match.getId().toString() + ":"));
         for (GameParticipant participant : match.getParticipantList()) {
             cancel(respawnTasks.remove(participant.getPlayerId()));
             fallProtectionUntil.remove(participant.getPlayerId());
+            boundaryWarnings.forget(participant.getPlayerId());
         }
         BukkitTask countdown = countdowns.remove(match.getArena().getId());
         cancel(countdown);
@@ -551,12 +621,18 @@ public final class MatchEngineService implements ManagedService, Listener {
         fire(MatchLifecycleEvent.Type.ENDED, match, null, winner);
         broadcast(match, winner == null ? "Partida encerrada." : "Equipe vencedora: "
             + match.getTeam(winner).getDefinition().getDisplayName());
+        // Give the winning team a longer fireworks celebration, but keep
+        // ordinary draws/cancelled matches on the previous 5-second return.
+        int celebrationSeconds = Math.max(5, Math.min(20,
+            plugin.getConfig().getInt("match.victory-celebration-seconds", 9)));
+        long returnDelay = reason == MatchEndReason.VICTORY && winner != null
+            ? celebrationSeconds * 20L : 100L;
         Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
             @Override
             public void run() {
                 restore(match);
             }
-        }, 100L);
+        }, returnDelay);
     }
 
     private void resolveWinner(GameMatch match) {
@@ -618,6 +694,83 @@ public final class MatchEngineService implements ManagedService, Listener {
         Bukkit.getPluginManager().callEvent(new MatchLifecycleEvent(type, match, participant, team));
     }
 
+    private void fire(MatchLifecycleEvent.Type type, GameMatch match, UUID actorId) {
+        Bukkit.getPluginManager().callEvent(new MatchLifecycleEvent(type, match, null, null, actorId));
+    }
+
+    private String message(String path, String fallback, String... tokens) {
+        return org.bukkit.ChatColor.translateAlternateColorCodes('&',
+            MatchMessageTemplates.format(plugin.getConfig().getString(path, fallback), tokens));
+    }
+
+    private void announce(GameMatch match, String path, String fallback, String... tokens) {
+        broadcast(match, message(path, fallback, tokens));
+    }
+
+    /** Get the killer before prepareValidDeath consumes recent combat attribution. */
+    private Player deathKiller(Player victim, GameMatch match, GameParticipant participant) {
+        Player direct = victim.getKiller();
+        if (validKiller(direct, match, participant)) return direct;
+        RecentAttacker previous = lastAttackers.get(victim.getUniqueId());
+        if (previous == null || !previous.matchId.equals(match.getId())
+                || System.currentTimeMillis() - previous.atMillis > 15000L) return null;
+        Player recent = Bukkit.getPlayer(previous.attackerId);
+        return validKiller(recent, match, participant) ? recent : null;
+    }
+
+    private String deathReason(DamageCause cause) {
+        if (cause == null) return "generic";
+        switch (cause) {
+            case VOID: return "void";
+            case FALL: return "fall";
+            case FIRE: case FIRE_TICK: return "fire";
+            case LAVA: return "lava";
+            case DROWNING: return "drowning";
+            case BLOCK_EXPLOSION: case ENTITY_EXPLOSION: return "explosion";
+            case PROJECTILE: return "projectile";
+            case ENTITY_ATTACK: return "combat";
+            default: return "generic";
+        }
+    }
+
+    private void announcePlayerDeath(GameMatch match, Player victim, GameParticipant participant) {
+        DamageCause cause = victim.getLastDamageCause() == null ? null
+            : victim.getLastDamageCause().getCause();
+        UUID markedVoidMatch = forcedVoidDeaths.remove(victim.getUniqueId());
+        String reason = match.getId().equals(markedVoidMatch) ? "void" : deathReason(cause);
+        Player killer = deathKiller(victim, match, participant);
+        boolean finalKill = !match.getTeam(participant.getTeamId()).isBedAlive();
+        String key = MatchMessageTemplates.deathKey(reason, killer != null, finalKill);
+        String fallback;
+        if ("void".equals(reason)) {
+            fallback = killer == null ? "&7{player} &7caiu no void."
+                : "&7{player} &7foi derrubado no void por &e{killer}&7.";
+        } else if ("fall".equals(reason)) {
+            fallback = killer == null ? "&7{player} &7morreu de queda."
+                : "&7{player} &7foi derrubado por &e{killer}&7.";
+        } else if ("fire".equals(reason) || "lava".equals(reason)) {
+            fallback = "&7{player} &7morreu queimado.";
+        } else if ("drowning".equals(reason)) {
+            fallback = "&7{player} &7se afogou.";
+        } else if ("explosion".equals(reason)) {
+            fallback = killer == null ? "&7{player} &7foi explodido."
+                : "&7{player} &7foi explodido por &e{killer}&7.";
+        } else {
+            fallback = killer == null ? "&7{player} &7morreu."
+                : "&7{player} &7foi eliminado por &e{killer}&7.";
+        }
+        // Non-duplicated final-kill suffix with configurable overrides.
+        String selected = plugin.getConfig().getString(key);
+        if (selected == null) {
+            String nonfinal = MatchMessageTemplates.deathKey(reason, killer != null, false);
+            selected = plugin.getConfig().getString(nonfinal, fallback);
+            if (finalKill) selected += " &b&lABATE FINAL!";
+        }
+        broadcast(match, org.bukkit.ChatColor.translateAlternateColorCodes('&',
+            MatchMessageTemplates.format(selected, "player", victim.getName(),
+                "killer", killer == null ? "" : killer.getName())));
+    }
+
     private void broadcast(GameMatch match, String message) {
         for (GameParticipant participant : match.getParticipantList()) {
             Player player = Bukkit.getPlayer(participant.getPlayerId());
@@ -648,9 +801,12 @@ public final class MatchEngineService implements ManagedService, Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         final Player player = event.getPlayer();
-        if (spectators.remove(player.getUniqueId()) != null) {
+        boundaryWarnings.forget(player.getUniqueId());
+        GameMatch watched = spectators.remove(player.getUniqueId());
+        if (watched != null) {
             returnLocations.remove(player.getUniqueId());
             returnGameModes.remove(player.getUniqueId());
+            fire(MatchLifecycleEvent.Type.SPECTATOR_LEFT, watched, player.getUniqueId());
             return;
         }
         final GameMatch match = byPlayer.get(player.getUniqueId());
@@ -805,6 +961,9 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (match == null || match.getState() != MatchState.IN_GAME) return;
         GameParticipant participant = match.getParticipant(player.getUniqueId());
         if (participant == null || participant.getState() != ParticipantState.CONNECTED) return;
+        publishCombatDeath(match, player, participant);
+        event.setDeathMessage(null); // Prevent duplicate server-wide vanilla death broadcasts.
+        announcePlayerDeath(match, player, participant);
         event.getDrops().clear();
         event.setDroppedExp(0);
         event.setKeepInventory(true);
@@ -813,11 +972,17 @@ public final class MatchEngineService implements ManagedService, Listener {
         GameTeam team = match.getTeam(participant.getTeamId());
         if (!team.isBedAlive()) {
             match.setParticipantState(player.getUniqueId(), ParticipantState.ELIMINATED);
+            player.sendMessage(message("messages.you-eliminated",
+                "&cVoce foi eliminado! Sua cama ja foi destruida."));
             fire(MatchLifecycleEvent.Type.PLAYER_ELIMINATED, match, participant, participant.getTeamId());
             resolveWinnerLater(match);
         } else {
             match.setParticipantState(player.getUniqueId(), ParticipantState.RESPAWNING);
             cancel(respawnTasks.remove(player.getUniqueId()));
+            player.sendMessage(message("messages.respawn-countdown",
+                "&eVoce renascera em &c{time} &esegundos.",
+                "time", Integer.toString(respawnSeconds)));
+            fire(MatchLifecycleEvent.Type.PLAYER_DIED, match, participant, participant.getTeamId());
         }
         // Evita a tela de morte e inicia imediatamente o periodo de espectador.
         Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
@@ -830,7 +995,16 @@ public final class MatchEngineService implements ManagedService, Listener {
     public void processDisconnectDeath(Player player, GameMatch match, GameParticipant participant) {
         if (byPlayer.get(player.getUniqueId()) != match || match.getState() != MatchState.IN_GAME
                 || participant.getState() != ParticipantState.CONNECTED) return;
+        publishCombatDeath(match, player, participant);
         prepareValidDeath(player, match, participant);
+    }
+
+    private void publishCombatDeath(GameMatch match, Player victim, GameParticipant participant) {
+        Player killer = deathKiller(victim, match, participant);
+        GameTeam team = match.getTeam(participant.getTeamId());
+        Bukkit.getPluginManager().callEvent(new MatchCombatDeathEvent(match.getId(),
+            victim.getUniqueId(), killer == null ? null : killer.getUniqueId(),
+            team != null && !team.isBedAlive()));
     }
 
     private void prepareValidDeath(Player player, GameMatch match, GameParticipant participant) {
@@ -841,7 +1015,13 @@ public final class MatchEngineService implements ManagedService, Listener {
             Player candidate = Bukkit.getPlayer(recent.attackerId);
             if (validKiller(candidate, match, participant)) killer = candidate;
         }
-        transferResources(player, killer);
+        GameTeam victimTeam = match.getTeam(participant.getTeamId());
+        boolean transfer = victimTeam != null && FinalKillResourcePolicy.shouldTransfer(
+            victimTeam.isBedAlive(), victimTeam.getActiveCount(match),
+            match.getEligibleTeams().size());
+        if (transfer) transferResources(player, killer);
+        // The winning final kill intentionally awards no materials because
+        // the game transitions to the victory screen and lobby restoration.
         if (equipment != null) equipment.onValidDeath(player, participant);
         player.getInventory().clear();
         player.getInventory().setArmorContents(new org.bukkit.inventory.ItemStack[4]);
@@ -883,6 +1063,7 @@ public final class MatchEngineService implements ManagedService, Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onRespawn(PlayerRespawnEvent event) {
         final Player player = event.getPlayer();
+        forcedVoidDeaths.remove(player.getUniqueId());
         final GameMatch match = byPlayer.get(player.getUniqueId());
         if (match == null) return;
         final GameParticipant participant = match.getParticipant(player.getUniqueId());
@@ -951,7 +1132,7 @@ public final class MatchEngineService implements ManagedService, Listener {
                                 fallProtectionUntil.put(player.getUniqueId(),
                                     System.currentTimeMillis() + 3000L);
                                 match.setParticipantState(player.getUniqueId(), ParticipantState.CONNECTED);
-                                player.sendMessage(org.bukkit.ChatColor.GREEN + "Voce renasceu.");
+                                player.sendMessage(message("messages.respawned", "&aVoce renasceu!"));
                             }
                         }
                         respawnTasks.remove(player.getUniqueId());
@@ -986,6 +1167,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (match == null) return;
         Set<String> placed = playerPlacedBlocks.get(match.getId());
         if (placed != null) placed.remove(blockKey(event.getBlock()));
+        bridgeBlockOwners.forget(match.getId(), blockKey(event.getBlock()));
     }
 
     private GameTeam teamForBed(GameMatch match, Block block) {
@@ -1010,9 +1192,12 @@ public final class MatchEngineService implements ManagedService, Listener {
             }
             return;
         }
-        if (!bedTeam.isBedAlive() || participant.getTeamId().equals(bedTeam.getDefinition().getId())) {
+        if (participant.getTeamId().equals(bedTeam.getDefinition().getId())) {
+            player.sendMessage(message("messages.own-bed",
+                "&cVocê não pode destruir sua própria cama!"));
             return;
         }
+        if (!bedTeam.isBedAlive()) return;
         if (!match.destroyBed(bedTeam.getDefinition().getId())) return;
         removeBedBlocks(block, bedTeam.getDefinition().getBed());
         fire(MatchLifecycleEvent.Type.BED_DESTROYED, match, participant,
@@ -1029,6 +1214,31 @@ public final class MatchEngineService implements ManagedService, Listener {
         Block configured = block.getWorld().getBlockAt(x, y, z);
         return configured.getType() == Material.BED_BLOCK
             && Math.abs(block.getX() - x) + Math.abs(block.getZ() - z) == 1;
+    }
+
+    /**
+     * Match Point: disable every remaining bed in this disposable world copy.
+     * The next game reloads an independent arena template, never this instance.
+     */
+    public int destroyAllBedsAtMatchPoint(GameMatch match) {
+        if (match == null || match.getState() != MatchState.IN_GAME) return 0;
+        World world = matchWorlds.get(match.getId());
+        if (world == null) return 0;
+        int destroyed = 0;
+        for (GameTeam team : match.getTeams().values()) {
+            if (!team.isBedAlive()) continue;
+            String id = team.getDefinition().getId();
+            if (!match.destroyBed(id)) continue;
+            Position saved = team.getDefinition().getBed();
+            if (saved != null) {
+                Block bed = world.getBlockAt((int) Math.floor(saved.getX()),
+                    (int) Math.floor(saved.getY()), (int) Math.floor(saved.getZ()));
+                if (bed.getType() == Material.BED_BLOCK) removeBedBlocks(bed, saved);
+            }
+            fire(MatchLifecycleEvent.Type.BED_DESTROYED, match, null, id);
+            destroyed++;
+        }
+        return destroyed;
     }
 
     private void removeBedBlocks(Block brokenBlock, Position savedBed) {
@@ -1097,10 +1307,80 @@ public final class MatchEngineService implements ManagedService, Listener {
             playerPlacedBlocks.put(match.getId(), placed);
         }
         placed.add(blockKey(event.getBlockPlaced()));
+        // New player-placed block at an old location is no longer owned by an egg.
+        bridgeBlockOwners.forget(match.getId(), blockKey(event.getBlockPlaced()));
     }
 
     private String blockKey(Block block) {
         return block.getX() + ":" + block.getY() + ":" + block.getZ();
+    }
+
+    /** Register only new ability-generated blocks for normal break/explosion protection. */
+    public boolean placeSpecialBlock(GameMatch match, Block block, Material material, byte data) {
+        return placeSpecialBlock(match, block, material, data, null);
+    }
+
+    /** Egg ownership is optional for other future temporary abilities. */
+    public boolean placeSpecialBlock(GameMatch match, Block block, Material material,
+                                     byte data, UUID eggId) {
+        if (match == null || block == null || material != Material.WOOL
+                || block.getType() != Material.AIR || match.getState() != MatchState.IN_GAME
+                || matchWorlds.get(match.getId()) != block.getWorld()) return false;
+        ArenaRegion region = match.getArena().getRegion(ArenaRegionType.MAIN);
+        Location at = block.getLocation();
+        Position position = new Position(match.getArena().getSourceWorld(),
+            at.getX() + 0.5D, at.getY() + 0.5D, at.getZ() + 0.5D, 0.0F, 0.0F);
+        if (region == null || !region.contains(position)) return false;
+        block.setType(material);
+        block.setData(data);
+        Set<String> placed = playerPlacedBlocks.get(match.getId());
+        if (placed == null) {
+            placed = new HashSet<String>();
+            playerPlacedBlocks.put(match.getId(), placed);
+        }
+        placed.add(blockKey(block));
+        if (eggId != null) bridgeBlockOwners.record(match.getId(), blockKey(block), eggId);
+        return true;
+    }
+
+    /**
+     * Remove only wool still owned by this specific Bridge Egg. If an enemy
+     * broke the bridge and placed replacement wool at identical coordinates,
+     * a missing ownership tag protects that new block from the decay task.
+     */
+    public boolean decayBridgeBlock(GameMatch match, Block block, UUID eggId, byte expectedColor) {
+        if (match == null || block == null || eggId == null
+                || match.getState() != MatchState.IN_GAME
+                || matchWorlds.get(match.getId()) != block.getWorld()) return false;
+        String key = blockKey(block);
+        if (!bridgeBlockOwners.owns(match.getId(), key, eggId)) return false;
+        if (block.getType() != Material.WOOL || block.getData() != expectedColor) {
+            // A plugin may have replaced this position without a Bukkit place
+            // event. Forget the old egg, but do NOT unprotect the replacement.
+            bridgeBlockOwners.forget(match.getId(), key);
+            return false;
+        }
+        bridgeBlockOwners.forget(match.getId(), key);
+        Set<String> placed = playerPlacedBlocks.get(match.getId());
+        if (placed != null) placed.remove(key);
+        block.setType(Material.AIR, false); // No drops and no block item duplication.
+        return true;
+    }
+
+    /** Match Point removes a block from a disposable instance: untrack its old owner. */
+    public void forgetMatchPointBlock(GameMatch match, Block block) {
+        if (match == null || block == null) return;
+        Set<String> placed = playerPlacedBlocks.get(match.getId());
+        if (placed != null) placed.remove(blockKey(block));
+        bridgeBlockOwners.forget(match.getId(), blockKey(block));
+    }
+
+    /** Release a TNT placement after the block has become a primed entity. */
+    void forgetPlacedBlock(GameMatch match, Block block) {
+        if (match == null || block == null) return;
+        Set<String> placed = playerPlacedBlocks.get(match.getId());
+        if (placed != null) placed.remove(blockKey(block));
+        bridgeBlockOwners.forget(match.getId(), blockKey(block));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -1187,14 +1467,70 @@ public final class MatchEngineService implements ManagedService, Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBucketEmpty(org.bukkit.event.player.PlayerBucketEmptyEvent event) {
-        if (matchInWorld(event.getPlayer().getWorld()) != null) event.setCancelled(true);
+        GameMatch match = matchInWorld(event.getPlayer().getWorld());
+        if (match == null) return;
+        Block destination = event.getBlockClicked().getRelative(event.getBlockFace());
+        if (!canUseWater(match, event.getPlayer()) || event.getBucket() != Material.WATER_BUCKET
+                || destination.getType() != Material.AIR || !waterInside(match, destination)) {
+            event.setCancelled(true);
+        }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST)
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onWaterPlaced(org.bukkit.event.player.PlayerBucketEmptyEvent event) {
+        GameMatch match = matchInWorld(event.getPlayer().getWorld());
+        if (match == null || event.getBucket() != Material.WATER_BUCKET) return;
+        trackWater(match, event.getBlockClicked().getRelative(event.getBlockFace()));
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBucketFill(org.bukkit.event.player.PlayerBucketFillEvent event) {
-        if (matchInWorld(event.getPlayer().getWorld()) != null) event.setCancelled(true);
+        GameMatch match = matchInWorld(event.getPlayer().getWorld());
+        if (match == null) return;
+        if (!canUseWater(match, event.getPlayer()) || !ownsWater(match, event.getBlockClicked())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onWaterCollected(org.bukkit.event.player.PlayerBucketFillEvent event) {
+        GameMatch match = matchInWorld(event.getPlayer().getWorld());
+        if (match == null) return;
+        Set<String> water = playerWater.get(match.getId());
+        if (water != null) water.remove(blockKey(event.getBlockClicked()));
+    }
+
+    private boolean canUseWater(GameMatch match, Player player) {
+        GameParticipant participant = match.getParticipant(player.getUniqueId());
+        return match.getState() == MatchState.IN_GAME && byPlayer.get(player.getUniqueId()) == match
+            && participant != null && participant.getState() == ParticipantState.CONNECTED
+            && !spectators.containsKey(player.getUniqueId());
+    }
+
+    private boolean waterInside(GameMatch match, Block block) {
+        ArenaRegion area = match.getArena().getRegion(ArenaRegionType.MAIN);
+        return matchWorlds.get(match.getId()) == block.getWorld() && area != null
+            && block.getY() <= match.getArena().getCeilingHeight()
+            && block.getX() >= area.getMinimumX() && block.getX() <= area.getMaximumX()
+            && block.getY() >= area.getMinimumY() && block.getY() <= area.getMaximumY()
+            && block.getZ() >= area.getMinimumZ() && block.getZ() <= area.getMaximumZ();
+    }
+
+    private boolean ownsWater(GameMatch match, Block block) {
+        Set<String> water = playerWater.get(match.getId());
+        return water != null && water.contains(blockKey(block))
+            && (block.getType() == Material.WATER || block.getType() == Material.STATIONARY_WATER);
+    }
+
+    private void trackWater(GameMatch match, Block block) {
+        Set<String> water = playerWater.get(match.getId());
+        if (water == null) {
+            water = new HashSet<String>();
+            playerWater.put(match.getId(), water);
+        }
+        water.add(blockKey(block));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -1255,8 +1591,14 @@ public final class MatchEngineService implements ManagedService, Listener {
         }
         ArenaDefinition arena = match.getArena();
         if (event.getTo().getY() < arena.getVoidHeight()) {
-            player.setHealth(0.0D);
+            forcedVoidDeaths.put(player.getUniqueId(), match.getId());
+            if (!player.isDead() && player.getHealth() > 0.0D) player.setHealth(0.0D);
             return;
+        }
+        if (event.getTo().getY() >= arena.getCeilingHeight() - 1.0D) {
+            warnBoundary(player, ArenaBoundaryWarnings.Type.HEIGHT,
+                "messages.boundary-height",
+                "&cVocê atingiu o limite de altura desta arena!");
         }
         if (event.getTo().getY() >= arena.getCeilingHeight()) {
             Location capped = event.getTo().clone();
@@ -1265,22 +1607,86 @@ public final class MatchEngineService implements ManagedService, Listener {
             return;
         }
         ArenaRegion bounds = arena.getBounds();
-        if (bounds != null && (event.getTo().getBlockX() < bounds.getMinimumX()
-                || event.getTo().getBlockX() > bounds.getMaximumX()
-                || event.getTo().getBlockZ() < bounds.getMinimumZ()
-                || event.getTo().getBlockZ() > bounds.getMaximumZ())) {
-            event.setTo(event.getFrom());
+        if (bounds != null) {
+            Location to = event.getTo();
+            boolean outside = to.getBlockX() < bounds.getMinimumX()
+                || to.getBlockX() > bounds.getMaximumX()
+                || to.getBlockZ() < bounds.getMinimumZ()
+                || to.getBlockZ() > bounds.getMaximumZ();
+            if (outside || ArenaBoundaryWarnings.nearHorizontalEdge(
+                    to.getX(), to.getZ(), bounds.getMinimumX(), bounds.getMaximumX(),
+                    bounds.getMinimumZ(), bounds.getMaximumZ(), 1.25D)) {
+                warnBoundary(player, ArenaBoundaryWarnings.Type.EDGE,
+                    "messages.boundary-edge",
+                    "&cVocê chegou ao limite da arena! Não é possível sair do mapa.");
+            }
+            if (outside) event.setTo(event.getFrom());
         }
     }
 
-    @EventHandler
-    public void onExplosion(EntityExplodeEvent event) {
-        if (matchInWorld(event.getLocation().getWorld()) != null) event.blockList().clear();
+    private void warnBoundary(Player player, ArenaBoundaryWarnings.Type type,
+                              String path, String defaultMessage) {
+        int seconds = Math.max(1, Math.min(15,
+            plugin.getConfig().getInt("messages.boundary-warning-cooldown-seconds", 4)));
+        if (boundaryWarnings.shouldWarn(player.getUniqueId(), type,
+                System.currentTimeMillis(), seconds * 1000L)) {
+            player.sendMessage(message(path, defaultMessage));
+        }
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onExplosion(EntityExplodeEvent event) {
+        GameMatch match = matchInWorld(event.getLocation().getWorld());
+        if (match == null) return;
+        protectExplosionBlocks(match, event.blockList());
+        // Defensas destruidas nao retornam ao inventario por drops vanilla.
+        event.setYield(0.0F);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockExplosion(BlockExplodeEvent event) {
-        if (matchInWorld(event.getBlock().getWorld()) != null) event.blockList().clear();
+        GameMatch match = matchInWorld(event.getBlock().getWorld());
+        if (match == null) return;
+        protectExplosionBlocks(match, event.blockList());
+        event.setYield(0.0F);
+    }
+
+    /**
+     * Explosoes podem destruir somente blocos registrados como colocados pelos
+     * participantes desta partida. A construcao original e as camas sao protegidas.
+     */
+    private void protectExplosionBlocks(GameMatch match, java.util.List<Block> affected) {
+        Set<String> placed = playerPlacedBlocks.get(match.getId());
+        boolean playing = match.getState() == MatchState.IN_GAME;
+        java.util.Iterator<Block> iterator = affected.iterator();
+        while (iterator.hasNext()) {
+            Block block = iterator.next();
+            if (block.getType() == Material.BED_BLOCK
+                    || !ExplosionBlockPolicy.canDestroy(playing, placed, blockKey(block))) {
+                iterator.remove();
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onExplosionFinished(EntityExplodeEvent event) {
+        GameMatch match = matchInWorld(event.getLocation().getWorld());
+        if (match != null) forgetExplodedBlocks(match, event.blockList());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockExplosionFinished(BlockExplodeEvent event) {
+        GameMatch match = matchInWorld(event.getBlock().getWorld());
+        if (match != null) forgetExplodedBlocks(match, event.blockList());
+    }
+
+    private void forgetExplodedBlocks(GameMatch match, java.util.List<Block> destroyed) {
+        Set<String> placed = playerPlacedBlocks.get(match.getId());
+        if (placed == null) return;
+        for (Block block : destroyed) {
+            placed.remove(blockKey(block));
+            bridgeBlockOwners.forget(match.getId(), blockKey(block));
+        }
     }
 
     @EventHandler
@@ -1293,9 +1699,22 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (matchInWorld(event.getBlock().getWorld()) != null) event.setCancelled(true);
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockFlow(BlockFromToEvent event) {
-        if (matchInWorld(event.getBlock().getWorld()) != null) event.setCancelled(true);
+        GameMatch match = matchInWorld(event.getBlock().getWorld());
+        if (match == null) return;
+        Block destination = event.getToBlock();
+        if (match.getState() != MatchState.IN_GAME || !ownsWater(match, event.getBlock())
+                || !waterInside(match, destination)
+                || (destination.getType() != Material.AIR && !ownsWater(match, destination))) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onWaterFlowAccepted(BlockFromToEvent event) {
+        GameMatch match = matchInWorld(event.getBlock().getWorld());
+        if (match != null && ownsWater(match, event.getBlock())) trackWater(match, event.getToBlock());
     }
 
     @EventHandler
@@ -1437,9 +1856,10 @@ public final class MatchEngineService implements ManagedService, Listener {
         @Override
         public void complete(World world, Exception error) {
             loading.remove(arena.getId());
-            if (error != null) {
-                firstPlayer.sendMessage("§cFalha ao preparar arena: " + error.getMessage());
-                plugin.getLogger().warning("Falha ao preparar arena " + arena.getId() + ": " + error.getMessage());
+            if (error != null || world == null) {
+                String reason = error == null ? "instancia nao carregada" : error.getMessage();
+                firstPlayer.sendMessage("§cFalha ao preparar arena: " + reason);
+                plugin.getLogger().warning("Falha ao preparar arena " + arena.getId() + ": " + reason);
                 return;
             }
             if (!arena.isEnabled() || byArena.containsKey(arena.getId())) {
@@ -1456,6 +1876,26 @@ public final class MatchEngineService implements ManagedService, Listener {
                     arenas.getWorlds().removeInstance(world);
                 } catch (IOException cleanupError) {
                     plugin.getLogger().severe("Instancia mantida apos desconexao durante carregamento: "
+                        + world.getName() + ": " + cleanupError.getMessage());
+                }
+                return;
+            }
+            // YAML coordinates alone do not prove that a published world still
+            // contains its beds. Refuse the disposable copy before admitting
+            // players, so an incomplete template cannot create a broken match.
+            java.util.List<String> missingBeds =
+                com.starfinplugins.bedwars.arena.ArenaBedWorldValidator.validate(arena, world);
+            if (!missingBeds.isEmpty()) {
+                String reason = arenas.join(missingBeds);
+                firstPlayer.sendMessage("§cA arena " + arena.getId()
+                    + " nao pode iniciar: " + reason
+                    + ". Corrija na edicao e publique novamente.");
+                plugin.getLogger().warning("Arena " + arena.getId() + " rejeitada: "
+                    + reason + "; template preservado.");
+                try {
+                    arenas.getWorlds().removeInstance(world);
+                } catch (IOException cleanupError) {
+                    plugin.getLogger().severe("Instancia invalida preservada para diagnostico: "
                         + world.getName() + ": " + cleanupError.getMessage());
                 }
                 return;

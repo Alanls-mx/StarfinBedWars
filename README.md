@@ -10,13 +10,41 @@ Para o historico dos prompts e o inventario anterior, consulte `STARFINBEDWARS_P
 - Maven 3.6 ou superior.
 - Servidor Spigot 1.8.8.
 - O artefato local `org.spigotmc:spigot:1.8.8-R0.1-SNAPSHOT`, produzido pelo BuildTools, e necessario para compilar os adaptadores NPC e Title `v1_8_R3`.
-- O BedWars nao depende do StarfinCore. A API do StarfinMinigames ainda nao esta disponivel neste workspace.
+- **StarfinCore Spigot 0.3.1+ e obrigatorio** nesta branch: fornece HikariCP e o driver MySQL em runtime, antes do StarfinBedWars iniciar.
+- **StarfinMinigames Spigot 0.1.0+ e opcional na Fase 1**: fornece a API publica de descoberta de minigames. Compile `StarfinMinigames` com `mvn -B clean install` antes de compilar BedWars; instale a JAR do novo plugin antes de iniciar BedWars. Sem ela, o gameplay e o MySQL do BedWars continuam ativos, mas a integracao compartilhada fica indisponivel ate reiniciar com o plugin instalado.
 
 ```text
-mvn clean verify
+mvn -B verify
 ```
 
 O JAR e `target/StarfinBedWars-1.0.0-SNAPSHOT.jar`. A API Spigot e `provided` e nao e empacotada.
+
+## API compartilhada de minigames (Fase 1)
+
+Com StarfinMinigames presente, BedWars registra `bedwars` no `MinigameRegistry` do Bukkit `ServicesManager`. Arenas, grupos, modalidades, partidas, capacidades, estados e UUIDs dos jogadores sao consultados por snapshots imutaveis. Um adaptador publica eventos genericos a partir de `MatchLifecycleEvent` sem disparar os mesmos eventos internos novamente. O registro e removido no desligamento do BedWars; o StarfinMinigames tambem remove registros quando o plugin proprietario e desabilitado.
+
+Configure `plugins/StarfinMinigames/config.yml` com `server-id` unico por servidor. Se `plugins/StarfinBedWars/network.yml` estiver ativo, use o mesmo `server-id`; divergencia impede a publicacao incorreta do catalogo e preserva o BedWars local. O catalogo MySQL `sbw_network_*`, estatisticas, XP e preferencias permanecem sob responsabilidade do BedWars. O proxy StarfinMinigames cria somente a tabela aditiva `sm_network_reservations`. Consulte o [README do StarfinMinigames](../StarfinMinigames/README.md) para contratos, comandos, ordem de instalacao e limites.
+
+## Estatisticas, perfis, XP e niveis na rede BungeeCord
+
+O modulo de estatisticas usa uma **unica base MySQL compartilhada por todos os servidores Spigot de BedWars** da rede BungeeCord. Cada servidor instala seu proprio StarfinCore Spigot, que carrega e verifica HikariCP 4.0.3 e MySQL Connector/J 8.4.0. Essas bibliotecas sao `provided`: nao entram no JAR do BedWars. O Core disponibiliza as classes; o BedWars gerencia seu pool de conexoes e o encerra ao desligar, conforme o contrato de `docs/SHARED-LIBRARIES.md` do Core. O proxy nao precisa de uma conexao para somar estatisticas.
+
+1. Instale o StarfinCore Spigot da plataforma antes do StarfinBedWars em **cada servidor**. O `plugin.yml` agora exige `StarfinCore`.
+2. Inicie uma vez para gerar `plugins/StarfinBedWars/stats.yml`; configure `mysql.host`, `port`, `database`, `username`, `password` e `ssl-mode`.
+3. Garanta que todos os servidores BedWars apontem ao **mesmo banco MySQL** com schema acessivel para criar tabelas. Habilite `enabled: true` no `stats.yml` de cada servidor e reinicie.
+4. Use `/sbw stats`, `/sbw perfil` ou `/sbw nivel` para ver o proprio perfil. `/sbw stats <jogador|UUID>` consulta qualquer perfil ja registrado na rede; o console deve informar um identificador.
+
+O perfil e identificado pelo UUID (o nome mostrado e atualizado quando o jogador entra). A partida concluida registra partidas, vitorias, derrotas, empates, abates, abates finais, mortes, camas destruidas e XP total. Niveis sao calculados a partir do XP com a curva editavel em `stats.yml`; o nivel inicial e 1. Os valores padrao de XP sao participacao 25, vitoria 100, abate 10, abate final 20 adicionais e cama 40. Partidas canceladas antes ou durante o jogo nao concedem XP. Uma saida definitiva impede receber vitoria da equipe depois de abandonar a partida.
+
+O registro `sbw_match_results` tem chave unica `(match_id, player_uuid)`, e as somas dos perfis ocorrem na mesma transacao InnoDB. Assim, dois servidores ou uma retransmissao do mesmo resultado nao duplicam XP e vitorias. O trabalho JDBC e feito em uma thread dedicada, sem consultas no thread principal do Bukkit. Partidas finalizadas sao gravadas primeiro em `stats-pending/*.properties` e reenviadas a cada 60 s ate que o banco confirme a transacao, inclusive apos reinicio do plugin. **Nao delete esse diretorio quando houver falha de conexao**. Existe uma pequena janela entre o evento de fim da partida e a gravacao assincrona do arquivo local; uma queda brusca nesse exato instante pode perder o resultado. O sistema nao recupera partidas interrompidas por crash nem faz migracao de estatisticas antigas inexistentes.
+
+`stats.yml` vem desativado por padrao para nao impedir que instalacoes existentes iniciem sem credenciais. SQLite local nao e um banco compartilhado para uma rede BungeeCord. Proteja as credenciais e utilize SSL adequado no MySQL; `ssl-mode: REQUIRED` e o padrao. Para isolamento, o usuario SQL deve ter permissoes apenas nas tabelas deste modulo.
+
+## Catalogo de rede e migracao de YAML para banco SQL
+
+`network.yml` controla a publicacao assincrona de servidores, arenas completas (incluindo YAML de equipes, camas, geradores e regioes), partidas e presenca de jogadores nas tabelas `sbw_network_*`. Cada Spigot precisa de um `server-id` unico e estavel, mapeado ao nome real do servidor no BungeeCord; todos usam o MySQL comum de `stats.yml`. O catalogo vem **desativado por padrao** e faz heartbeat periodico. Configure `lobby-server` com o nome Bungee do lobby. O modulo StarfinMinigames-Bungee consulta esse catalogo e grava reservas em `sm_network_reservations`. Na chegada do jogador, o BedWars reivindica a reserva pelo UUID, valida servidor e instancia, solicita a arena selecionada e confirma a reserva apenas no evento real `PLAYER_JOINED`. Timeout, desconexao e falhas liberam a reserva. A entrada local continua disponivel quando o catalogo esta desativado.
+
+Para copiar arenas e configuracoes locais para MySQL ou SQLite com backup ZIP, use `/sbw migrate preview mysql` e depois `/sbw migrate apply mysql confirm` (ou `sqlite`). A importacao e idempotente quando o conteudo e identico e recusa conflitos sem sobrescrever. **Isso exporta os metadados, mas nao substitui o YAML local como fonte do gameplay nem copia os arquivos fisicos de mundos-template.** Veja [STARFINBEDWARS_NETWORK_STORAGE_MIGRATION.md](STARFINBEDWARS_NETWORK_STORAGE_MIGRATION.md) para schema, seguranca, consultas e checklist de testes.
 
 ## Instalar e configurar
 
@@ -26,7 +54,7 @@ O JAR e `target/StarfinBedWars-1.0.0-SNAPSHOT.jar`. A API Spigot e `provided` e 
 4. Siga `STARFINBEDWARS_ARENA_GUIDE.md` para importar, editar uma copia isolada, selecionar regioes, publicar, validar e habilitar.
 5. Para configuracao interativa de equipes e geradores, consulte `STARFINBEDWARS_SETUP_WIZARD_GUIDE.md`.
 
-A configuracao existente preserva seus valores. Na primeira inicializacao desta versao, as novas chaves de apresentacao ausentes sao adicionadas a `config.yml`; o original fica em `config.yml.pre-presentation.bak`.
+A migracao adiciona apenas chaves ausentes em `config.yml` e guarda o original em `config.yml.pre-presentation.bak`. Tempos de respawn, altura de hologramas, icones e mensagens explicitamente definidos sao preservados. Se o rodape da scoreboard foi personalizado e o TAB ainda usa exatamente a marca antiga padrao, o TAB passa a usar `{footer}`.
 
 | Chave | Padrao | Uso |
 |---|---:|---|
@@ -46,6 +74,8 @@ A configuracao existente preserva seus valores. Na primeira inicializacao desta 
 | `purchase-sounds.*` | `NOTE_PLING`, `LEVEL_UP` | Sons de compra da loja e das melhorias. |
 | `match-chat.format` | tags, nome e mensagem | Formato dos canais de chat na partida. |
 | `tab.header`, `tab.footer` | marca configurada | Cabecalho e rodape do TAB na partida; `{footer}` usa `scoreboard.footer`, ou pode ser substituido por texto literal. |
+| `tab.lobby.enabled`, `tab.lobby.header`, `tab.lobby.footer` | habilitado, marca configurada | Exibe o TAB do BedWars no lobby e restaura esse cabecalho ao sair da partida. Desative se outro plugin controlar o TAB do lobby. |
+| `tab.skins.enabled`, `tab.skins.aliases`, `tab.skins.fallback-player` | habilitado, sem aliases nem fallback | Usa a textura assinada do perfil conectado ou consulta o perfil oficial pelo nome. Para um nome pirata sem skin publica, associe o nick a uma conta com skin em `aliases`; o fallback e opcional. |
 | `tab.enabled`, `tab.team-prefix`, `tab.team-prefixes.*`, `tab.show-spectators`, `tab.spectator-prefix` | habilitado, prefixos por equipe | Exibicao e identificacao dos jogadores no TAB. |
 | `scoreboard.title`, `scoreboard.footer` | `BED WARS`, marca | Titulo e rodape do placar da partida. Para usar seu dominio, altere `scoreboard.footer`; o TAB e os layouts com `{footer}` exibem esse texto. |
 | `scoreboard.enabled`, `scoreboard.preset` | habilitado, `CLASSIC` | Controla a sidebar e o modelo visual. |
@@ -56,15 +86,19 @@ A configuracao existente preserva seus valores. Na primeira inicializacao desta 
 | `chests.ender-mode` | `MATCH_SHARED` | Escopo do bau do fim: `MATCH_SHARED`, `TEAM_SHARED` ou `PLAYER_PRIVATE`. |
 | `equipment.armor-mode` | `CLASSIC` | Armadura `CLASSIC` ou `INVERTED`, fixada por partida. |
 | `equipment.sword-minimum`, `equipment.tool-minimum` | `WOOD` | Piso do downgrade de equipamentos adquiridos: `WOOD` ou `STONE`. |
-| `shop.category-order`, `shop.category-icons.*` | ordem e icones classicos | Abas da loja de seis linhas. |
+| `shop.category-order`, `shop.category-icons.*` | Favoritos, Blocos, Combate, Armaduras, Ferramentas, Arcos, Poções, Utilidades | Abas da loja de seis linhas. Configurações antigas com `SWORDS` e `SPECIAL` continuam aceitas. |
+| `next-match.enabled` | `true` | Após a partida, abre `Jogar novamente?` para os jogadores que permaneceram até o fim. O olho procura outra arena do mesmo modo; o papel abre o seletor de arenas. |
+| `messages.shop.*`, `messages.upgrades.*` | textos coloridos em portugues | Feedback de compra, falha e nomes das melhorias. `{item}`, `{upgrade}` e `{level}` aceitam cores `&`; reaplique a cor apos o placeholder quando necessario. |
 | `starfinbedwars.chat.color` | `op` | Permite codigos `&` no chat da partida. Sem essa permissao, os codigos aparecem literalmente. |
 | `visuals.*` | titulos, sons e particulas | Contagem real de abertura, inicio e resultado da partida. |
 
 O reconnect usa `reconnect.yml`: habilitacao, modo `AUTOMATIC` ou `CONFIRMATION`, prazo Casual de 120 segundos e combat tag de 15 segundos. Consulte `STARFINBEDWARS_RECONNECT_GUIDE.md`. Chaves antigas `match.disconnect-grace-seconds` e `integrations.starfin-core.*` em instalacoes existentes nao sao mais utilizadas e podem ser removidas.
 
-Os arquivos `generators.yml`, `shop.yml`, `upgrades.yml`, `traps.yml` e `worlds.yml` sao criados na primeira inicializacao. Eles definem niveis/limites de geradores, itens e Quick Buy, custos de melhorias, efeitos/limites das armadilhas e politicas de mundos/regioes. Intervalos antigos padrao do nivel 1 de ferro (40 ticks) e ouro (200 ticks) sao atualizados para 80 e 300 ticks no primeiro startup desta versao; valores personalizados permanecem, e o original fica em `generators.yml.pre-slow-lv1.bak`. O catalogo da loja acrescenta TNT, escadas, obsidiana, perola, pocao de velocidade e balde de agua quando os respectivos IDs e slots estao livres; preserva os precos existentes e cria `shop.yml.pre-extended-catalog.bak`. Valores invalidos impedem a inicializacao do respectivo servico, em vez de habilitar funcionalidades com defaults implicitos. `WorldEdit` 6.x e opcional e nao e incluído como dependencia.
+Exemplo para um nick offline sem perfil oficial: `tab.skins.aliases.MeuNick: AlanLS_`. A busca ocorre fora da thread principal, com cache e limites de tempo; se a conta nao tiver textura publica assinada ou o servico estiver indisponivel, o cliente usa sua skin padrao. O UUID e o nome no TAB continuam os do jogador conectado. Ao voltar da partida, o plugin tambem devolve o inventario, os efeitos, o modo de jogo, o voo e as velocidades anteriores.
 
-Na loja, a primeira linha seleciona a categoria e os itens abaixo mudam para o submenu escolhido. As melhorias seguem o mesmo desenho, com abas Equipe e Armadilhas. Os itens e precos sao definidos nos respectivos arquivos YAML. A referencia historica enviada ate agora cobre a navegacao por categorias; uma comparacao exata dos itens e precos da antiga RedeSky depende das capturas ou lista que o usuario ainda vai enviar.
+Os arquivos `generators.yml`, `shop.yml`, `upgrades.yml`, `traps.yml` e `worlds.yml` sao criados na primeira inicializacao. Eles definem niveis/limites de geradores, itens e Quick Buy, custos de melhorias, efeitos/limites das armadilhas e politicas de mundos/regioes. Intervalos antigos padrao do nivel 1 de ferro (40 ticks) e ouro (200 ticks) sao atualizados para 80 e 300 ticks no primeiro startup desta versao; valores personalizados permanecem, e o original fica em `generators.yml.pre-slow-lv1.bak`. O catalogo da loja acrescenta os blocos, armas, arcos, poções e utilidades das capturas quando seus IDs e slots estao livres; preserva preços existentes e cria `shop.yml.pre-extended-catalog.bak`. As melhorias acrescentam Pressa, segundo nível de Afiação e segundo nível de Fadiga; migrações de valores padrão guardam `upgrades.yml.pre-reference-shop.bak` e `traps.yml.pre-reference-shop.bak`. Valores invalidos impedem a inicializacao do respectivo servico, em vez de habilitar funcionalidades com defaults implicitos. `WorldEdit` 6.x e opcional e nao e incluído como dependencia.
+
+Na loja, a primeira linha seleciona a categoria e os itens abaixo mudam para o submenu escolhido no mesmo inventário. Shift-clique adiciona ou remove um item da compra rápida; clique simples compra com som de confirmação. As melhorias de equipe e armadilhas aparecem em uma janela de três linhas, com custos e níveis no tooltip. Os itens e preços são configuráveis nos arquivos YAML; os preços ausentes nas capturas usam os valores definidos no catálogo. O balde de água comprado pode colocar água dentro da região MAIN; a água flui somente para ar dentro dos limites e não altera blocos originais. Ao terminar uma partida, os jogadores que permaneceram recebem o menu `Jogar novamente?`; arenas que falharem ao preparar a próxima partida são ignoradas nessa tentativa.
 
 ## Comandos
 
@@ -131,7 +165,7 @@ Geradores centrais respeitam limite efetivo de quatro unidades no chao, inclusiv
 
 Configure e confirme POS1/POS2 antes de escolher o modo ou criar equipes: `/sbw setarena center here` para calcular automaticamente ou `/sbw setarena pos1` e `/sbw setarena pos2` para marcar manualmente, depois `/sbw setarena confirm`. O plugin bloqueia as etapas seguintes enquanto os limites nao estiverem salvos. Depois, siga modo, capacidade de equipe e criacao das equipes nessa ordem. Depois de informar o nome de cada time, o assistente apresenta as 16 cores como opcoes clicaveis no chat; a escolha aplica tambem a cor de bloco correspondente, sem exigir codigo `&`. Apos configurar cama, spawn, respawn e lojas de cada time, marque uma vez POS1 e POS2 da regiao do gerador para criar juntos os geradores de Iron, Gold e Esmeralda daquele time. Ao final, digite `diamond` ou `emerald` e clique com o botao direito no bloco de cada gerador central; o minerio nasce sobre esse bloco, enquanto o holograma fica acima apenas para informar o nivel e o ciclo. O `/sbw setup status` exibe a etapa e instrucao reais. O assistente salva equipes, cores de bloco, lojas por equipe, regioes de geradores, limites e blocos das estruturas de spawn no schema YAML v7, mantendo leitura de arenas v1–v6. Solo usa footprint 3x3 com interior 1x1; Equipe usa 5x5 com interior 3x3. As estruturas registradas somem somente na copia isolada quando a partida inicia; o estado `STARTING` cancela dano antes do teleporte. Rascunhos e historico de Undo sobrevivem a reinicios, mas o clone temporario nao: reabra o editor para retomar; alteracoes de bloco nao publicadas no clone antigo nao sao recuperadas. O lobby deve ser configurado separadamente e o wizard nao habilita a arena.
 
-Ao concluir o setup, valide e publique a copia antes de habilitar: `/sbw arena validate <arena>`, `/sbw arena edit publish <arena>`, depois `/sbw arena enable <arena>`. Geradores centrais mostram um bloco flutuante, quatro icones orbitais e nivel/recurso/contagem regressiva. Os indicadores das camas sao enviados individualmente aos clientes. Consulte `STARFINBEDWARS_ANIMATED_HOLOGRAMS.md`.
+Ao concluir o setup, valide e publique a copia antes de habilitar: `/sbw arena validate <arena>`, `/sbw arena edit publish <arena>`, depois `/sbw arena enable <arena>`. A publicacao confere os blocos fisicos das camas; se um template antigo estiver incompleto, a partida tambem e recusada antes de admitir jogadores, com uma mensagem indicando a equipe e as coordenadas a corrigir. Geradores centrais mostram um bloco flutuante, quatro icones orbitais e nivel/recurso/contagem regressiva. Os indicadores das camas sao enviados individualmente aos clientes. Consulte `STARFINBEDWARS_ANIMATED_HOLOGRAMS.md`.
 
 `starfinbedwars.admin`, `starfinbedwars.command.arena` e `starfinbedwars.command.world` sao concedidas a operadores por padrao. Os comandos que exigem jogador nao funcionam pelo console.
 
@@ -147,11 +181,11 @@ Ao concluir o setup, valide e publique a copia antes de habilitar: `/sbw arena v
 - Arenas invalidadas no startup ficam desativadas; nada e corrigido automaticamente no arquivo de origem.
 - O mundo-fonte pode ser carregado para consulta. `/sbw arena edit <id>` cria uma copia temporaria; somente `/sbw arena edit publish <id>` atualiza o template, preservando o mundo original.
 
-Ainda nao implementados: estatisticas/progressao, ranked, temporadas, torneios, recuperacao de partidas apos reinicios, StarfinParty, cosméticos, conquistas e BungeeCord. O modo Maluca nao esta disponivel; a capacidade dinamica das equipes nao fixa o jogo em quatro jogadores por equipe.
+Ainda nao implementados: ranked, temporadas, torneios, recuperacao de partidas apos reinicios, StarfinParty, cosmeticos e conquistas. O adaptador de proxy BungeeCord cobre reservas individuais BedWars; Party e reserva em lote nao fazem parte desta fase. O modo Maluca nao esta disponivel; a capacidade dinamica das equipes nao fixa o jogo em quatro jogadores por equipe.
 
 Os NPCs de loja usam villager registrado no protocolo 1.8 com objetivos de caminho desativados; o clique abre a loja BedWars. Quando pontos de loja nao foram salvos, o fallback cria NPCs perto dos spawns; configure os pontos pelo setup para posiciona-los nas bancadas. Textos por idioma individual e integracao com StarfinMinigames dependem de uma API compartilhada disponivel. Em 23/10/2026, uma partida completa com dois clientes de protocolo 1.8.8 em PaperSpigot 1.8.8 confirmou entrada, lobby limpo, NPCs e menus, geradores de equipe e centrais, evolucao temporizada, protecao de armadura, respawn separado, quebra da cama inimiga, eliminacao, vitoria, restauracao do inventario e carregamento da arena apos reinicio. Em 24/10/2026, outra partida no servidor isolado confirmou os hologramas centrais e de loja, a abertura dos NPCs de itens e melhorias, a personalizacao da sidebar e do TAB, o fallback dos NPCs sem posicao salva e a quebra de la colocada com preservacao da pedra original. Uma validacao adicional do protocolo confirmou os NPCs como `Villager` visivel, o texto de dominio personalizado no TAB, a cor preservada ao dividir linhas da sidebar e a migracao dos intervalos iniciais dos geradores. O assistente de setup foi testado com varinha unica no quinto slot, menu por clique no ar e pausa pelo menu. Veja `STARFINBEDWARS_DEVELOPMENT_STATUS.md` para o escopo exato do teste; um servidor de producao com outros plugins ainda exige verificacao propria.
 
-O StarfinMinigames nao foi encontrado localmente nem como repositorio acessivel nesta auditoria. Nenhuma API compartilhada e presumida pela implementacao atual.
+Para homologacao de rede, instale StarfinCore, StarfinMinigames-Spigot e StarfinBedWars no backend, e StarfinMinigames-Bungee no proxy. Configure o mesmo MySQL nos dois lados, `server-id` coerente no Spigot e o mapeamento autorizado no proxy. Teste `/smnetwork servers`, `/smjoin bedwars solo`, lotacao, destino offline, desconexao, reconexao e retorno ao lobby. Preserve backup das JARs e YAML para rollback; o schema existente nao e recriado.
 
 ## Organizacao
 

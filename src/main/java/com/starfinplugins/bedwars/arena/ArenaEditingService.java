@@ -302,6 +302,11 @@ public final class ArenaEditingService implements ManagedService, Listener {
             throw new IllegalStateException("Configure e valide a arena antes de publicar: "
                 + arenas.join(validationErrors));
         }
+        java.util.List<String> missingBeds = ArenaBedWorldValidator.validate(arena, session.world);
+        if (!missingBeds.isEmpty()) {
+            throw new IllegalStateException("Corrija as camas fisicas antes de publicar: "
+                + arenas.join(missingBeds));
+        }
         if (session.world.getPlayers().size() > (session.world.getPlayers().contains(player) ? 1 : 0)) {
             throw new IllegalStateException("Retire outros jogadores do mundo de edicao antes de publicar.");
         }

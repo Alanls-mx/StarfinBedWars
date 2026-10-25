@@ -143,6 +143,12 @@ public final class MatchEquipmentService implements ManagedService, Listener {
         }
         if (chosen < 0) return;
         ItemStack item = new ItemStack(material);
+        if ((suffix.equals("_AXE") || suffix.equals("_PICKAXE"))
+                && (material.name().startsWith("IRON_")
+                    || material.name().startsWith("DIAMOND_"))) {
+            item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.DIG_SPEED,
+                material.name().startsWith("DIAMOND_") ? 2 : 1);
+        }
         upgrades.applyItemUpgrade(match, participant, item);
         inventory.setItem(chosen, item);
     }

@@ -1,5 +1,6 @@
 package com.starfinplugins.bedwars.upgrades;
 
+import com.starfinplugins.bedwars.config.PlayerFeedback;
 import com.starfinplugins.bedwars.arena.ArenaService;
 import com.starfinplugins.bedwars.domain.arena.Position;
 import com.starfinplugins.bedwars.domain.economy.ResourceType;
@@ -16,6 +17,7 @@ import com.starfinplugins.bedwars.economy.InventoryEconomy;
 import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
 import com.starfinplugins.bedwars.event.TeamUpgradePurchasedEvent;
 import com.starfinplugins.bedwars.event.TeamTrapTriggeredEvent;
+import com.starfinplugins.bedwars.shop.special.SpecialItemService;
 import com.starfinplugins.bedwars.match.MatchEngineService;
 import com.starfinplugins.bedwars.service.ManagedService;
 import java.util.ArrayList;
@@ -108,35 +110,13 @@ public final class TeamUpgradeService implements ManagedService, Listener {
     }
 
     public void openShop(Player player, GameMatch match, String teamId) {
-        openShop(player, match, teamId, UpgradeMenu.Category.UPGRADES);
-    }
-
-    private void openShop(Player player, GameMatch match, String teamId,
-                          UpgradeMenu.Category category) {
         if (!isActiveParticipant(player, match, teamId)) {
             player.sendMessage(ChatColor.RED + "Voce nao pode usar esta loja agora.");
             return;
         }
         GameTeam team = match.getTeam(teamId);
-        Map<TeamUpgradeType, Integer> levels = new EnumMap<TeamUpgradeType, Integer>(
-            TeamUpgradeType.class);
-        Map<TeamUpgradeType, Integer> nextCosts = new EnumMap<TeamUpgradeType, Integer>(
-            TeamUpgradeType.class);
-        for (TeamUpgradeType type : TeamUpgradeType.values()) {
-            int level = team.getUpgradeLevel(type);
-            levels.put(type, level);
-            List<Integer> costs = settings.getCosts(type);
-            if (level < costs.size()
-                    && (type != TeamUpgradeType.FORGE || generators.canUpgradeTeam(match.getId(), teamId))) {
-                nextCosts.put(type, costs.get(level));
-            }
-        }
-        Map<TeamTrapType, Integer> trapCosts = new EnumMap<TeamTrapType, Integer>(TeamTrapType.class);
-        for (TeamTrapType type : TeamTrapType.values()) {
-            trapCosts.put(type, settings.getTrap(type).getCost());
-        }
-        UpgradeMenu menu = new UpgradeMenu(levels, nextCosts, trapCosts, team.getTraps().size(),
-            settings.getMaximumQueuedTraps(), category);
+        UpgradeMenu menu = new UpgradeMenu(player, team, settings,
+            generators.canUpgradeTeam(match.getId(), teamId));
         player.openInventory(menu.getInventory());
     }
 
@@ -167,21 +147,7 @@ public final class TeamUpgradeService implements ManagedService, Listener {
         GameParticipant participant = match == null ? null : match.getParticipant(player.getUniqueId());
         if (!isActiveParticipant(player, match, participant == null ? null : participant.getTeamId())) {
             player.closeInventory();
-            player.sendMessage(ChatColor.RED + "A partida nao esta disponivel.");
-            return;
-        }
-        if (event.getRawSlot() == 49) {
-            player.closeInventory();
-            return;
-        }
-        if (event.getRawSlot() == 0 || event.getRawSlot() == 1) {
-            final UpgradeMenu.Category category = event.getRawSlot() == 0
-                ? UpgradeMenu.Category.UPGRADES : UpgradeMenu.Category.TRAPS;
-            Bukkit.getScheduler().runTask(plugin, new Runnable() {
-                @Override public void run() {
-                    if (player.isOnline()) openShop(player, match, participant.getTeamId(), category);
-                }
-            });
+            feedback(player, "unavailable", "&cA partida nao esta disponivel.");
             return;
         }
         UpgradeMenu.Action action = menu.getAction(event.getRawSlot());
@@ -194,7 +160,8 @@ public final class TeamUpgradeService implements ManagedService, Listener {
         Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override public void run() {
                 if (player.isOnline() && player.getOpenInventory().getTopInventory().getHolder() == menu) {
-                    openShop(player, match, participant.getTeamId(), menu.getCategory());
+                    menu.refresh(player, match.getTeam(participant.getTeamId()), settings,
+                        generators.canUpgradeTeam(match.getId(), participant.getTeamId()));
                 }
             }
         });
@@ -210,26 +177,26 @@ public final class TeamUpgradeService implements ManagedService, Listener {
         List<Integer> costs = settings.getCosts(type);
         int current = team.getUpgradeLevel(type);
         if (current >= costs.size()) {
-            player.sendMessage(ChatColor.RED + "Esta melhoria ja esta no nivel maximo.");
+            feedback(player, "max-level", "&cEsta melhoria ja esta no nivel maximo.");
             return;
         }
         if (type == TeamUpgradeType.FORGE && !generators.canUpgradeTeam(match.getId(), teamId)) {
-            player.sendMessage(ChatColor.RED + "Os geradores da equipe ja estao no nivel maximo.");
+            feedback(player, "forge-max", "&cOs geradores da equipe ja estao no nivel maximo.");
             return;
         }
         ItemStack[] inventoryBefore = InventoryEconomy.snapshot(player);
         if (!InventoryEconomy.charge(player, ResourceType.DIAMOND, costs.get(current))) {
-            player.sendMessage(ChatColor.RED + "Diamantes insuficientes.");
+            feedback(player, "insufficient", "&cDiamantes insuficientes.");
             return;
         }
         if (type == TeamUpgradeType.FORGE && generators.upgradeTeam(match.getId(), teamId, 1) == 0) {
             InventoryEconomy.restore(player, inventoryBefore);
-            player.sendMessage(ChatColor.RED + "Nao foi possivel melhorar os geradores.");
+            feedback(player, "forge-failed", "&cNao foi possivel melhorar os geradores.");
             return;
         }
         if (!team.upgrade(type, costs.size())) {
             InventoryEconomy.restore(player, inventoryBefore);
-            player.sendMessage(ChatColor.RED + "Esta melhoria ja foi comprada.");
+            feedback(player, "already-owned", "&cEsta melhoria ja foi comprada.");
             return;
         }
         if (type == TeamUpgradeType.SHARPNESS || type == TeamUpgradeType.PROTECTION) {
@@ -237,32 +204,59 @@ public final class TeamUpgradeService implements ManagedService, Listener {
         }
         Bukkit.getPluginManager().callEvent(new TeamUpgradePurchasedEvent(match, player.getUniqueId(),
             teamId, type, null, team.getUpgradeLevel(type)));
-        player.sendMessage(ChatColor.GREEN + "Melhoria de equipe comprada: "
-            + type.name().replace('_', ' ') + " " + team.getUpgradeLevel(type) + ".");
+        feedback(player, "purchased", "&aMelhoria comprada: &f{upgrade} {level}&a.",
+            "upgrade", upgradeName(type), "level", String.valueOf(team.getUpgradeLevel(type)));
         purchaseSound(player);
     }
 
     private void buyTrap(Player player, GameMatch match, String teamId, TeamTrapType type) {
         GameTeam team = match.getTeam(teamId);
-        if (team.getTraps().size() >= settings.getMaximumQueuedTraps()) {
-            player.sendMessage(ChatColor.RED + "A fila de armadilhas da equipe esta cheia.");
+        int currentLevel = team.getQueuedTrapLevel(type);
+        boolean improving = currentLevel > 0 && currentLevel < settings.getTrapMaxLevel(type);
+        if (currentLevel >= settings.getTrapMaxLevel(type)
+                && settings.getTrapMaxLevel(type) > 1) {
+            feedback(player, "max-level", "&cEsta melhoria ja esta no nivel maximo.");
             return;
         }
-        TeamTrapDefinition definition = settings.getTrap(type);
+        if (!improving && team.getTraps().size() >= settings.getMaximumQueuedTraps()) {
+            feedback(player, "queue-full", "&cA fila de armadilhas da equipe esta cheia.");
+            return;
+        }
+        int targetLevel = improving ? currentLevel + 1 : 1;
         ItemStack[] inventoryBefore = InventoryEconomy.snapshot(player);
-        if (!InventoryEconomy.charge(player, ResourceType.DIAMOND, definition.getCost())) {
-            player.sendMessage(ChatColor.RED + "Diamantes insuficientes.");
+        if (!InventoryEconomy.charge(player, ResourceType.DIAMOND,
+                settings.getTrapCost(type, targetLevel))) {
+            feedback(player, "insufficient", "&cDiamantes insuficientes.");
             return;
         }
-        if (!team.addTrap(type, settings.getMaximumQueuedTraps())) {
+        if (!(improving ? team.upgradeQueuedTrap(type, settings.getTrapMaxLevel(type))
+                : team.addTrap(type, settings.getMaximumQueuedTraps()))) {
             InventoryEconomy.restore(player, inventoryBefore);
-            player.sendMessage(ChatColor.RED + "Nao foi possivel adicionar a armadilha.");
+            feedback(player, "trap-failed", "&cNao foi possivel adicionar a armadilha.");
             return;
         }
         Bukkit.getPluginManager().callEvent(new TeamUpgradePurchasedEvent(match, player.getUniqueId(),
-            teamId, null, type, team.getTraps().size()));
-        player.sendMessage(ChatColor.GREEN + "Armadilha adicionada a fila da equipe.");
+            teamId, null, type, targetLevel));
+        feedback(player, "trap-purchased", "&aArmadilha adicionada a fila da equipe.");
         purchaseSound(player);
+    }
+
+    private void feedback(Player player, String key, String fallback, String... tokens) {
+        PlayerFeedback.send(plugin, player, "messages.upgrades." + key, fallback, tokens);
+    }
+
+    private String upgradeName(TeamUpgradeType type) {
+        String fallback;
+        switch (type) {
+            case SHARPNESS: fallback = "Afiacao"; break;
+            case PROTECTION: fallback = "Protecao"; break;
+            case HASTE: fallback = "Pressa"; break;
+            case FORGE: fallback = "Forja"; break;
+            case HEAL_POOL: fallback = "Poco de cura"; break;
+            default: fallback = type.name();
+        }
+        return plugin.getConfig().getString("messages.upgrades.names."
+            + type.name().toLowerCase(java.util.Locale.ROOT), fallback);
     }
 
     private void purchaseSound(Player player) {
@@ -321,23 +315,32 @@ public final class TeamUpgradeService implements ManagedService, Listener {
             World world = matches.getWorld(match.getId());
             if (world == null) continue;
             for (GameTeam team : match.getTeams().values()) {
-                if (team.getUpgradeLevel(TeamUpgradeType.HEAL_POOL) == 0) continue;
+                int haste = team.getUpgradeLevel(TeamUpgradeType.HASTE);
+                int heal = team.getUpgradeLevel(TeamUpgradeType.HEAL_POOL);
+                if (haste == 0 && heal == 0) continue;
                 Position bed = team.getDefinition().getBed();
-                if (bed == null) continue;
-                Location center = arenas.toLocation(bed, world);
+                Location center = bed == null ? null : arenas.toLocation(bed, world);
                 for (UUID playerId : team.getMembers()) {
                     Player player = Bukkit.getPlayer(playerId);
                     GameParticipant participant = match.getParticipant(playerId);
                     if (player == null || participant == null || participant.getState() != ParticipantState.CONNECTED
-                            || player.getWorld() != world || player.getLocation().distanceSquared(center) > 64.0) {
+                            || player.getWorld() != world) {
                         continue;
                     }
-                    player.addPotionEffect(new PotionEffect(
-                        org.bukkit.potion.PotionEffectType.REGENERATION, 40, 0), true);
+                    if (haste > 0) player.addPotionEffect(new PotionEffect(
+                        org.bukkit.potion.PotionEffectType.FAST_DIGGING, 40, haste - 1), true);
+                    if (heal > 0 && center != null
+                            && player.getLocation().distanceSquared(center) <= 64.0D) {
+                        player.addPotionEffect(new PotionEffect(
+                            org.bukkit.potion.PotionEffectType.REGENERATION, 40, 0), true);
+                    }
                 }
             }
         }
     }
+
+    private SpecialItemService specialItems;
+    public void setSpecialItems(SpecialItemService specialItems) { this.specialItems = specialItems; }
 
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
@@ -367,20 +370,31 @@ public final class TeamUpgradeService implements ManagedService, Listener {
         }
         for (String teamId : current) {
             if (previous.contains(teamId)) continue;
+            // Magic Milk suppresses the trap without consuming it.
+            if (specialItems != null && specialItems.isTrapImmune(player, match)) continue;
             GameTeam team = match.getTeam(teamId);
             if (team.getTraps().isEmpty()) continue;
-            TeamTrapType type = team.consumeTrap();
-            if (type != null) triggerTrap(match, team, player, type);
+            GameTeam.QueuedTrap trap = team.consumeQueuedTrap();
+            if (trap != null) triggerTrap(match, team, player, trap);
         }
         if (current.isEmpty()) teamsNearPlayer.remove(player.getUniqueId());
         else teamsNearPlayer.put(player.getUniqueId(), current);
     }
 
-    private void triggerTrap(GameMatch match, GameTeam team, Player intruder, TeamTrapType type) {
+    private void triggerTrap(GameMatch match, GameTeam team, Player intruder,
+                             GameTeam.QueuedTrap queued) {
+        TeamTrapType type = queued.getType();
         TeamTrapDefinition definition = settings.getTrap(type);
-        if (definition.getEffect() != null) {
+        if (type == TeamTrapType.ALARM) {
+            if (definition.getEffect() != null) intruder.addPotionEffect(new PotionEffect(
+                definition.getEffect(), definition.getDurationTicks(),
+                definition.getAmplifier()), true);
+            if (definition.getDurationTicks() > 0) intruder.addPotionEffect(new PotionEffect(
+                org.bukkit.potion.PotionEffectType.SLOW, definition.getDurationTicks(), 0), true);
+        } else if (definition.getEffect() != null) {
             intruder.addPotionEffect(new PotionEffect(definition.getEffect(),
-                definition.getDurationTicks(), definition.getAmplifier()), true);
+                settings.getTrapDurationTicks(type, queued.getLevel()),
+                definition.getAmplifier()), true);
         }
         for (UUID memberId : team.getMembers()) {
             Player teammate = Bukkit.getPlayer(memberId);

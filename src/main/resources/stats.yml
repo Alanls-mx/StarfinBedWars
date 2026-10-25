@@ -1,0 +1,27 @@
+# Estatisticas compartilhadas entre todos os servidores StarfinBedWars da rede.
+# Habilite somente depois de configurar MySQL. SQLite local NAO serve para BungeeCord.
+# HikariCP e o driver MySQL sao carregados pelo StarfinCore; nao entram neste JAR.
+enabled: false
+mysql:
+  host: '127.0.0.1'
+  port: 3306
+  database: 'starfin_network'
+  username: 'starfinbedwars'
+  password: ''
+  # REQUIRED (padrao seguro), VERIFY_CA, VERIFY_IDENTITY ou DISABLED (apenas rede privada confiavel).
+  ssl-mode: 'REQUIRED'
+  pool-size: 5
+  connection-timeout-ms: 10000
+
+# Nivel inicial 1; a progressao e calculada pelo XP total, sem duplicar estado no banco.
+levels:
+  base-xp: 1000
+  increase-per-level: 250
+
+# XP adquirido por partida efetivamente concluida. Abate final soma kill + final-kill.
+xp:
+  participation: 25
+  victory: 100
+  kill: 10
+  final-kill: 20
+  bed: 40

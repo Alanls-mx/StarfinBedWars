@@ -27,7 +27,7 @@ public final class ServiceLifecycle {
                 started.add(service);
                 service.start();
             }
-        } catch (Exception startFailure) {
+        } catch (Exception | LinkageError startFailure) {
             try {
                 stop();
             } catch (Exception stopFailure) {
@@ -43,7 +43,9 @@ public final class ServiceLifecycle {
             ManagedService service = started.get(index);
             try {
                 service.stop();
-            } catch (Exception error) {
+            } catch (Exception | LinkageError error) {
+                // A missing NMS class must not stop the remaining services
+                // (world instances, inventories, schedulers) from closing.
                 if (firstFailure == null) {
                     firstFailure = new Exception("Falha ao encerrar servicos.");
                 }

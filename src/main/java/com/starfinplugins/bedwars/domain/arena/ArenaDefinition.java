@@ -15,6 +15,7 @@ public final class ArenaDefinition {
     private final Map<ArenaRegionType, ArenaRegion> regions =
         new LinkedHashMap<ArenaRegionType, ArenaRegion>();
     private String displayName;
+    private String group = "default";
     private Position lobby;
     private Position spectator;
     private Position itemShop;
@@ -48,6 +49,7 @@ public final class ArenaDefinition {
     public String getId() { return id; }
     public String getSourceWorld() { return sourceWorld; }
     public String getDisplayName() { return displayName; }
+    public String getGroup() { return group; }
     public Position getLobby() { return lobby; }
     public Position getSpectator() { return spectator; }
     public Position getItemShop() { return itemShop; }
@@ -66,6 +68,12 @@ public final class ArenaDefinition {
     public int getCountdownSeconds() { return countdownSeconds; }
     public boolean isEnabled() { return enabled; }
     public void setDisplayName(String value) { displayName = value; }
+    public void setGroup(String value) {
+        if (value == null || !value.matches("[a-z0-9_-]{1,32}")) {
+            throw new IllegalArgumentException("Grupo invalido: use letras minusculas, numeros, _ ou -, ate 32 caracteres.");
+        }
+        group = value;
+    }
     public void setLobby(Position value) { lobby = value; }
     public void setSpectator(Position value) { spectator = value; }
     public void setItemShop(Position value) { itemShop = value; }

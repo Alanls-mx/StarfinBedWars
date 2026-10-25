@@ -12,6 +12,8 @@ public final class BedWarsSettings {
     private final boolean debug;
     private final int respawnSeconds;
     private final int spawnOpeningSeconds;
+    private final boolean tntAutoPrime;
+    private final int tntFuseTicks;
     private final int automaticBoundsWidth;
     private final int automaticBoundsDepth;
     private final int automaticBoundsUpHeight;
@@ -19,12 +21,15 @@ public final class BedWarsSettings {
     private final int automaticBoundsMaximumDimension;
 
     private BedWarsSettings(boolean debug, int respawnSeconds, int spawnOpeningSeconds,
+                            boolean tntAutoPrime, int tntFuseTicks,
                             int automaticBoundsWidth, int automaticBoundsDepth,
                             int automaticBoundsUpHeight, int automaticBoundsDownDepth,
                             int automaticBoundsMaximumDimension) {
         this.debug = debug;
         this.respawnSeconds = respawnSeconds;
         this.spawnOpeningSeconds = spawnOpeningSeconds;
+        this.tntAutoPrime = tntAutoPrime;
+        this.tntFuseTicks = tntFuseTicks;
         this.automaticBoundsWidth = automaticBoundsWidth;
         this.automaticBoundsDepth = automaticBoundsDepth;
         this.automaticBoundsUpHeight = automaticBoundsUpHeight;
@@ -68,6 +73,11 @@ public final class BedWarsSettings {
         requireBoolean(config, "general.debug");
         int respawnDelay = readInteger(config, "match.respawn-seconds", 3, 0, 30);
         int spawnOpeningDelay = readInteger(config, "match.spawn-opening-seconds", 10, 1, 60);
+        if (config.contains("match.tnt-auto-prime") && !config.isBoolean("match.tnt-auto-prime")) {
+            throw new IOException("match.tnt-auto-prime deve ser true ou false.");
+        }
+        boolean tntAutoPrime = config.getBoolean("match.tnt-auto-prime", true);
+        int tntFuseTicks = readInteger(config, "match.tnt-fuse-ticks", 40, 1, 200);
         int width = readInteger(config, "arena-bounds.default-width", 280, 1, 30000);
         int depth = readInteger(config, "arena-bounds.default-depth", 280, 1, 30000);
         int upHeight = readInteger(config, "arena-bounds.default-up-height", 50, 0, 255);
@@ -79,7 +89,8 @@ public final class BedWarsSettings {
         }
 
         return new BedWarsSettings(config.getBoolean("general.debug"),
-            respawnDelay, spawnOpeningDelay, width, depth, upHeight, downDepth,
+            respawnDelay, spawnOpeningDelay, tntAutoPrime, tntFuseTicks,
+            width, depth, upHeight, downDepth,
             maximumDimension);
     }
 
@@ -109,6 +120,8 @@ public final class BedWarsSettings {
         return respawnSeconds;
     }
     public int getSpawnOpeningSeconds() { return spawnOpeningSeconds; }
+    public boolean isTntAutoPrime() { return tntAutoPrime; }
+    public int getTntFuseTicks() { return tntFuseTicks; }
 
     public int getAutomaticBoundsWidth() { return automaticBoundsWidth; }
     public int getAutomaticBoundsDepth() { return automaticBoundsDepth; }
