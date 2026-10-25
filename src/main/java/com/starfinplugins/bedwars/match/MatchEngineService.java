@@ -368,9 +368,7 @@ public final class MatchEngineService implements ManagedService, Listener {
     }
 
     private void addPlayer(final GameMatch match, final Player player) {
-        if (spawnOpeningTasks.containsKey(match.getArena().getId())) {
-            throw new IllegalStateException("Os spawns estao abrindo; aguarde a proxima partida.");
-        }
+        boolean openingSpawns = isOpeningSpawns(match.getArena().getId());
         if (!match.addParticipant(player.getUniqueId())) {
             throw new IllegalStateException("A partida esta cheia ou nao aceita jogadores.");
         }
@@ -379,7 +377,10 @@ public final class MatchEngineService implements ManagedService, Listener {
         returnGameModes.put(player.getUniqueId(), player.getGameMode());
         GameParticipant participant = match.getParticipant(player.getUniqueId());
         World world = matchWorlds.get(match.getId());
-        Location spawn = arenas.toLocation(match.getArena().getLobby(), world);
+        Location spawn = openingSpawns
+            ? arenas.toLocation(match.getTeam(participant.getTeamId()).getDefinition().getSpawn(), world)
+            : arenas.toLocation(match.getArena().getLobby(), world);
+        if (openingSpawns) spawn.setPitch(0.0F);
         if (participantInventory != null) participantInventory.capture(player);
         player.setGameMode(GameMode.SURVIVAL);
         if (!player.teleport(spawn)) {
@@ -389,9 +390,16 @@ public final class MatchEngineService implements ManagedService, Listener {
             if (participantInventory != null) {
                 participantInventory.discardCapture(player.getUniqueId());
             }
+            if (match.getParticipantList().isEmpty()) finish(match, MatchEndReason.CANCELLED, null);
             throw new IllegalStateException("O servidor recusou o teleporte para a arena.");
         }
         fire(MatchLifecycleEvent.Type.PLAYER_JOINED, match, participant, participant.getTeamId());
+        if (openingSpawns && match.getConnectedCount() >= match.getArena().getMinimumPlayers()) {
+            Integer remaining = spawnOpeningValues.get(match.getArena().getId());
+            if (remaining != null && remaining <= 0) {
+                spawnOpeningValues.put(match.getArena().getId(), Math.min(5, spawnOpeningSeconds));
+            }
+        }
         updateCountdown(match);
     }
 
@@ -403,6 +411,8 @@ public final class MatchEngineService implements ManagedService, Listener {
                     && participant.getState() != ParticipantState.ABANDONED) ready++;
         }
         if (ready < match.getArena().getMinimumPlayers()) {
+            // Once players reached their islands, keep their spawn phase and admit replacements there.
+            if (isOpeningSpawns(id)) return;
             BukkitTask task = countdowns.remove(id);
             cancel(task);
             countdownValues.remove(id);
@@ -465,7 +475,6 @@ public final class MatchEngineService implements ManagedService, Listener {
         // Templates may contain dropped items from an editing session. None should
         // be available while players wait inside their closed spawn structures.
         clearPregameItems(world);
-        boolean teleportFailed = false;
         for (GameParticipant participant : match.getParticipantList()) {
             Player player = Bukkit.getPlayer(participant.getPlayerId());
             if (player != null && participant.getState() == ParticipantState.CONNECTED) {
@@ -479,7 +488,6 @@ public final class MatchEngineService implements ManagedService, Listener {
                     teleportToReturn(player);
                     player.sendMessage(org.bukkit.ChatColor.RED
                         + "Teleporte para o spawn recusado; voce saiu da partida.");
-                    teleportFailed = true;
                     continue;
                 }
                 player.setGameMode(GameMode.SURVIVAL);
@@ -489,20 +497,8 @@ public final class MatchEngineService implements ManagedService, Listener {
             }
         }
         clearPregameItems(world);
-        if (teleportFailed && match.getConnectedCount() < match.getArena().getMinimumPlayers()) {
-            cancel(countdowns.remove(match.getArena().getId()));
-            countdownValues.remove(match.getArena().getId());
-            match.transition(MatchState.WAITING);
-            teleportWaitingParticipantsToLobby(match);
-            fire(MatchLifecycleEvent.Type.COUNTDOWN_CANCELLED, match, null, null);
-            updateCountdown(match);
-            return;
-        }
-        if (match.getConnectedCount() < match.getArena().getMinimumPlayers()) {
-            match.transition(MatchState.WAITING);
-            teleportWaitingParticipantsToLobby(match);
-            fire(MatchLifecycleEvent.Type.COUNTDOWN_CANCELLED, match, null, null);
-            updateCountdown(match);
+        if (match.getConnectedCount() == 0) {
+            finish(match, MatchEndReason.CANCELLED, null);
             return;
         }
         fire(MatchLifecycleEvent.Type.SPAWN_OPENING, match, null, null);
@@ -511,6 +507,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         announce(match, "messages.spawn-preparing",
             "&eAs equipes estao nas bases. Aguarde a abertura das barreiras.");
         spawnOpeningTasks.put(arenaId, Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
+            private int waitingSeconds;
             @Override public void run() {
                 Integer remaining = spawnOpeningValues.get(arenaId);
                 if (remaining == null || match.getState() != MatchState.STARTING) {
@@ -518,15 +515,15 @@ public final class MatchEngineService implements ManagedService, Listener {
                     spawnOpeningValues.remove(arenaId);
                     return;
                 }
-                if (match.getConnectedCount() < match.getArena().getMinimumPlayers()) {
-                    cancel(spawnOpeningTasks.remove(arenaId));
-                    spawnOpeningValues.remove(arenaId);
-                    match.transition(MatchState.WAITING);
-                    teleportWaitingParticipantsToLobby(match);
-                    fire(MatchLifecycleEvent.Type.COUNTDOWN_CANCELLED, match, null, null);
-                    updateCountdown(match);
+                if (remaining <= 0 && match.getConnectedCount() < match.getArena().getMinimumPlayers()) {
+                    // Hold closed spawns at zero until a new player joins directly at an island.
+                    if (++waitingSeconds == 1 || waitingSeconds % 15 == 0) {
+                        announce(match, "messages.spawn-waiting-players",
+                            "&eAguardando outro jogador. Voce permanecera na sua ilha.");
+                    }
                     return;
                 }
+                waitingSeconds = 0;
                 if (remaining <= 0) {
                     cancel(spawnOpeningTasks.remove(arenaId));
                     spawnOpeningValues.remove(arenaId);
@@ -831,9 +828,9 @@ public final class MatchEngineService implements ManagedService, Listener {
         cancel(respawnTasks.remove(uuid));
         if (reconnect == null || !reconnect.disconnected(player, match, participant)) {
             match.setParticipantState(uuid, ParticipantState.ABANDONED);
+            fire(MatchLifecycleEvent.Type.PLAYER_LEFT, match, participant, participant.getTeamId());
             byPlayer.remove(uuid);
-            returnLocations.remove(uuid);
-            returnGameModes.remove(uuid);
+            rememberOfflineReturn(uuid);
             resolveWinner(match);
         }
     }
@@ -953,9 +950,19 @@ public final class MatchEngineService implements ManagedService, Listener {
         fire(MatchLifecycleEvent.Type.PLAYER_LEFT, match, participant, participant.getTeamId());
         Player online = Bukkit.getPlayer(session.getPlayerId());
         if (online != null) teleportToReturn(online);
+        else rememberOfflineReturn(session.getPlayerId());
         returnLocations.remove(session.getPlayerId());
         returnGameModes.remove(session.getPlayerId());
         resolveWinner(match);
+    }
+
+    private void rememberOfflineReturn(UUID playerId) {
+        Location location = returnLocations.get(playerId);
+        if (location != null) offlineReturnLocations.put(playerId, location.clone());
+        GameMode mode = returnGameModes.get(playerId);
+        if (mode != null) offlineReturnModes.put(playerId, mode);
+        returnLocations.remove(playerId);
+        returnGameModes.remove(playerId);
     }
 
     @EventHandler

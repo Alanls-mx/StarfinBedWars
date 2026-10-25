@@ -4,6 +4,8 @@
 
 Em `WAITING` e `STARTING`, a estrela do Nether ocupa o índice 3 (slot visual 4) e o frasco de encantamento ocupa o índice 5 (slot visual 6). Clique direito abre as GUIs. O frasco é cancelado antes do arremesso. Os dois itens têm marcador interno, não podem ser movidos ou descartados e são removidos no início da partida. A espada e a armadura de jogo só são equipadas em `STARTED`, após a abertura do spawn. Se a contagem for cancelada por saída de jogador, o inventário de espera e seus seletores são reconstruídos. O inventário anterior do jogador é capturado pelo `ParticipantInventoryService` e restaurado ao sair. O assistente de arena não recebe esses itens.
 
+Depois que os jogadores chegam aos spawns das ilhas, uma saída não os devolve ao lobby de espera. As barreiras permanecem fechadas enquanto faltam jogadores; novas entradas são encaminhadas diretamente ao spawn da equipe e a abertura prossegue quando o mínimo da arena é atingido. Se ninguém restar, a instância é encerrada. Jogadores desconectados só podem reconectar enquanto a cama de sua equipe estiver intacta. Destruir essa cama invalida imediatamente as sessões pendentes desse time e libera a condição de vitória quando não houver outro jogador ativo.
+
 As escolhas são salvas por UUID nas colunas `selected_kit` e `selected_ability` da tabela compartilhada `sbw_player_preferences`. A migração é aditiva; as escolhas usam o worker JDBC e o outbox local já existentes. Todos os nós BedWars precisam apontar para o mesmo MySQL em `stats.yml`. Se o ID salvo não existir mais, o jogo usa `default` e `none`, respectivamente. O idioma segue a preferência já existente (`pt_BR`, `en_US`, `es_ES`).
 
 ## `gameplay.yml`
@@ -42,3 +44,12 @@ As regras são opcionais em `arenas/<id>.yml` (`rules.generator-split`, `rules.a
 6. Criar uma arena descartável com cinco ou mais jogadores por equipe; conferir capacidade, spawns e scoreboard. Testar `arena rule`, recarga de configuração e retorno por reconnect.
 
 `mvn -B clean verify` valida código, configuração, serialização de arenas e testes unitários. A homologação visual e os passos multiplayer acima dependem de clientes Minecraft 1.8.8 conectados ao servidor real de teste; registre separadamente o que foi observado.
+
+### Validação conjunta de 25/10/2026
+
+- No servidor Pterodactyl BedWars `f03b4f97`, com proxy `127.0.0.1:25577`, o jogador confirmou os seletores nos slots 4/6 e os dois menus. Confirmou ausência da espada no spawn fechado, restauração dos seletores após cancelamento no lobby e entrega da espada e do kit apenas ao abrir o spawn.
+- Após o início da abertura, o jogador de teste saiu e o jogador remanescente confirmou que permaneceu na própria ilha. O catálogo MySQL marcou a arena como `OPENING`, `players=1`, `joinable=1`. A nova entrada do jogador de teste passou pelo proxy, chegou direto ao spawn da ilha vaga e a partida abriu. O jogador confirmou entrega dos 12 blocos do Construtor e ativação da Arrancada.
+- A seleção `builder`/`dash` foi observada na tabela `sbw_player_preferences`. Com o jogador de teste desconectado, sua cama foi destruída durante a janela de reconexão; o jogador confirmou encerramento imediato. O registro MySQL fechou como `VICTORY` para `team1` antes do prazo da sessão.
+- Os limites de nível de Construtor e Arrancada foram reduzidos para 1 somente no `gameplay.yml` do servidor de teste para permitir esta verificação com o perfil de nível 1. O arquivo de produção do repositório mantém os níveis 5 e 15.
+
+Ainda requer inspeção manual específica: morte e respawn com cama intacta, cooldown, restauração completa de inventário, Generator Split com aliados, anti-AFK, arena com mais de quatro jogadores por equipe e sincronização entre dois nós BedWars. Os testes automatizados cobrem regras de domínio e persistência, mas não substituem essas verificações em jogo.

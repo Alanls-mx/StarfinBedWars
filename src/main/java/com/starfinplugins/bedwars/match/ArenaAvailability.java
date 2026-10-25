@@ -10,10 +10,10 @@ public final class ArenaAvailability {
 
     public static boolean isJoinable(ArenaDefinition arena, GameMatch match,
                                      boolean editing, boolean preparing, boolean openingSpawns) {
-        if (arena == null || !arena.isEnabled() || editing || preparing || openingSpawns
+        if (arena == null || !arena.isEnabled() || editing || preparing
                 || arena.getMaximumPlayers() < arena.getMinimumPlayers()
                 || arena.getMaximumPlayers() < 1) return false;
-        if (match == null) return true;
+        if (match == null) return !openingSpawns;
         MatchState state = match.getState();
         return (state == MatchState.WAITING || state == MatchState.STARTING)
             && match.getParticipantList().size() < arena.getMaximumPlayers();

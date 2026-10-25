@@ -78,12 +78,14 @@ public final class ReconnectService implements ManagedService, Listener {
     public ReconnectSession get(UUID playerId) { return sessions.get(playerId); }
     public boolean hasPending(UUID playerId) {
         ReconnectSession session = get(playerId);
-        return session != null && session.getState() == ReconnectSession.State.DISCONNECTED
+        GameMatch match = session == null ? null : matches.getMatchForPlayer(playerId);
+        return session != null && canRecover(match, match == null ? null : match.getParticipant(playerId))
+            && session.getState() == ReconnectSession.State.DISCONNECTED
             && session.isWithinDeadline(System.currentTimeMillis());
     }
 
     public boolean disconnected(Player player, GameMatch match, GameParticipant participant) {
-        if (!settings.isEnabled()) return false;
+        if (!settings.isEnabled() || !canRecover(match, participant)) return false;
         ReconnectSession existing = sessions.get(player.getUniqueId());
         if (existing != null) return existing.getState() == ReconnectSession.State.DISCONNECTED
             && existing.isWithinDeadline(System.currentTimeMillis());
@@ -130,6 +132,7 @@ public final class ReconnectService implements ManagedService, Listener {
                 || !match.getId().equals(session.getMatchId())
                 || matches.getWorld(match.getId()) == null
                 || match.getParticipant(player.getUniqueId()) == null
+                || !canRecover(match, match.getParticipant(player.getUniqueId()))
                 || !session.getTeamId().equals(match.getParticipant(player.getUniqueId()).getTeamId())) {
             session.invalidate();
             sessions.remove(player.getUniqueId());
@@ -178,7 +181,8 @@ public final class ReconnectService implements ManagedService, Listener {
         GameMatch match = matches.getMatchForPlayer(playerId);
         String eligibility = now > session.getExpiresAt() ? "prazo encerrado"
             : match == null || match.getState() != MatchState.IN_GAME
-                || !match.getId().equals(session.getMatchId()) ? "partida indisponivel"
+                || !match.getId().equals(session.getMatchId())
+                || !canRecover(match, match.getParticipant(playerId)) ? "partida indisponivel"
                 : session.getState() == ReconnectSession.State.DISCONNECTED ? "disponivel"
                 : "em processamento";
         return "Arena: " + session.getArenaId() + " | Equipe: " + session.getTeamId()
@@ -297,7 +301,17 @@ public final class ReconnectService implements ManagedService, Listener {
     }
 
     @EventHandler public void onLifecycle(MatchLifecycleEvent event) {
-        if (event.getType() == MatchLifecycleEvent.Type.ENDED) {
+        if (event.getType() == MatchLifecycleEvent.Type.BED_DESTROYED) {
+            for (ReconnectSession session : new ArrayList<ReconnectSession>(sessions.values())) {
+                if (!session.getMatchId().equals(event.getMatch().getId())
+                        || !session.getTeamId().equals(event.getTeamId())) continue;
+                sessions.remove(session.getPlayerId());
+                session.invalidate();
+                fire(ReconnectLifecycleEvent.Type.INVALIDATED, session, "bed-destroyed");
+                matches.expireReconnect(session);
+            }
+            repository.save(sessions.values());
+        } else if (event.getType() == MatchLifecycleEvent.Type.ENDED) {
             for (GameParticipant participant : event.getMatch().getParticipantList()) {
                 ReconnectSession session = sessions.remove(participant.getPlayerId());
                 if (session != null) {
@@ -315,6 +329,14 @@ public final class ReconnectService implements ManagedService, Listener {
             }
             repository.save(sessions.values());
         }
+    }
+
+    static boolean canRecover(GameMatch match, GameParticipant participant) {
+        return match != null && match.getState() == MatchState.IN_GAME
+            && participant != null && participant.getState() != ParticipantState.ELIMINATED
+            && participant.getState() != ParticipantState.ABANDONED
+            && match.getTeam(participant.getTeamId()) != null
+            && match.getTeam(participant.getTeamId()).isBedAlive();
     }
 
     private void fire(ReconnectLifecycleEvent.Type type, ReconnectSession session, String reason) {

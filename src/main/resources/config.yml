@@ -393,6 +393,7 @@ messages:
   lobby-ready: '&aJogadores suficientes! &eA partida esta sendo preparada.'
   lobby-countdown: '&eA partida comeca em &6{time} &esegundos!'
   spawn-preparing: '&eAs equipes estao nas bases. Aguarde a abertura das barreiras.'
+  spawn-waiting-players: '&eAguardando outro jogador. Voce permanecera na sua ilha.'
   spawn-countdown: '&eAs barreiras abrem em &6{time} &esegundos!'
   countdown-cancelled: '&cContagem cancelada! Aguardando mais jogadores.'
   match-started: '&a&lA PARTIDA COMECOU! &7Proteja sua cama e elimine as equipes adversarias!'
