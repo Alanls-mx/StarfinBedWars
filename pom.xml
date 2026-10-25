@@ -25,6 +25,13 @@
     </repositories>
 
     <dependencies>
+        <!-- API classes are supplied at runtime by the StarfinMinigames plugin. -->
+        <dependency>
+            <groupId>com.starfinplugins</groupId>
+            <artifactId>starfinminigames-api</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.spigotmc</groupId>
             <artifactId>spigot-api</artifactId>

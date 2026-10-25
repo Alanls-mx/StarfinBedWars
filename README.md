@@ -10,13 +10,20 @@ Para o historico dos prompts e o inventario anterior, consulte `STARFINBEDWARS_P
 - Maven 3.6 ou superior.
 - Servidor Spigot 1.8.8.
 - O artefato local `org.spigotmc:spigot:1.8.8-R0.1-SNAPSHOT`, produzido pelo BuildTools, e necessario para compilar os adaptadores NPC e Title `v1_8_R3`.
-- **StarfinCore Spigot 0.3.1+ e obrigatorio** nesta branch: fornece HikariCP e o driver MySQL em runtime, antes do StarfinBedWars iniciar. A API do StarfinMinigames ainda nao esta disponivel neste workspace.
+- **StarfinCore Spigot 0.3.1+ e obrigatorio** nesta branch: fornece HikariCP e o driver MySQL em runtime, antes do StarfinBedWars iniciar.
+- **StarfinMinigames Spigot 0.1.0+ e opcional na Fase 1**: fornece a API publica de descoberta de minigames. Compile `StarfinMinigames` com `mvn -B clean install` antes de compilar BedWars; instale a JAR do novo plugin antes de iniciar BedWars. Sem ela, o gameplay e o MySQL do BedWars continuam ativos, mas a integracao compartilhada fica indisponivel ate reiniciar com o plugin instalado.
 
 ```text
 mvn -B verify
 ```
 
 O JAR e `target/StarfinBedWars-1.0.0-SNAPSHOT.jar`. A API Spigot e `provided` e nao e empacotada.
+
+## API compartilhada de minigames (Fase 1)
+
+Com StarfinMinigames presente, BedWars registra `bedwars` no `MinigameRegistry` do Bukkit `ServicesManager`. Arenas, grupos, modalidades, partidas, capacidades, estados e UUIDs dos jogadores sao consultados por snapshots imutaveis. Um adaptador publica eventos genericos a partir de `MatchLifecycleEvent` sem disparar os mesmos eventos internos novamente. O registro e removido no desligamento do BedWars; o StarfinMinigames tambem remove registros quando o plugin proprietario e desabilitado.
+
+Configure `plugins/StarfinMinigames/config.yml` com `server-id` unico por servidor. Se `plugins/StarfinBedWars/network.yml` estiver ativo, use o mesmo `server-id`; uma divergencia desabilita apenas o registro da API. O catalogo MySQL `sbw_network_*`, estatisticas, XP e preferencias permanecem sob responsabilidade do BedWars. StarfinMinigames nao cria novas tabelas. Consulte o [README do StarfinMinigames](../StarfinMinigames/README.md) para contratos, comandos, ordem de instalacao e limites.
 
 ## Estatisticas, perfis, XP e niveis na rede BungeeCord
 
