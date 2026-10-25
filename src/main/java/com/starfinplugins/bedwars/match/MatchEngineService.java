@@ -1,5 +1,6 @@
 package com.starfinplugins.bedwars.match;
 
+import com.starfinplugins.bedwars.StarfinBedWarsPlugin;
 import com.starfinplugins.bedwars.arena.ArenaService;
 import com.starfinplugins.bedwars.domain.arena.ArenaDefinition;
 import com.starfinplugins.bedwars.domain.arena.ArenaRegion;
@@ -269,7 +270,21 @@ public final class MatchEngineService implements ManagedService, Listener {
             return;
         }
         loading.put(arena.getId(), true);
-        arenas.getWorlds().createInstance(arena, new ArenaServiceWorldCallback(arena, player));
+        refreshNetworkCatalog();
+        try {
+            arenas.getWorlds().createInstance(arena, new ArenaServiceWorldCallback(arena, player));
+        } catch (RuntimeException failure) {
+            loading.remove(arena.getId());
+            refreshNetworkCatalog();
+            throw failure;
+        }
+    }
+
+    private void refreshNetworkCatalog() {
+        if (!(plugin instanceof StarfinBedWarsPlugin)) return;
+        com.starfinplugins.bedwars.network.NetworkRegistryService network =
+            ((StarfinBedWarsPlugin) plugin).getNetworkRegistry();
+        if (network != null) network.refresh();
     }
 
     /** True while the disposable world for this arena is being prepared. */
