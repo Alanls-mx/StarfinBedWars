@@ -58,7 +58,8 @@ public final class ParticipantInventoryService implements ManagedService, Listen
             } else if (player != null) {
                 prepare(player);
             }
-        } else if (event.getType() == MatchLifecycleEvent.Type.SPAWN_OPENING) {
+        } else if (event.getType() == MatchLifecycleEvent.Type.SPAWN_OPENING
+                || event.getType() == MatchLifecycleEvent.Type.COUNTDOWN_CANCELLED) {
             for (GameParticipant participant : event.getMatch().getParticipantList()) {
                 if (participant.getState() != ParticipantState.CONNECTED) continue;
                 Player player = Bukkit.getPlayer(participant.getPlayerId());

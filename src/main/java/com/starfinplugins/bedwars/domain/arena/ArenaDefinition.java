@@ -33,6 +33,7 @@ public final class ArenaDefinition {
     private int minimumPlayers = 2;
     private int countdownSeconds = 30;
     private boolean enabled;
+    private ArenaGameplayRules gameplayRules = ArenaGameplayRules.INHERIT;
 
     public ArenaDefinition(String id, String sourceWorld) {
         if (id == null || !id.matches("[a-z0-9_-]{1,32}")) {
@@ -67,6 +68,10 @@ public final class ArenaDefinition {
     public int getMinimumPlayers() { return minimumPlayers; }
     public int getCountdownSeconds() { return countdownSeconds; }
     public boolean isEnabled() { return enabled; }
+    public ArenaGameplayRules getGameplayRules() { return gameplayRules; }
+    public void setGameplayRules(ArenaGameplayRules rules) {
+        gameplayRules = rules == null ? ArenaGameplayRules.INHERIT : rules;
+    }
     public void setDisplayName(String value) { displayName = value; }
     public void setGroup(String value) {
         if (value == null || !value.matches("[a-z0-9_-]{1,32}")) {

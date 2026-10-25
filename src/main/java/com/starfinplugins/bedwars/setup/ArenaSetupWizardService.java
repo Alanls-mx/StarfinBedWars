@@ -65,6 +65,15 @@ public final class ArenaSetupWizardService implements ManagedService, Listener {
     private File directory;
     private ManagedMobGuard mobGuard;
 
+    private int maximumTeamSize() {
+        return ((com.starfinplugins.bedwars.StarfinBedWarsPlugin) plugin)
+            .getGameplay().getSettings().maximumTeamSize;
+    }
+    private int maximumTotalPlayers() {
+        return ((com.starfinplugins.bedwars.StarfinBedWarsPlugin) plugin)
+            .getGameplay().getSettings().maximumTotalPlayers;
+    }
+
     public void setMobGuard(ManagedMobGuard mobGuard) { this.mobGuard = mobGuard; }
 
     public ArenaSetupWizardService(Plugin plugin, ArenaService arenas, ArenaEditingService editing) {
@@ -137,7 +146,7 @@ public final class ArenaSetupWizardService implements ManagedService, Listener {
             + (selection.mode == SetupMode.SOLO ? "Solo." : "Equipe."));
         player.sendMessage(ChatColor.YELLOW + (selection.mode == SetupMode.SOLO
             ? "Proxima etapa: /sbw create teams <quantidade>"
-            : "Proxima etapa: /sbw setup team-size <2|3|4>"));
+            : "Proxima etapa: /sbw setup team-size <2.." + maximumTeamSize() + ">"));
     }
 
     public void selectTeamSize(Player player, ArenaDefinition arena, int capacity) {
@@ -150,8 +159,9 @@ public final class ArenaSetupWizardService implements ManagedService, Listener {
         if (selection.mode != SetupMode.TEAM) {
             throw new IllegalStateException("O tamanho da equipe so pode ser definido no modo Equipe.");
         }
-        if (capacity < 2 || capacity > 4) {
-            throw new IllegalArgumentException("Tamanho da equipe deve ser 2, 3 ou 4 jogadores.");
+        if (capacity < 2 || capacity > maximumTeamSize()) {
+            throw new IllegalArgumentException("Tamanho da equipe deve ser de 2 a "
+                + maximumTeamSize() + " jogadores.");
         }
         selection.teamCapacity = capacity;
         player.sendMessage(ChatColor.GREEN + "Equipe configurada para " + capacity + " jogadores.");
@@ -174,12 +184,17 @@ public final class ArenaSetupWizardService implements ManagedService, Listener {
         }
         requireArenaBounds(arena);
         if (selection.mode == SetupMode.TEAM && selection.teamCapacity == 0) {
-            throw new IllegalStateException("Defina o tamanho antes: /sbw setup team-size <2|3|4>.");
+            throw new IllegalStateException("Defina o tamanho antes: /sbw setup team-size <2.."
+                + maximumTeamSize() + ">.");
         }
         int capacity = selection.mode == SetupMode.SOLO ? 1 : selection.teamCapacity;
         String mode = selection.mode == SetupMode.SOLO ? "solo" : "team";
         if (teamCount < 2 || teamCount > SetupTeamColor.values().length) {
             throw new IllegalArgumentException("Quantidade de equipes deve estar entre 2 e 16.");
+        }
+        if ((long) teamCount * capacity > maximumTotalPlayers()) {
+            throw new IllegalArgumentException("Capacidade total excede " + maximumTotalPlayers()
+                + " jogadores configurados em gameplay.yml.");
         }
         if (active.containsKey(player.getUniqueId())) {
             throw new IllegalStateException("Voce ja esta usando o assistente em outra arena.");
@@ -253,7 +268,7 @@ public final class ArenaSetupWizardService implements ManagedService, Listener {
             player.sendMessage(ChatColor.YELLOW + "Proximo comando: "
                 + (!hasArenaBounds(arena) ? boundsSetupInstruction()
                     : selection.mode == SetupMode.TEAM && selection.teamCapacity == 0
-                    ? "/sbw setup team-size <2|3|4>"
+                    ? "/sbw setup team-size <2.." + maximumTeamSize() + ">"
                     : "/sbw create teams <quantidade>"));
             return;
         }
@@ -283,7 +298,7 @@ public final class ArenaSetupWizardService implements ManagedService, Listener {
         if (selection != null && selection.arenaId.equals(arena.getId())) {
             if (!hasArenaBounds(arena)) return "Novo setup: proximo " + boundsSetupInstruction() + ".";
             return selection.mode == SetupMode.TEAM && selection.teamCapacity == 0
-                ? "Novo setup: proximo /sbw setup team-size <2|3|4>."
+                ? "Novo setup: proximo /sbw setup team-size <2.." + maximumTeamSize() + ">."
                 : "Novo setup: proximo /sbw create teams <quantidade>.";
         }
         if (isFreshSetup(arena)) {
@@ -1023,7 +1038,7 @@ public final class ArenaSetupWizardService implements ManagedService, Listener {
                     + ". Proxima etapa: "
                     + (!hasArenaBounds(arenas.getArena(selection.arenaId)) ? boundsSetupInstruction()
                         : selection.mode == SetupMode.TEAM && selection.teamCapacity == 0
-                        ? "/sbw setup team-size <2|3|4>"
+                        ? "/sbw setup team-size <2.." + maximumTeamSize() + ">"
                         : "/sbw create teams <quantidade>") + ".");
                 return;
             }

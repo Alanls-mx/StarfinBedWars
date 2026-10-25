@@ -5,6 +5,7 @@ import com.starfinplugins.bedwars.arena.ArenaService;
 import com.starfinplugins.bedwars.arena.ArenaEditingService;
 import com.starfinplugins.bedwars.arena.ArenaRegionSelectionService;
 import com.starfinplugins.bedwars.domain.arena.ArenaDefinition;
+import com.starfinplugins.bedwars.domain.arena.ArenaGameplayRules;
 import com.starfinplugins.bedwars.domain.arena.ArenaBoundsMode;
 import com.starfinplugins.bedwars.domain.arena.ArenaRegion;
 import com.starfinplugins.bedwars.domain.arena.ArenaRegionType;
@@ -31,6 +32,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -230,6 +233,26 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             } else {
                 sender.sendMessage(PREFIX + plugin.getMatchChat().selectChannel((Player) sender, args[1]));
             }
+            return true;
+        }
+        if ("kit".equalsIgnoreCase(args[0]) || "ability".equalsIgnoreCase(args[0])) {
+            boolean ability = "ability".equalsIgnoreCase(args[0]);
+            if (args.length == 2 && "list".equalsIgnoreCase(args[1])) {
+                sender.sendMessage(PREFIX + (ability ? "Habilidades: "
+                    + join(new ArrayList<String>(plugin.getGameplay().getSettings().abilities.keySet()))
+                    : "Kits: " + join(new ArrayList<String>(plugin.getGameplay().getSettings().kits.keySet()))));
+            } else if (ability && args.length == 2 && "use".equalsIgnoreCase(args[1])
+                    && sender instanceof Player) {
+                plugin.getGameplay().useAbility((Player) sender);
+            } else if (args.length == 1 && sender instanceof Player) {
+                if (ability) plugin.getGameplay().openAbilities((Player) sender);
+                else plugin.getGameplay().openKits((Player) sender);
+            } else sender.sendMessage(PREFIX + ChatColor.YELLOW
+                + (ability ? "/sbw ability [list|use]" : "/sbw kit [list]"));
+            return true;
+        }
+        if ("gameplay".equalsIgnoreCase(args[0])) {
+            handleGameplay(sender, args);
             return true;
         }
         if ("version".equalsIgnoreCase(args[0]) && args.length == 1) {
@@ -457,7 +480,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 if (arena != null) wizard.cancel(player, arena);
             } else {
                 sender.sendMessage(PREFIX + ChatColor.RED
-                    + "Uso: /sbw setup mode <solo|equipe> | team-size <2|3|4> | status | undo | pause | resume <arena> | cancel <arena>.");
+                    + "Uso: /sbw setup mode <solo|equipe> | team-size <2..maximo> | status | undo | pause | resume <arena> | cancel <arena>.");
             }
         } catch (RuntimeException error) {
             sender.sendMessage(PREFIX + ChatColor.RED + error.getMessage());
@@ -867,6 +890,35 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             return;
         }
         String action = args[1].toLowerCase(Locale.ROOT);
+        if ("rule".equals(action) && args.length == 5) {
+            if (!requireAdmin(sender)) return;
+            ArenaDefinition arena = getArena(sender, args[2]);
+            if (arena == null) return;
+            try {
+                ArenaGameplayRules old = arena.getGameplayRules();
+                String key = args[3].toLowerCase(Locale.ROOT);
+                String value = args[4].toLowerCase(Locale.ROOT);
+                Boolean split = old.generatorSplit, afk = old.antiAfk;
+                Integer respawn = old.respawnSeconds;
+                Set<String> kits = old.kits, abilities = old.abilities;
+                if ("split".equals(key)) split = parseInheritedBoolean(value);
+                else if ("afk".equals(key)) afk = parseInheritedBoolean(value);
+                else if ("respawn".equals(key)) respawn = "inherit".equals(value)
+                    ? null : Integer.valueOf(value);
+                else if ("kits".equals(key)) kits = parseChoiceList(value,
+                    plugin.getGameplay().getSettings().kits.keySet(), true);
+                else if ("abilities".equals(key)) abilities = parseChoiceList(value,
+                    plugin.getGameplay().getSettings().abilities.keySet(), false);
+                else throw new IllegalArgumentException("Regra: split, afk, respawn, kits ou abilities.");
+                arenas.setGameplayRules(arena,
+                    new ArenaGameplayRules(split, afk, respawn, kits, abilities));
+                sender.sendMessage(PREFIX + ChatColor.GREEN + "Regra salva para " + arena.getId()
+                    + "; novas partidas usarao o valor atualizado.");
+            } catch (Exception invalid) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "Regra nao salva: " + invalid.getMessage());
+            }
+            return;
+        }
         if ("menu".equals(action) && args.length == 2) {
             if (!requireAdmin(sender)) return;
             if (!(sender instanceof Player)) {
@@ -1511,6 +1563,73 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         return join(values);
     }
 
+    private void handleGameplay(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("starfinbedwars.command.gameplay.admin")
+                && !sender.hasPermission("starfinbedwars.admin")) {
+            sender.sendMessage(PREFIX + ChatColor.RED + "Sem permissao."); return;
+        }
+        if (args.length == 2 && "reload".equalsIgnoreCase(args[1])) {
+            try {
+                plugin.getGameplay().reload();
+                com.starfinplugins.bedwars.gameplay.GameplaySettings settings =
+                    plugin.getGameplay().getSettings();
+                arenas.setGameplayLimits(settings.maximumTeamSize, settings.maximumTotalPlayers);
+                sender.sendMessage(PREFIX + ChatColor.GREEN + "gameplay.yml validado e recarregado.");
+            } catch (RuntimeException invalid) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "Configuracao mantida: " + invalid.getMessage());
+            }
+            return;
+        }
+        if (args.length == 2 && "diagnose".equalsIgnoreCase(args[1])) {
+            com.starfinplugins.bedwars.gameplay.GameplaySettings config = plugin.getGameplay().getSettings();
+            sender.sendMessage(PREFIX + "Kits=" + config.kits.size() + ", habilidades="
+                + config.abilities.size() + ", Split=" + config.splitEnabled
+                + ", anti-AFK=" + config.antiAfkEnabled + ".");
+            for (ArenaDefinition arena : arenas.getArenas()) {
+                ArenaGameplayRules rules = arena.getGameplayRules();
+                if (rules.kits != null) for (String id : rules.kits)
+                    if (!config.kits.containsKey(id)) sender.sendMessage(ChatColor.RED
+                        + arena.getId() + ": kit desconhecido " + id);
+                if (rules.abilities != null) for (String id : rules.abilities)
+                    if (!config.abilities.containsKey(id)) sender.sendMessage(ChatColor.RED
+                        + arena.getId() + ": habilidade desconhecida " + id);
+            }
+            return;
+        }
+        if (args.length == 3 && ("inspect".equalsIgnoreCase(args[1])
+                || "cooldowns".equalsIgnoreCase(args[1]))) {
+            Player target = plugin.getServer().getPlayerExact(args[2]);
+            if (target == null) { sender.sendMessage(PREFIX + ChatColor.RED + "Jogador offline."); return; }
+            if ("inspect".equalsIgnoreCase(args[1])) sender.sendMessage(PREFIX + target.getName()
+                + ": kit=" + plugin.getGameplay().selectedKit(target.getUniqueId())
+                + ", habilidade=" + plugin.getGameplay().selectedAbility(target.getUniqueId()));
+            else sender.sendMessage(PREFIX + target.getName() + ": cooldown restante="
+                + plugin.getGameplay().cooldownRemaining(target.getUniqueId()) + "s.");
+            return;
+        }
+        sender.sendMessage(PREFIX + ChatColor.YELLOW
+            + "Use /sbw gameplay <reload|diagnose|inspect <jogador>|cooldowns <jogador>>.");
+    }
+
+    private static Boolean parseInheritedBoolean(String value) {
+        if ("inherit".equals(value)) return null;
+        if ("on".equals(value) || "true".equals(value)) return true;
+        if ("off".equals(value) || "false".equals(value)) return false;
+        throw new IllegalArgumentException("Use on, off ou inherit.");
+    }
+
+    private static Set<String> parseChoiceList(String value, Set<String> configured, boolean kits) {
+        if ("inherit".equals(value)) return null;
+        Set<String> parsed = new LinkedHashSet<String>();
+        if (!"none".equals(value)) for (String id : value.split(",")) {
+            if (!configured.contains(id)) throw new IllegalArgumentException("ID desconhecido: " + id);
+            parsed.add(id);
+        }
+        if (kits && !parsed.contains("default"))
+            throw new IllegalArgumentException("Kits permitidos devem incluir default.");
+        return parsed;
+    }
+
     private void sendHelp(CommandSender sender, String label) {
         sendHelp(sender, label, null);
     }
@@ -1522,7 +1641,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 sender.sendMessage(PREFIX + ChatColor.YELLOW + "Setup de arena");
                 sender.sendMessage(ChatColor.GRAY + "1. Configure POS1/POS2 com /sbw setarena e confirme.");
                 sender.sendMessage(ChatColor.GRAY + "2. /sbw setup mode <solo|equipe>");
-                sender.sendMessage(ChatColor.GRAY + "3. /sbw setup team-size <2|3|4> (somente equipe)");
+                sender.sendMessage(ChatColor.GRAY + "3. /sbw setup team-size <2..maximo> (somente equipe)");
                 sender.sendMessage(ChatColor.GRAY + "4. /sbw create teams <quantidade>");
                 sender.sendMessage(ChatColor.GRAY + "5. /sbw setup status mostra o proximo passo real.");
                 sender.sendMessage(ChatColor.GRAY + "/sbw setup <status|undo|pause|resume <arena>|cancel <arena>>");
@@ -1534,6 +1653,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 sender.sendMessage(PREFIX + ChatColor.YELLOW + "Arenas");
                 sender.sendMessage(ChatColor.GRAY + "/sbw arena <list|create|import|edit|publish|cancel|exit>");
                 sender.sendMessage(ChatColor.GRAY + "/sbw arena group <arena> <grupo> - selecao na rede");
+                sender.sendMessage(ChatColor.GRAY + "/sbw arena rule <arena> <split|afk|respawn|kits|abilities> <valor>");
                 sender.sendMessage(ChatColor.GRAY + "/sbw arena region <arena> <main|protection|waiting> <wand|worldedit|clear>");
                 sender.sendMessage(ChatColor.GRAY + "/sbw arena set <arena> <lobby|spectator|editspawn|spawn|respawn|bed> [equipe]");
                 sender.sendMessage(ChatColor.GRAY + "/sbw setarena ... - limites automaticos ou selecao manual");
@@ -1552,6 +1672,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 sender.sendMessage(ChatColor.GRAY + "/sbw profile | progress | rewards - menus de progressao");
                 sender.sendMessage(ChatColor.GRAY + "/sbw top [metrica] [modo] [periodo] [pagina]");
                 sender.sendMessage(ChatColor.GRAY + "/sbw idioma [pt_BR|en_US|es_ES] - idioma salvo no MySQL");
+                sender.sendMessage(ChatColor.GRAY + "/sbw kit | /sbw ability | /sbw ability use");
                 return;
             }
             sender.sendMessage(PREFIX + ChatColor.RED + "Categoria invalida. Use setup, arena, world ou player.");
@@ -1573,12 +1694,17 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         sender.sendMessage(ChatColor.GRAY + "/sbw arena generator <add|remove|list|setteam> <arena> ...");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena shop <arena> <items|upgrades>");
         sender.sendMessage(ChatColor.GRAY + "/sbw npc skin <items|upgrades> <nome-do-jogador>");
-        sender.sendMessage(ChatColor.GRAY + "/sbw setup mode <solo|equipe> | team-size <2|3|4>");
+        sender.sendMessage(ChatColor.GRAY + "/sbw setup mode <solo|equipe> | team-size <2..maximo>");
         sender.sendMessage(ChatColor.GRAY + "/sbw create teams <quantidade>");
         sender.sendMessage(ChatColor.GRAY + "/sbw setup <status|undo|pause|resume <arena>|cancel <arena>>");
         sender.sendMessage(ChatColor.GRAY + "/sbw setarena <center here|pos1|pos2|upoversize <L>x<C>|upheight <n>|uplow <n>|tp|preview|confirm|cancel>");
         sender.sendMessage(ChatColor.GRAY + "/sbw join <arena|group:grupo> | /sbw spectate <arena> | /sbw leave");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena group <arena> <grupo> | /sbw idioma [pt_BR|en_US|es_ES]");
+        sender.sendMessage(ChatColor.GRAY + "/sbw arena rule <arena> <split|afk|respawn|kits|abilities> <valor>");
+        sender.sendMessage(ChatColor.GRAY + "/sbw kit [list] | /sbw ability [list|use]");
+        if (sender.hasPermission("starfinbedwars.command.gameplay.admin")
+                || sender.hasPermission("starfinbedwars.admin"))
+            sender.sendMessage(ChatColor.GRAY + "/sbw gameplay <reload|diagnose|inspect|cooldowns>");
         sender.sendMessage(ChatColor.GRAY + "/sbw stats [jogador|UUID] | /sbw perfil [jogador]");
         sender.sendMessage(ChatColor.GRAY + "/sbw profile | progress | rewards | top [metrica] [modo] [periodo] [pagina]");
         if (sender.hasPermission("starfinbedwars.admin")) {
@@ -1620,7 +1746,9 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             List<String> choices = new ArrayList<String>(Arrays.asList(
                 "help", "version", "menu", "arena", "join", "spectate", "leave", "chat",
                 "stats", "perfil", "nivel", "profile", "progress", "rewards", "recompensas",
-                "top", "idioma", "language", "lang"));
+                "top", "idioma", "language", "lang", "kit", "ability"));
+            if (sender.hasPermission("starfinbedwars.command.gameplay.admin")
+                    || sender.hasPermission("starfinbedwars.admin")) choices.add("gameplay");
             if (sender.hasPermission("starfinbedwars.command.status")
                     || sender.hasPermission("starfinbedwars.admin")) choices.add("status");
             if (hasArenaAdmin(sender)) {
@@ -1640,6 +1768,12 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 return filter(Collections.singletonList("confirm"), args[3]);
             }
         }
+        if ("gameplay".equalsIgnoreCase(args[0]) && args.length == 2)
+            return filter(Arrays.asList("reload", "diagnose", "inspect", "cooldowns"), args[1]);
+        if ("kit".equalsIgnoreCase(args[0]) && args.length == 2)
+            return filter(Collections.singletonList("list"), args[1]);
+        if ("ability".equalsIgnoreCase(args[0]) && args.length == 2)
+            return filter(Arrays.asList("list", "use"), args[1]);
         if (args.length == 2 && ("idioma".equalsIgnoreCase(args[0])
                 || "language".equalsIgnoreCase(args[0]) || "lang".equalsIgnoreCase(args[0]))) {
             return filter(Arrays.asList("pt_BR", "en_US", "es_ES"), args[1]);
@@ -1690,7 +1824,10 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         if ("setup".equalsIgnoreCase(args[0]) && args.length == 3
                 && "team-size".equalsIgnoreCase(args[1])) {
             if (!hasArenaAdmin(sender)) return Collections.emptyList();
-            return filter(Arrays.asList("2", "3", "4"), args[2]);
+            List<String> sizes = new ArrayList<String>();
+            for (int size = 2; size <= plugin.getGameplay().getSettings().maximumTeamSize; size++)
+                sizes.add(Integer.toString(size));
+            return filter(sizes, args[2]);
         }
         if ("setup".equalsIgnoreCase(args[0]) && args.length == 3
                 && "color".equalsIgnoreCase(args[1])) {

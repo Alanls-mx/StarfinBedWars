@@ -20,6 +20,8 @@ import com.starfinplugins.bedwars.match.MatchVisualService;
 import com.starfinplugins.bedwars.match.MatchPointService;
 import com.starfinplugins.bedwars.match.BedHologramService;
 import com.starfinplugins.bedwars.stats.MatchStatisticsService;
+import com.starfinplugins.bedwars.gameplay.GameplayService;
+import com.starfinplugins.bedwars.gameplay.AntiAfkService;
 import com.starfinplugins.bedwars.network.NetworkRegistryService;
 import com.starfinplugins.bedwars.network.NetworkReservationDeliveryService;
 import com.starfinplugins.bedwars.integration.BedWarsMinigameIntegration;
@@ -70,6 +72,8 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private MatchPointService matchPoint;
     private BedHologramService bedHolograms;
     private MatchStatisticsService statistics;
+    private GameplayService gameplay;
+    private AntiAfkService antiAfk;
     private NetworkRegistryService networkRegistry;
     private NetworkReservationDeliveryService reservationDelivery;
     private BedWarsMinigameIntegration minigameIntegration;
@@ -93,6 +97,10 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services = new ServiceLifecycle();
             arenaService = new ArenaService(this);
             arenaService.setMaximumRegionBlocks(worldSettings.getMaximumRegionBlocks());
+            com.starfinplugins.bedwars.gameplay.GameplaySettings initialGameplay =
+                com.starfinplugins.bedwars.gameplay.GameplaySettings.load(this);
+            arenaService.setGameplayLimits(initialGameplay.maximumTeamSize,
+                initialGameplay.maximumTotalPlayers);
             worldManagement = new WorldManagementService(this, worldSettings, arenaService);
             arenaService.setWorldManagement(worldManagement);
             arenaEditing = new ArenaEditingService(this, arenaService, worldManagement);
@@ -129,6 +137,9 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             matchPoint = new MatchPointService(this, matchEngine, mobGuard);
             bedHolograms = new BedHologramService(this, arenaService, matchEngine, mobGuard);
             statistics = new MatchStatisticsService(this);
+            gameplay = new GameplayService(this, matchEngine, statistics, equipment);
+            antiAfk = new AntiAfkService(this, matchEngine, statistics, gameplay);
+            generators.setGameplay(gameplay);
             progressionMenus = new ProgressionMenuService(this, statistics);
             networkRegistry = new NetworkRegistryService(this, arenaService, matchEngine);
             storageMigration = new StorageMigrationService(this, arenaService);
@@ -151,6 +162,8 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services.add(generators);
             services.add(teamUpgrades);
             services.add(equipment);
+            services.add(gameplay);
+            services.add(antiAfk);
             services.add(shops);
             services.add(specialItems);
             services.add(matchPoint);
@@ -223,6 +236,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     public ReconnectService getReconnect() { return reconnect; }
     public MatchChatService getMatchChat() { return matchChat; }
     public MatchStatisticsService getStatistics() { return statistics; }
+    public GameplayService getGameplay() { return gameplay; }
     public ProgressionMenuService getProgressionMenus() { return progressionMenus; }
     public NetworkRegistryService getNetworkRegistry() { return networkRegistry; }
     public StorageMigrationService getStorageMigration() { return storageMigration; }

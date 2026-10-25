@@ -1,0 +1,132 @@
+# Gameplay classico. Alteracoes de selecao valem na proxima partida; cooldowns sao por partida.
+kits:
+  default:
+    enabled: true
+    names: {pt_BR: Padrao, en_US: Default, es_ES: Predeterminado}
+    descriptions: {pt_BR: Quatro blocos para comecar., en_US: Four starting blocks., es_ES: Cuatro bloques iniciales.}
+    icon: WOOL
+    level: 1
+    permission: ''
+    modes: [solo, duo, trio, squad, custom]
+    start-items:
+      - {material: WOOL, amount: 4}
+    respawn-items: []
+    permanent-tool: ''
+  builder:
+    enabled: true
+    names: {pt_BR: Construtor, en_US: Builder, es_ES: Constructor}
+    descriptions: {pt_BR: Doze blocos no inicio., en_US: Twelve starting blocks., es_ES: Doce bloques iniciales.}
+    icon: BRICK
+    level: 5
+    permission: ''
+    modes: [solo, duo, trio, squad, custom]
+    start-items:
+      - {material: WOOL, amount: 12}
+    respawn-items: []
+    permanent-tool: ''
+  warrior:
+    enabled: true
+    names: {pt_BR: Guerreiro, en_US: Warrior, es_ES: Guerrero}
+    descriptions: {pt_BR: Uma maca dourada no inicio., en_US: One starting golden apple., es_ES: Una manzana dorada inicial.}
+    icon: GOLDEN_APPLE
+    level: 10
+    permission: ''
+    modes: [solo, duo, trio, squad, custom]
+    start-items:
+      - {material: GOLDEN_APPLE, amount: 1}
+    respawn-items: []
+    permanent-tool: ''
+  miner:
+    enabled: true
+    names: {pt_BR: Minerador, en_US: Miner, es_ES: Minero}
+    descriptions: {pt_BR: Picareta de pedra permanente., en_US: Permanent stone pickaxe., es_ES: Pico de piedra permanente.}
+    icon: STONE_PICKAXE
+    level: 10
+    permission: ''
+    modes: [solo, duo, trio, squad, custom]
+    start-items: []
+    respawn-items: []
+    permanent-tool: STONE_PICKAXE
+  explorer:
+    enabled: true
+    names: {pt_BR: Explorador, en_US: Explorer, es_ES: Explorador}
+    descriptions: {pt_BR: Pocao de velocidade no inicio., en_US: Starting speed potion., es_ES: Pocion de velocidad inicial.}
+    icon: COMPASS
+    level: 15
+    permission: ''
+    modes: [solo, duo, trio, squad, custom]
+    start-items:
+      - {material: POTION, amount: 1, data: 8194}
+    respawn-items: []
+    permanent-tool: ''
+
+abilities:
+  surefoot:
+    enabled: true
+    names: {pt_BR: Pouso Seguro, en_US: Surefoot, es_ES: Paso Seguro}
+    descriptions: {pt_BR: Reduz dano de queda em 20%., en_US: Reduces fall damage by 20%., es_ES: Reduce el dano por caida un 20%.}
+    icon: FEATHER
+    type: PASSIVE
+    effect: FALL_REDUCTION
+    level: 5
+    permission: ''
+    modes: [solo, duo, trio, squad, custom]
+    duration-seconds: 0
+    cooldown-seconds: 0
+    potency: 0.2
+  sprinter:
+    enabled: true
+    names: {pt_BR: Impulso, en_US: Sprinter, es_ES: Impulso}
+    descriptions: {pt_BR: Velocidade por 4s apos abate., en_US: Speed for 4s after a kill., es_ES: Velocidad por 4s tras una baja.}
+    icon: SUGAR
+    type: EVENT
+    effect: SPEED_ON_KILL
+    level: 5
+    permission: ''
+    modes: [solo, duo, trio, squad, custom]
+    duration-seconds: 4
+    cooldown-seconds: 30
+    potency: 1
+  guardian:
+    enabled: true
+    names: {pt_BR: Guardiao, en_US: Guardian, es_ES: Guardian}
+    descriptions: {pt_BR: Resistencia por 3s ao renascer., en_US: Resistance for 3s after respawn., es_ES: Resistencia por 3s al reaparecer.}
+    icon: IRON_CHESTPLATE
+    type: EVENT
+    effect: RESISTANCE_ON_RESPAWN
+    level: 10
+    permission: ''
+    modes: [solo, duo, trio, squad, custom]
+    duration-seconds: 3
+    cooldown-seconds: 60
+    potency: 1
+  dash:
+    enabled: true
+    names: {pt_BR: Arrancada, en_US: Dash, es_ES: Carrera}
+    descriptions: {pt_BR: Use /sbw ability use para 5s de velocidade., en_US: Use /sbw ability use for 5s of speed., es_ES: Usa /sbw ability use para 5s de velocidad.}
+    icon: RABBIT_FOOT
+    type: ACTIVE
+    effect: SPEED_COMMAND
+    level: 15
+    permission: ''
+    modes: [solo, duo, trio, squad, custom]
+    duration-seconds: 5
+    cooldown-seconds: 90
+    potency: 1
+
+generator-split:
+  enabled: false # arenas antigas preservam o comportamento anterior
+  policy: ROUND_ROBIN # ROUND_ROBIN conserva a producao; SHARED multiplica as copias
+  radius: 3.0
+  maximum-recipients: 4
+
+anti-afk:
+  enabled: false # habilite apos ajustar os tempos para sua rede
+  waiting-timeout-seconds: 180
+  game-timeout-seconds: 300
+  warning-seconds: 30
+  exempt-permission: starfinbedwars.afk.exempt
+
+custom-teams:
+  maximum-team-size: 8
+  maximum-total-players: 64

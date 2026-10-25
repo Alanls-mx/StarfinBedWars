@@ -17,6 +17,8 @@ import com.starfinplugins.bedwars.event.ResourceGeneratedEvent;
 import com.starfinplugins.bedwars.match.MatchEngineService;
 import com.starfinplugins.bedwars.service.ManagedService;
 import com.starfinplugins.bedwars.world.ManagedMobGuard;
+import com.starfinplugins.bedwars.gameplay.GameplayService;
+import com.starfinplugins.bedwars.gameplay.GameplaySettings;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -69,8 +71,11 @@ public final class ResourceGeneratorService implements ManagedService, Listener 
     private final Random random = new Random();
     private final Set<String> warnedLocations = new HashSet<String>();
     private ManagedMobGuard mobGuard;
+    private GameplayService gameplay;
+    private final Map<String, Integer> splitCursors = new HashMap<String, Integer>();
 
     public void setMobGuard(ManagedMobGuard mobGuard) { this.mobGuard = mobGuard; }
+    public void setGameplay(GameplayService gameplay) { this.gameplay = gameplay; }
 
     public ResourceGeneratorService(Plugin plugin, ArenaService arenas, MatchEngineService matchEngine) {
         this.plugin = plugin;
@@ -104,6 +109,7 @@ public final class ResourceGeneratorService implements ManagedService, Listener 
         holograms.clear();
         warnedLocations.clear();
         nextEventIndexes.clear();
+        splitCursors.clear();
     }
 
     @EventHandler
@@ -299,15 +305,70 @@ public final class ResourceGeneratorService implements ManagedService, Listener 
                 warnedLocations.remove(match.getId() + ":" + instance.getDefinition().getId());
                 if (!instance.advance(currentTick, levels, currentDropped)) continue;
                 GeneratorLevel level = levels.get(instance.getLevel() - 1);
-                Item item = world.dropItem(location, new ItemStack(type.getMaterial(), level.getAmount()));
-                item.setVelocity(new Vector(0.0D, 0.0D, 0.0D));
-                item.setMetadata(ITEM_TAG, new FixedMetadataValue(plugin, tag(match.getId(), instance)));
-                spawnedItems.get(match.getId()).add(item);
-                Bukkit.getPluginManager().callEvent(new ResourceGeneratedEvent(match, instance, level.getAmount()));
+                int produced = distribute(match, instance, level.getAmount(),
+                    level.getMaximumDropped(), currentDropped, location);
+                Bukkit.getPluginManager().callEvent(new ResourceGeneratedEvent(match, instance, produced));
                 updateHologram(entry.getKey(), instance);
             }
 
         }
+    }
+
+    private int distribute(GameMatch match, GeneratorInstance instance, int amount,
+                           int maximumDropped, int currentDropped, Location location) {
+        GameplaySettings config = gameplay == null ? null : gameplay.getSettings();
+        String teamId = instance.getDefinition().getTeamId();
+        if (config == null || teamId == null || !match.getArena().getGameplayRules().split(config.splitEnabled))
+            return dropTagged(match, instance, new ItemStack(instance.getDefinition().getResource().getMaterial(),
+                amount), location, maximumDropped, currentDropped);
+        List<org.bukkit.entity.Player> eligible = new ArrayList<org.bukkit.entity.Player>();
+        double radiusSquared = config.splitRadius * config.splitRadius;
+        for (GameParticipant part : match.getParticipantList()) {
+            if (part.getState() != ParticipantState.CONNECTED || !teamId.equals(part.getTeamId())) continue;
+            org.bukkit.entity.Player player = Bukkit.getPlayer(part.getPlayerId());
+            if (player == null || player.getWorld() != location.getWorld()
+                    || player.getLocation().distanceSquared(location) > radiusSquared) continue;
+            eligible.add(player);
+        }
+        if (eligible.isEmpty()) return dropTagged(match, instance,
+            new ItemStack(instance.getDefinition().getResource().getMaterial(), amount),
+            location, maximumDropped, currentDropped);
+        String key = tag(match.getId(), instance);
+        GeneratorSplitPlan plan = GeneratorSplitPlan.choose(eligible.size(),
+            splitCursors.getOrDefault(key, 0), config.splitMaximumRecipients, config.splitPolicy);
+        splitCursors.put(key, plan.nextCursor);
+        int total = 0;
+        int ground = currentDropped;
+        for (int index : plan.recipientIndexes) {
+            org.bukkit.entity.Player player = eligible.get(index);
+            Map<Integer, ItemStack> leftovers = player.getInventory().addItem(
+                new ItemStack(instance.getDefinition().getResource().getMaterial(), amount));
+            int overflow = 0;
+            for (ItemStack remaining : leftovers.values()) if (remaining != null)
+                overflow += remaining.getAmount();
+            total += amount - overflow;
+            if (overflow > 0) {
+                int dropped = dropTagged(match, instance,
+                    new ItemStack(instance.getDefinition().getResource().getMaterial(), overflow),
+                    location, maximumDropped, ground);
+                ground += dropped;
+                total += dropped;
+            }
+            player.updateInventory();
+        }
+        return total;
+    }
+
+    private int dropTagged(GameMatch match, GeneratorInstance instance, ItemStack stack,
+                           Location location, int maximumDropped, int currentDropped) {
+        int amount = Math.min(stack.getAmount(), Math.max(0, maximumDropped - currentDropped));
+        if (amount == 0) return 0;
+        stack.setAmount(amount);
+        Item item = location.getWorld().dropItem(location, stack);
+        item.setVelocity(new Vector(0.0D, 0.0D, 0.0D));
+        item.setMetadata(ITEM_TAG, new FixedMetadataValue(plugin, tag(match.getId(), instance)));
+        spawnedItems.get(match.getId()).add(item);
+        return amount;
     }
 
     private void applyTimedUpgrades(GameMatch match, List<GeneratorInstance> generators) {
@@ -593,6 +654,7 @@ public final class ResourceGeneratorService implements ManagedService, Listener 
         }
         matches.remove(matchId);
         nextEventIndexes.remove(matchId);
+        splitCursors.keySet().removeIf(key -> key.startsWith(matchId.toString() + ":"));
         warnedLocations.removeIf(key -> key.startsWith(matchId.toString() + ":"));
         Map<String, GeneratorHologram> matchHolograms = holograms.remove(matchId);
         if (matchHolograms != null) {

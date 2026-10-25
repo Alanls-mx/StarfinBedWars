@@ -16,7 +16,7 @@ import java.util.UUID;
 
 /** Per-field last-write-wins, crash-safe journal. ACK never removes a newer pending update. */
 public final class PreferencesOutbox {
-    public enum Kind { LANGUAGE, QUICK_BUY }
+    public enum Kind { LANGUAGE, QUICK_BUY, KIT, ABILITY }
     private final Path directory;
 
     public PreferencesOutbox(Path directory) { this.directory = directory; }
@@ -74,6 +74,10 @@ public final class PreferencesOutbox {
             if (kind == Kind.QUICK_BUY && !value.equals(PlayerPreferences.encode(
                     PlayerPreferences.decode(value)))) {
                 throw new IllegalArgumentException("Favoritos invalidos no outbox");
+            }
+            if ((kind == Kind.KIT || kind == Kind.ABILITY)
+                    && !PlayerPreferences.validSelectionId(value)) {
+                throw new IllegalArgumentException("Selecao invalida no outbox");
             }
             return new Pending(id, kind, value, revision);
         } catch (IllegalArgumentException | NullPointerException error) {

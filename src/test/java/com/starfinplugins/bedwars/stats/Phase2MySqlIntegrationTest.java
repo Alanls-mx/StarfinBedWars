@@ -27,18 +27,20 @@ public class Phase2MySqlIntegrationTest {
         Assume.assumeTrue(host != null && database != null && database.startsWith("sbw_phase2_test_"));
         String user = System.getenv("SBW_TEST_DB_USER");
         String password = System.getenv("SBW_TEST_DB_PASSWORD");
+        int port = Integer.parseInt(System.getenv("SBW_TEST_DB_PORT") == null
+            ? "3306" : System.getenv("SBW_TEST_DB_PORT"));
         YamlConfiguration yml = new YamlConfiguration();
         yml.set("enabled", true);
         yml.set("mysql.host", host);
-        yml.set("mysql.port", 3306);
+        yml.set("mysql.port", port);
         yml.set("mysql.database", database);
         yml.set("mysql.username", user);
         yml.set("mysql.password", password);
-        yml.set("mysql.ssl-mode", "DISABLED");
+        yml.set("mysql.ssl-mode", "REQUIRED");
         yml.set("levels.base-xp", 100);
         yml.set("levels.increase-per-level", 0);
         StatsSettings settings = new StatsSettings(yml);
-        String url = "jdbc:mysql://" + host + ":3306/" + database + "?sslMode=DISABLED";
+        String url = "jdbc:mysql://" + host + ":" + port + "/" + database + "?sslMode=REQUIRED";
         UUID player = UUID.randomUUID();
         UUID oldMatch = UUID.randomUUID();
         try (Connection connection = DriverManager.getConnection(url, user, password);
@@ -72,6 +74,12 @@ public class Phase2MySqlIntegrationTest {
              MySqlStatsRepository second = new MySqlStatsRepository()) {
             first.open(settings);
             second.open(settings);
+            assertEquals("default", first.loadPreferences(player, null).selectedKit);
+            assertEquals("none", first.loadPreferences(player, null).selectedAbility);
+            first.updateGameplaySelection(player, PreferencesOutbox.Kind.KIT, "builder");
+            first.updateGameplaySelection(player, PreferencesOutbox.Kind.ABILITY, "guardian");
+            assertEquals("builder", second.loadPreferences(player, null).selectedKit);
+            assertEquals("guardian", second.loadPreferences(player, null).selectedAbility);
             assertFalse(first.selectTitle(player, "novice"));
             assertNull(first.loadPreferences(player, null).selectedTitle);
             MatchResult solo = new MatchResult(UUID.randomUUID(), player, "Legacy", 1, 0, 0, 0,

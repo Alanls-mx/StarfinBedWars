@@ -453,6 +453,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (match.getState() != MatchState.STARTING) return;
         if (match.getConnectedCount() < match.getArena().getMinimumPlayers()) {
             match.transition(MatchState.WAITING);
+            fire(MatchLifecycleEvent.Type.COUNTDOWN_CANCELLED, match, null, null);
             return;
         }
         World world = matchWorlds.get(match.getId());
@@ -493,12 +494,14 @@ public final class MatchEngineService implements ManagedService, Listener {
             countdownValues.remove(match.getArena().getId());
             match.transition(MatchState.WAITING);
             teleportWaitingParticipantsToLobby(match);
+            fire(MatchLifecycleEvent.Type.COUNTDOWN_CANCELLED, match, null, null);
             updateCountdown(match);
             return;
         }
         if (match.getConnectedCount() < match.getArena().getMinimumPlayers()) {
             match.transition(MatchState.WAITING);
             teleportWaitingParticipantsToLobby(match);
+            fire(MatchLifecycleEvent.Type.COUNTDOWN_CANCELLED, match, null, null);
             updateCountdown(match);
             return;
         }
@@ -910,10 +913,11 @@ public final class MatchEngineService implements ManagedService, Listener {
                             current.setGameMode(GameMode.SURVIVAL);
                             match.setParticipantState(playerId, ParticipantState.CONNECTED);
                             fallProtectionUntil.put(playerId, System.currentTimeMillis() + 3000L);
+                            fire(MatchLifecycleEvent.Type.PLAYER_RESPAWNED, match, part, part.getTeamId());
                         }
                         respawnTasks.remove(playerId);
                     }
-                }, respawnSeconds * 20L));
+                }, match.getArena().getGameplayRules().respawn(respawnSeconds) * 20L));
             }
         } else {
             session.getSnapshot().restore(player);
@@ -981,7 +985,7 @@ public final class MatchEngineService implements ManagedService, Listener {
             cancel(respawnTasks.remove(player.getUniqueId()));
             player.sendMessage(message("messages.respawn-countdown",
                 "&eVoce renascera em &c{time} &esegundos.",
-                "time", Integer.toString(respawnSeconds)));
+                "time", Integer.toString(match.getArena().getGameplayRules().respawn(respawnSeconds))));
             fire(MatchLifecycleEvent.Type.PLAYER_DIED, match, participant, participant.getTeamId());
         }
         // Evita a tela de morte e inicia imediatamente o periodo de espectador.
@@ -1132,12 +1136,14 @@ public final class MatchEngineService implements ManagedService, Listener {
                                 fallProtectionUntil.put(player.getUniqueId(),
                                     System.currentTimeMillis() + 3000L);
                                 match.setParticipantState(player.getUniqueId(), ParticipantState.CONNECTED);
+                                fire(MatchLifecycleEvent.Type.PLAYER_RESPAWNED, match, current,
+                                    current.getTeamId());
                                 player.sendMessage(message("messages.respawned", "&aVoce renasceu!"));
                             }
                         }
                         respawnTasks.remove(player.getUniqueId());
                     }
-                }, respawnSeconds * 20L));
+                }, match.getArena().getGameplayRules().respawn(respawnSeconds) * 20L));
             }
         });
     }

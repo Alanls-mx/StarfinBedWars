@@ -34,7 +34,14 @@ public class PreferencesOutboxTest {
         PreferencesOutbox outbox = new PreferencesOutbox(directory);
         outbox.write(id, PreferencesOutbox.Kind.LANGUAGE, "pt_BR");
         outbox.write(id, PreferencesOutbox.Kind.QUICK_BUY, "wool,stone_sword");
-        assertEquals(2, outbox.pending().size());
+        outbox.write(id, PreferencesOutbox.Kind.KIT, "builder");
+        outbox.write(id, PreferencesOutbox.Kind.ABILITY, "guardian");
+        assertEquals(4, outbox.pending().size());
+        PreferencesOutbox restarted = new PreferencesOutbox(directory);
+        java.util.Set<PreferencesOutbox.Kind> kinds = new java.util.HashSet<PreferencesOutbox.Kind>();
+        for (Path path : restarted.pending()) kinds.add(restarted.read(path).kind);
+        assertTrue(kinds.contains(PreferencesOutbox.Kind.KIT));
+        assertTrue(kinds.contains(PreferencesOutbox.Kind.ABILITY));
         for (Path path : outbox.pending()) {
             outbox.acknowledge(path, outbox.read(path));
         }

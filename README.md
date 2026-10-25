@@ -19,6 +19,10 @@ mvn -B verify
 
 O JAR e `target/StarfinBedWars-1.0.0-SNAPSHOT.jar`. A API Spigot e `provided` e nao e empacotada.
 
+## Gameplay avançado (Prompt 5)
+
+O lobby de espera oferece seleção de kit pela estrela do Nether no slot visual 4 e habilidade pelo frasco de encantamento no slot visual 6. As escolhas são persistidas no MySQL compartilhado. Os cinco kits, quatro habilidades, Generator Split, anti-AFK, limites de equipes e regras por arena são configurados em `plugins/StarfinBedWars/gameplay.yml` e `arenas/<id>.yml`. Split e anti-AFK começam desativados para manter o comportamento das arenas existentes. Comandos, permissões, semântica de cada configuração e roteiro de teste em servidor: [docs/PROMPT5_GAMEPLAY.md](docs/PROMPT5_GAMEPLAY.md).
+
 ## API compartilhada de minigames (Fase 1)
 
 Com StarfinMinigames presente, BedWars registra `bedwars` no `MinigameRegistry` do Bukkit `ServicesManager`. Arenas, grupos, modalidades, partidas, capacidades, estados e UUIDs dos jogadores sao consultados por snapshots imutaveis. Um adaptador publica eventos genericos a partir de `MatchLifecycleEvent` sem disparar os mesmos eventos internos novamente. O registro e removido no desligamento do BedWars; o StarfinMinigames tambem remove registros quando o plugin proprietario e desabilitado.
@@ -138,7 +142,7 @@ Na loja, a primeira linha seleciona a categoria e os itens abaixo mudam para o s
 | `/sbw arena edit <publish\|cancel> <arena>` | `starfinbedwars.command.arena` | Publica o template validado ou descarta a instancia dessa arena. |
 | `/sbw arena exit` | `starfinbedwars.command.arena` | Encerra as sessoes de edicao do administrador e restaura o ponto de retorno. |
 | `/sbw arena region <arena> <main\|protection\|waiting> <wand\|worldedit\|clear>` | `starfinbedwars.command.arena` | Persiste regioes; WorldEdit 6.x e opcional. |
-| `/sbw arena team <arena> <id> <nome> <cor-hex> <capacidade>` | `starfinbedwars.command.arena` | Cria/atualiza equipe; capacidade de 1 a 100. |
+| `/sbw arena team <arena> <id> <nome> <cor-hex> <capacidade>` | `starfinbedwars.command.arena` | Cria/atualiza equipe dentro dos limites de `gameplay.yml`. |
 | `/sbw arena removeteam <arena> <id>` | `starfinbedwars.command.arena` | Remove equipe se restarem pelo menos duas. |
 | `/sbw arena set <arena> lobby\|spectator\|editspawn\|spawn\|respawn\|bed [equipe]` | `starfinbedwars.command.arena` | Salva pontos na copia de edicao; `respawn` exige piso seguro e `bed` exige mirar em um bloco de cama. |
 
@@ -149,7 +153,7 @@ Na loja, a primeira linha seleciona a categoria e os itens abaixo mudam para o s
 | `/sbw arena shop <arena> <items\|upgrades>` | `starfinbedwars.command.arena` | Salva posicao da loja na copia temporaria de edicao. |
 | `/sbw npc skin <items\|upgrades> <nome-do-jogador>` | `starfinbedwars.command.arena` | Define e salva a skin da cabeca do NPC, atualizando os NPCs ativos. |
 | `/sbw setup mode <solo\|equipe>` | `starfinbedwars.command.arena` | Seleciona o formato depois que POS1/POS2 e os limites da arena forem confirmados. |
-| `/sbw setup team-size <2\|3\|4>` | `starfinbedwars.command.arena` | Define a capacidade das equipes antes de cria-las; exige limites confirmados. |
+| `/sbw setup team-size <2..maximo>` | `starfinbedwars.command.arena` | Define a capacidade das equipes antes de cria-las; limite em `gameplay.yml`. |
 | `/sbw create teams <quantidade>` | `starfinbedwars.command.arena` | Cria equipes e inicia o assistente por etapas; exige limites confirmados. |
 | `/sbw setup pause` | `starfinbedwars.command.arena` | Salva e pausa o passo atual do assistente. |
 | `/sbw setup resume <arena>` | `starfinbedwars.command.arena` | Retoma um rascunho apos entrar novamente na copia de edicao. |

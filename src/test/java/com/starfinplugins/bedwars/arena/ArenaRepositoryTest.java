@@ -1,6 +1,7 @@
 package com.starfinplugins.bedwars.arena;
 
 import com.starfinplugins.bedwars.domain.arena.ArenaDefinition;
+import com.starfinplugins.bedwars.domain.arena.ArenaGameplayRules;
 import com.starfinplugins.bedwars.domain.arena.ArenaBoundsMode;
 import com.starfinplugins.bedwars.domain.arena.ArenaRegion;
 import com.starfinplugins.bedwars.domain.arena.ArenaRegionType;
@@ -34,6 +35,9 @@ public class ArenaRepositoryTest {
         arena.setMinimumPlayers(4);
         arena.setCountdownSeconds(20);
         arena.setEnabled(true);
+        arena.setGameplayRules(new ArenaGameplayRules(true, false, 4,
+            new java.util.LinkedHashSet<String>(Arrays.asList("default", "builder")),
+            new java.util.LinkedHashSet<String>(Arrays.asList("guardian"))));
         arena.setLobby(position("bedwars_template", 0.5, 70, 0.5));
         TeamDefinition team = new TeamDefinition("red", "Vermelho", "c", 6);
         team.setAppearance("Vermelho", "c", 14);
@@ -102,9 +106,14 @@ public class ArenaRepositoryTest {
         assertEquals(40, copy.getBoundsDownDepth());
         assertEquals(0.5, copy.getBoundsCenter().getX(), 0.0);
         assertEquals(8, copy.getGenerators().get("iron_1").getRegion().getMinimumX());
+        assertEquals(Boolean.TRUE, copy.getGameplayRules().generatorSplit);
+        assertEquals(Boolean.FALSE, copy.getGameplayRules().antiAfk);
+        assertEquals(Integer.valueOf(4), copy.getGameplayRules().respawnSeconds);
+        assertTrue(copy.getGameplayRules().kits.contains("builder"));
+        assertTrue(copy.getGameplayRules().abilities.contains("guardian"));
         YamlConfiguration saved = YamlConfiguration.loadConfiguration(new File(
             new File(temporaryFolder.getRoot(), "arenas"), "duo.yml"));
-        assertEquals(8, saved.getInt("version"));
+        assertEquals(9, saved.getInt("version"));
         assertEquals("duplas", saved.getString("group"));
         assertFalse(repository.getTemplateDirectory("duo").exists());
     }
@@ -126,6 +135,7 @@ public class ArenaRepositoryTest {
         assertEquals("legacy", loaded.getId());
         assertEquals("default", loaded.getGroup());
         assertEquals(null, loaded.getEditSpawn());
+        assertEquals(null, loaded.getGameplayRules().generatorSplit);
     }
 
     @Test

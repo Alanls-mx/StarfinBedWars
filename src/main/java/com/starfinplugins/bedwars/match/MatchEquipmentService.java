@@ -67,7 +67,7 @@ public final class MatchEquipmentService implements ManagedService, Listener {
             try { mode = ArmorMode.valueOf(configured.toUpperCase(java.util.Locale.ROOT)); }
             catch (IllegalArgumentException invalid) { mode = ArmorMode.CLASSIC; }
             modes.put(match.getId(), mode);
-        } else if (event.getType() == MatchLifecycleEvent.Type.SPAWN_OPENING) {
+        } else if (event.getType() == MatchLifecycleEvent.Type.STARTED) {
             for (GameParticipant participant : match.getParticipantList()) {
                 if (participant.getState() != ParticipantState.CONNECTED) continue;
                 Player player = Bukkit.getPlayer(participant.getPlayerId());

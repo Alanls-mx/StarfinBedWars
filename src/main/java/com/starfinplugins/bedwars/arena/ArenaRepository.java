@@ -70,7 +70,7 @@ public final class ArenaRepository {
         ensureDirectory();
         File target = file(arena.getId());
         YamlConfiguration yaml = new YamlConfiguration();
-        yaml.set("version", 8);
+        yaml.set("version", 9);
         yaml.set("id", arena.getId());
         yaml.set("name", arena.getDisplayName());
         yaml.set("group", arena.getGroup());
@@ -78,6 +78,12 @@ public final class ArenaRepository {
         yaml.set("minimum-players", arena.getMinimumPlayers());
         yaml.set("countdown-seconds", arena.getCountdownSeconds());
         yaml.set("enabled", arena.isEnabled());
+        com.starfinplugins.bedwars.domain.arena.ArenaGameplayRules rules = arena.getGameplayRules();
+        if (rules.generatorSplit != null) yaml.set("rules.generator-split", rules.generatorSplit);
+        if (rules.antiAfk != null) yaml.set("rules.anti-afk", rules.antiAfk);
+        if (rules.respawnSeconds != null) yaml.set("rules.respawn-seconds", rules.respawnSeconds);
+        if (rules.kits != null) yaml.set("rules.kits", new ArrayList<String>(rules.kits));
+        if (rules.abilities != null) yaml.set("rules.abilities", new ArrayList<String>(rules.abilities));
         writePosition(yaml, "lobby", arena.getLobby());
         writePosition(yaml, "spectator", arena.getSpectator());
         writePosition(yaml, "shops.items", arena.getItemShop());
@@ -202,7 +208,7 @@ public final class ArenaRepository {
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.load(file);
         int version = yaml.getInt("version", -1);
-        if (version < 1 || version > 8) {
+        if (version < 1 || version > 9) {
             throw new IOException("versao de arena nao suportada");
         }
         ArenaDefinition arena = new ArenaDefinition(yaml.getString("id"), yaml.getString("source-world"));
@@ -211,6 +217,14 @@ public final class ArenaRepository {
         arena.setMinimumPlayers(yaml.getInt("minimum-players", 2));
         arena.setCountdownSeconds(yaml.getInt("countdown-seconds", 30));
         arena.setEnabled(yaml.getBoolean("enabled", false));
+        if (yaml.isConfigurationSection("rules")) {
+            arena.setGameplayRules(new com.starfinplugins.bedwars.domain.arena.ArenaGameplayRules(
+                yaml.isSet("rules.generator-split") ? yaml.getBoolean("rules.generator-split") : null,
+                yaml.isSet("rules.anti-afk") ? yaml.getBoolean("rules.anti-afk") : null,
+                yaml.isSet("rules.respawn-seconds") ? yaml.getInt("rules.respawn-seconds") : null,
+                yaml.isSet("rules.kits") ? new java.util.LinkedHashSet<String>(yaml.getStringList("rules.kits")) : null,
+                yaml.isSet("rules.abilities") ? new java.util.LinkedHashSet<String>(yaml.getStringList("rules.abilities")) : null));
+        }
         arena.setLobby(readPosition(yaml, "lobby"));
         arena.setSpectator(readPosition(yaml, "spectator"));
         arena.setItemShop(readPosition(yaml, "shops.items"));

@@ -1,6 +1,7 @@
 package com.starfinplugins.bedwars.arena;
 
 import com.starfinplugins.bedwars.domain.arena.ArenaDefinition;
+import com.starfinplugins.bedwars.domain.arena.ArenaGameplayRules;
 import com.starfinplugins.bedwars.domain.arena.ArenaBoundsMode;
 import com.starfinplugins.bedwars.domain.arena.ArenaRegion;
 import com.starfinplugins.bedwars.domain.arena.ArenaRegionType;
@@ -37,6 +38,8 @@ public final class ArenaService implements ManagedService {
     private MatchEngineService matchEngine;
     private WorldManagementService worldManagement;
     private long maximumRegionBlocks = 25000000L;
+    private int maximumTeamSize = 8;
+    private int maximumTotalPlayers = 64;
     private final java.util.Set<String> editingArenas = new java.util.HashSet<String>();
 
     public ArenaService(Plugin plugin) {
@@ -129,6 +132,19 @@ public final class ArenaService implements ManagedService {
 
     public long getMaximumRegionBlocks() {
         return maximumRegionBlocks;
+    }
+
+    public void setGameplayLimits(int teamSize, int totalPlayers) {
+        if (teamSize < 4 || totalPlayers < 8) throw new IllegalArgumentException("Limites invalidos.");
+        maximumTeamSize = teamSize;
+        maximumTotalPlayers = totalPlayers;
+    }
+
+    public void setGameplayRules(ArenaDefinition arena, ArenaGameplayRules rules) throws IOException {
+        requireEditable(arena);
+        ArenaGameplayRules previous = arena.getGameplayRules();
+        arena.setGameplayRules(rules);
+        saveOrRestore(arena, () -> arena.setGameplayRules(previous));
     }
 
     public boolean isEditing(String arenaId) {
@@ -340,6 +356,11 @@ public final class ArenaService implements ManagedService {
     public void configureTeam(ArenaDefinition arena, String id, String name, String color, int capacity)
             throws IOException {
         requireEditable(arena);
+        TeamDefinition old = arena.getTeams().get(id == null ? null : id.toLowerCase(Locale.ROOT));
+        long revisedTotal = (long) arena.getMaximumPlayers() - (old == null ? 0 : old.getCapacity()) + capacity;
+        if (capacity > maximumTeamSize || revisedTotal > maximumTotalPlayers)
+            throw new IllegalArgumentException("Equipe excede os limites de gameplay.yml ("
+                + maximumTeamSize + " por equipe, " + maximumTotalPlayers + " no total).");
         String normalizedId = id == null ? null : id.toLowerCase(Locale.ROOT);
         TeamDefinition replacement = new TeamDefinition(normalizedId, name,
             color == null ? null : color.toLowerCase(Locale.ROOT), capacity);

@@ -12,23 +12,44 @@ public final class PlayerPreferences {
     /** Null uses shop.yml default Quick Buy; empty means an intentionally empty Quick Buy. */
     private final List<String> quickBuy;
     public final String selectedTitle;
+    public final String selectedKit;
+    public final String selectedAbility;
 
     public PlayerPreferences(String language, List<String> quickBuy) {
         this(language, quickBuy, null);
     }
 
     public PlayerPreferences(String language, List<String> quickBuy, String selectedTitle) {
+        this(language, quickBuy, selectedTitle, "default", "none");
+    }
+
+    public PlayerPreferences(String language, List<String> quickBuy, String selectedTitle,
+                             String selectedKit, String selectedAbility) {
         this.language = languageOrDefault(language);
         this.quickBuy = quickBuy == null ? null : Collections.unmodifiableList(
             new ArrayList<String>(normalizeItems(quickBuy)));
         this.selectedTitle = selectedTitle;
+        this.selectedKit = validSelection(selectedKit, "default");
+        this.selectedAbility = validSelection(selectedAbility, "none");
     }
 
     public List<String> getQuickBuy() { return quickBuy; }
-    public PlayerPreferences withLanguage(String next) { return new PlayerPreferences(next, quickBuy, selectedTitle); }
-    public PlayerPreferences withQuickBuy(List<String> next) { return new PlayerPreferences(language, next, selectedTitle); }
+    public PlayerPreferences withLanguage(String next) { return new PlayerPreferences(next, quickBuy, selectedTitle, selectedKit, selectedAbility); }
+    public PlayerPreferences withQuickBuy(List<String> next) { return new PlayerPreferences(language, next, selectedTitle, selectedKit, selectedAbility); }
     public PlayerPreferences withSelectedTitle(String next) {
-        return new PlayerPreferences(language, quickBuy, next);
+        return new PlayerPreferences(language, quickBuy, next, selectedKit, selectedAbility);
+    }
+    public PlayerPreferences withSelectedKit(String next) {
+        return new PlayerPreferences(language, quickBuy, selectedTitle, next, selectedAbility);
+    }
+    public PlayerPreferences withSelectedAbility(String next) {
+        return new PlayerPreferences(language, quickBuy, selectedTitle, selectedKit, next);
+    }
+    public static boolean validSelectionId(String id) {
+        return id != null && id.matches("[a-z0-9_-]{1,32}");
+    }
+    private static String validSelection(String id, String fallback) {
+        return validSelectionId(id) ? id : fallback;
     }
 
     public static String languageOrDefault(String value) {

@@ -60,6 +60,8 @@ public final class MySqlStatsRepository implements AutoCloseable {
             statement.execute("CREATE TABLE IF NOT EXISTS sbw_player_preferences ("
                 + "uuid CHAR(36) NOT NULL PRIMARY KEY, language VARCHAR(5) NOT NULL DEFAULT 'pt_BR',"
                 + "quick_buy TEXT NULL, selected_title VARCHAR(32) NULL,"
+                + "selected_kit VARCHAR(32) NOT NULL DEFAULT 'default',"
+                + "selected_ability VARCHAR(32) NOT NULL DEFAULT 'none',"
                 + "updated_at BIGINT NOT NULL DEFAULT 0)"
                 + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             statement.execute("CREATE TABLE IF NOT EXISTS sbw_reward_unlocks ("
@@ -74,6 +76,10 @@ public final class MySqlStatsRepository implements AutoCloseable {
             ensureColumn(connection, "sbw_match_results", "final_deaths", "INT NOT NULL DEFAULT 0");
             ensureColumn(connection, "sbw_match_results", "mode", "VARCHAR(16) NULL");
             ensureColumn(connection, "sbw_player_preferences", "selected_title", "VARCHAR(32) NULL");
+            ensureColumn(connection, "sbw_player_preferences", "selected_kit",
+                "VARCHAR(32) NOT NULL DEFAULT 'default'");
+            ensureColumn(connection, "sbw_player_preferences", "selected_ability",
+                "VARCHAR(32) NOT NULL DEFAULT 'none'");
             ensureIndex(connection, "sbw_match_results", "idx_sbw_result_period",
                 "(created_at,mode,player_uuid)");
             ensureIndex(connection, "sbw_match_results", "idx_sbw_result_mode_period",
@@ -220,11 +226,13 @@ public final class MySqlStatsRepository implements AutoCloseable {
                 }
             }
             try (PreparedStatement select = connection.prepareStatement(
-                    "SELECT language,quick_buy,selected_title FROM sbw_player_preferences WHERE uuid=?")) {
+                    "SELECT language,quick_buy,selected_title,selected_kit,selected_ability"
+                    + " FROM sbw_player_preferences WHERE uuid=?")) {
                 select.setString(1, uuid.toString());
                 try (ResultSet row = select.executeQuery()) {
                     if (row.next()) return new PlayerPreferences(row.getString(1),
-                        PlayerPreferences.decode(row.getString(2)), row.getString(3));
+                        PlayerPreferences.decode(row.getString(2)), row.getString(3),
+                        row.getString(4), row.getString(5));
                 }
             }
         }
@@ -249,6 +257,23 @@ public final class MySqlStatsRepository implements AutoCloseable {
                 + " ON DUPLICATE KEY UPDATE quick_buy=VALUES(quick_buy),updated_at=VALUES(updated_at)")) {
             statement.setString(1, uuid.toString());
             statement.setString(2, PlayerPreferences.encode(quickBuy));
+            statement.setLong(3, System.currentTimeMillis());
+            statement.executeUpdate();
+        }
+    }
+
+    public void updateGameplaySelection(UUID uuid, PreferencesOutbox.Kind kind, String id)
+            throws SQLException {
+        if ((kind != PreferencesOutbox.Kind.KIT && kind != PreferencesOutbox.Kind.ABILITY)
+                || !PlayerPreferences.validSelectionId(id)) throw new IllegalArgumentException("Selecao invalida");
+        String column = kind == PreferencesOutbox.Kind.KIT ? "selected_kit" : "selected_ability";
+        try (Connection connection = pool.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                 "INSERT INTO sbw_player_preferences (uuid," + column + ",updated_at) VALUES (?,?,?)"
+                 + " ON DUPLICATE KEY UPDATE " + column + "=VALUES(" + column
+                 + "),updated_at=GREATEST(updated_at+1,VALUES(updated_at))")) {
+            statement.setString(1, uuid.toString());
+            statement.setString(2, id);
             statement.setLong(3, System.currentTimeMillis());
             statement.executeUpdate();
         }

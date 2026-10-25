@@ -141,6 +141,14 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     public boolean isEnabled() { return settings != null && settings.enabled; }
     public StatsProfile getCachedProfile(UUID uuid) { return profileCache.get(uuid); }
     public PlayerPreferences getCachedPreferences(UUID uuid) { return preferencesCache.get(uuid); }
+    public String getSelectedKit(UUID uuid) {
+        PlayerPreferences preferences = preferencesCache.get(uuid);
+        return preferences == null ? "default" : preferences.selectedKit;
+    }
+    public String getSelectedAbility(UUID uuid) {
+        PlayerPreferences preferences = preferencesCache.get(uuid);
+        return preferences == null ? "none" : preferences.selectedAbility;
+    }
     public Set<String> getCachedUnlocks(UUID uuid) {
         return unlocksCache.getOrDefault(uuid, Collections.emptySet());
     }
@@ -191,6 +199,23 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         PlayerPreferences old = preferencesCache.get(uuid);
         preferencesCache.put(uuid, old == null ? new PlayerPreferences("pt_BR", normalized)
             : old.withQuickBuy(normalized));
+        preferenceRevisions.put(uuid, revisionCounter.incrementAndGet());
+        worker.execute(() -> {
+            flushPreferencesOutbox();
+            refreshPreferences(uuid, null);
+        });
+    }
+    public void setGameplaySelection(Player player, PreferencesOutbox.Kind kind, String id)
+            throws IOException {
+        if (!isEnabled()) throw new IllegalStateException("MySQL de estatisticas indisponivel");
+        if ((kind != PreferencesOutbox.Kind.KIT && kind != PreferencesOutbox.Kind.ABILITY)
+                || !PlayerPreferences.validSelectionId(id)) throw new IllegalArgumentException("Selecao invalida");
+        UUID uuid = player.getUniqueId();
+        preferencesOutbox.write(uuid, kind, id);
+        PlayerPreferences old = preferencesCache.get(uuid);
+        if (old == null) old = new PlayerPreferences("pt_BR", null);
+        preferencesCache.put(uuid, kind == PreferencesOutbox.Kind.KIT
+            ? old.withSelectedKit(id) : old.withSelectedAbility(id));
         preferenceRevisions.put(uuid, revisionCounter.incrementAndGet());
         worker.execute(() -> {
             flushPreferencesOutbox();
@@ -556,8 +581,10 @@ public final class MatchStatisticsService implements ManagedService, Listener {
                     PreferencesOutbox.Pending pending = preferencesOutbox.read(path);
                     if (pending.kind == PreferencesOutbox.Kind.LANGUAGE) {
                         repository.updateLanguage(pending.uuid, pending.value);
-                    } else {
+                    } else if (pending.kind == PreferencesOutbox.Kind.QUICK_BUY) {
                         repository.updateQuickBuy(pending.uuid, PlayerPreferences.decode(pending.value));
+                    } else {
+                        repository.updateGameplaySelection(pending.uuid, pending.kind, pending.value);
                     }
                     preferencesOutbox.acknowledge(path, pending);
                 } catch (IOException invalid) {
