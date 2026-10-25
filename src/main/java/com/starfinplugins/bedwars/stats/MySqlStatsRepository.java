@@ -157,6 +157,16 @@ public final class MySqlStatsRepository implements AutoCloseable {
                 create.setLong(3, System.currentTimeMillis());
                 create.executeUpdate();
             }
+            if (legacyQuickBuy != null) {
+                // A player might have a language-only row from an older node.
+                // Never overwrite an explicit Quick Buy list (including an empty one).
+                try (PreparedStatement seed = connection.prepareStatement(
+                        "UPDATE sbw_player_preferences SET quick_buy=? WHERE uuid=? AND quick_buy IS NULL")) {
+                    seed.setString(1, PlayerPreferences.encode(legacyQuickBuy));
+                    seed.setString(2, uuid.toString());
+                    seed.executeUpdate();
+                }
+            }
             try (PreparedStatement select = connection.prepareStatement(
                     "SELECT language,quick_buy FROM sbw_player_preferences WHERE uuid=?")) {
                 select.setString(1, uuid.toString());

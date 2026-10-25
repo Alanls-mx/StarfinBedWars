@@ -800,8 +800,13 @@ public final class ShopService implements ManagedService, Listener {
     private Set<String> favoritesFor(UUID playerId) {
         MatchStatisticsService stats = sharedStats();
         PlayerPreferences preferences = stats == null ? null : stats.getCachedPreferences(playerId);
-        if (preferences != null && preferences.getQuickBuy() != null) {
+        if (preferences != null) {
             Set<String> networkFavorites = new LinkedHashSet<String>();
+            if (preferences.getQuickBuy() == null) {
+                for (ShopItemDefinition item : settings.getQuickBuyItems())
+                    networkFavorites.add(item.getId());
+                return networkFavorites;
+            }
             for (String id : preferences.getQuickBuy()) {
                 if (settings.getItems().containsKey(id)) networkFavorites.add(id);
             }
