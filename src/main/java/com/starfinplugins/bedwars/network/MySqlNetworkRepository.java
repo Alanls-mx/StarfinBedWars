@@ -1,6 +1,9 @@
 package com.starfinplugins.bedwars.network;
 
 import com.starfinplugins.bedwars.stats.StatsSettings;
+import com.starfinplugins.minigames.api.ReservationJdbc;
+import com.starfinplugins.minigames.api.ReservationSnapshot;
+import com.starfinplugins.minigames.api.ReservationState;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
@@ -305,6 +308,33 @@ public final class MySqlNetworkRepository implements AutoCloseable {
             statement.setString(2, serverId);
             statement.setString(3, instanceId);
             statement.executeUpdate();
+        }
+    }
+
+    public ReservationSnapshot claimReservation(UUID playerId, String serverId, String instanceId)
+            throws SQLException {
+        if (pool == null) return null;
+        try (Connection connection = pool.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                ReservationSnapshot claimed = ReservationJdbc.claim(connection, playerId,
+                    serverId, UUID.fromString(instanceId), System.currentTimeMillis(), 90000L);
+                connection.commit();
+                return claimed;
+            } catch (SQLException | RuntimeException error) {
+                connection.rollback();
+                throw error;
+            } finally { connection.setAutoCommit(true); }
+        }
+    }
+
+    public boolean finishReservation(UUID reservationId, UUID playerId, boolean confirmed)
+            throws SQLException {
+        if (pool == null) return false;
+        try (Connection connection = pool.getConnection()) {
+            return ReservationJdbc.finish(connection, reservationId, playerId,
+                confirmed ? ReservationState.CONFIRMED : ReservationState.FAILED,
+                System.currentTimeMillis());
         }
     }
 

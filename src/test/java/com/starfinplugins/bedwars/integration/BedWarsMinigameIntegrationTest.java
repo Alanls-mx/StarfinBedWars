@@ -13,11 +13,28 @@ import com.starfinplugins.minigames.api.MinigameEvent;
 import com.starfinplugins.minigames.api.MinigameMatchSnapshot;
 import com.starfinplugins.minigames.api.MinigameMatchState;
 import com.starfinplugins.minigames.api.MinigamePlayerSnapshot;
+import com.starfinplugins.bedwars.match.ArenaAvailability;
 import java.util.UUID;
 import org.junit.Assert;
 import org.junit.Test;
 
 public class BedWarsMinigameIntegrationTest {
+    @Test public void sharedAdmissionRuleClosesPreparingOpeningAndFullArenas() {
+        ArenaDefinition arena = arena(1);
+        Assert.assertTrue(ArenaAvailability.isJoinable(arena, null, false, false, false));
+        Assert.assertFalse(ArenaAvailability.isJoinable(arena, null, true, false, false));
+        Assert.assertFalse(ArenaAvailability.isJoinable(arena, null, false, true, false));
+        Assert.assertFalse(ArenaAvailability.isJoinable(arena, null, false, false, true));
+        GameMatch match = new GameMatch(arena);
+        Assert.assertTrue(match.addParticipant(UUID.randomUUID()));
+        Assert.assertTrue(ArenaAvailability.isJoinable(arena, match, false, false, false));
+        Assert.assertTrue(match.addParticipant(UUID.randomUUID()));
+        Assert.assertFalse(ArenaAvailability.isJoinable(arena, match, false, false, false));
+        match.transition(MatchState.STARTING);
+        match.transition(MatchState.IN_GAME);
+        Assert.assertFalse(ArenaAvailability.isJoinable(arena, match, false, false, false));
+    }
+
     @Test public void arenaAndMatchSnapshotsFollowExistingStateWithoutMutation() {
         ArenaDefinition arena = arena(1);
         UUID player = UUID.randomUUID();
@@ -67,6 +84,10 @@ public class BedWarsMinigameIntegrationTest {
             BedWarsMinigameIntegration.eventType(MatchLifecycleEvent.Type.PLAYER_LEFT));
         Assert.assertEquals(MinigameEvent.Type.PLAYER_ELIMINATED,
             BedWarsMinigameIntegration.eventType(MatchLifecycleEvent.Type.PLAYER_ELIMINATED));
+        Assert.assertEquals(MinigameEvent.Type.SPECTATOR_JOINED_MATCH,
+            BedWarsMinigameIntegration.eventType(MatchLifecycleEvent.Type.SPECTATOR_JOINED));
+        Assert.assertEquals(MinigameEvent.Type.SPECTATOR_LEFT_MATCH,
+            BedWarsMinigameIntegration.eventType(MatchLifecycleEvent.Type.SPECTATOR_LEFT));
         Assert.assertEquals(MinigameEvent.Type.MATCH_ENDED,
             BedWarsMinigameIntegration.eventType(MatchLifecycleEvent.Type.ENDED));
         Assert.assertEquals(MinigameEvent.Type.MATCH_REMOVED,
@@ -89,13 +110,27 @@ public class BedWarsMinigameIntegrationTest {
         Assert.assertEquals(MatchState.WAITING, match.getState());
     }
 
-    @Test public void respawningAndEliminatedPlayersArePublicSpectators() {
+    @Test public void playerRolesPreserveRespawnEliminationAndDisconnect() {
         GameParticipant participant = new GameParticipant(UUID.randomUUID(), "match", "red");
         Assert.assertEquals(MinigamePlayerSnapshot.Role.PLAYER, BedWarsMinigameProvider.role(participant));
         participant.setState(ParticipantState.RESPAWNING);
-        Assert.assertEquals(MinigamePlayerSnapshot.Role.SPECTATOR, BedWarsMinigameProvider.role(participant));
+        Assert.assertEquals(MinigamePlayerSnapshot.Role.RESPAWNING, BedWarsMinigameProvider.role(participant));
         participant.setState(ParticipantState.ELIMINATED);
-        Assert.assertEquals(MinigamePlayerSnapshot.Role.SPECTATOR, BedWarsMinigameProvider.role(participant));
+        Assert.assertEquals(MinigamePlayerSnapshot.Role.ELIMINATED, BedWarsMinigameProvider.role(participant));
+        Assert.assertEquals(MinigamePlayerSnapshot.Role.DISCONNECTED,
+            BedWarsMinigameProvider.role(participant, false));
+    }
+
+    @Test public void admissionUsesOneRuleForPreparationOpeningAndCapacity() {
+        ArenaDefinition arena = arena(1);
+        Assert.assertTrue(ArenaAvailability.isJoinable(arena, null, false, false, false));
+        Assert.assertFalse(ArenaAvailability.isJoinable(arena, null, true, false, false));
+        Assert.assertFalse(ArenaAvailability.isJoinable(arena, null, false, true, false));
+        GameMatch match = new GameMatch(arena);
+        Assert.assertFalse(ArenaAvailability.isJoinable(arena, match, false, false, true));
+        Assert.assertTrue(match.addParticipant(UUID.randomUUID()));
+        Assert.assertTrue(match.addParticipant(UUID.randomUUID()));
+        Assert.assertFalse(ArenaAvailability.isJoinable(arena, match, false, false, false));
     }
 
     private static ArenaDefinition arena(int capacity) {

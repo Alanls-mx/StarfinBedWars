@@ -80,7 +80,7 @@ public final class BedWarsMinigameIntegration implements ManagedService, Listene
                 ? MinigameMatchState.CLOSED : null;
             registration.publish(new MinigameEvent(type, "bedwars",
                 BedWarsMinigameProvider.snapshotMatch(source.getMatch(), registry.getServerId(), override),
-                source.getParticipant() == null ? null : source.getParticipant().getPlayerId(),
+                source.getActorId(),
                 System.currentTimeMillis()));
         } catch (RuntimeException | LinkageError error) {
             // External API consumers cannot interrupt BedWars state transitions.
@@ -96,6 +96,8 @@ public final class BedWarsMinigameIntegration implements ManagedService, Listene
             case PLAYER_JOINED: return MinigameEvent.Type.PLAYER_JOINED_MATCH;
             case PLAYER_LEFT: return MinigameEvent.Type.PLAYER_LEFT_MATCH;
             case PLAYER_ELIMINATED: return MinigameEvent.Type.PLAYER_ELIMINATED;
+            case SPECTATOR_JOINED: return MinigameEvent.Type.SPECTATOR_JOINED_MATCH;
+            case SPECTATOR_LEFT: return MinigameEvent.Type.SPECTATOR_LEFT_MATCH;
             case ENDED: return MinigameEvent.Type.MATCH_ENDED;
             case INSTANCE_REMOVED: return MinigameEvent.Type.MATCH_REMOVED;
             default: return null;

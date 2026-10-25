@@ -184,6 +184,10 @@ public final class MatchEngineService implements ManagedService, Listener {
         return byPlayer.containsKey(playerId) || spectators.containsKey(playerId);
     }
 
+    public boolean hasPendingReconnect(UUID playerId) {
+        return reconnect != null && reconnect.hasPending(playerId);
+    }
+
     public World getWorld(UUID matchId) {
         return matchWorlds.get(matchId);
     }
@@ -256,12 +260,13 @@ public final class MatchEngineService implements ManagedService, Listener {
             throw new IllegalStateException("Arena temporariamente indisponivel durante o modo de edicao.");
         }
         GameMatch match = byArena.get(arena.getId());
+        if (!ArenaAvailability.isJoinable(arena, match, false,
+                isPreparingArena(arena.getId()), isOpeningSpawns(arena.getId()))) {
+            throw new IllegalStateException("A arena nao aceita novos jogadores neste momento.");
+        }
         if (match != null) {
             addPlayer(match, player);
             return;
-        }
-        if (Boolean.TRUE.equals(loading.get(arena.getId()))) {
-            throw new IllegalStateException("A instancia da arena esta sendo preparada.");
         }
         loading.put(arena.getId(), true);
         arenas.getWorlds().createInstance(arena, new ArenaServiceWorldCallback(arena, player));
@@ -270,6 +275,18 @@ public final class MatchEngineService implements ManagedService, Listener {
     /** True while the disposable world for this arena is being prepared. */
     public boolean isPreparingArena(String arenaId) {
         return arenaId != null && Boolean.TRUE.equals(loading.get(arenaId));
+    }
+
+    public boolean isOpeningSpawns(String arenaId) {
+        return arenaId != null && spawnOpeningTasks.containsKey(arenaId);
+    }
+
+    public Set<UUID> getDirectSpectators(GameMatch match) {
+        Set<UUID> ids = new HashSet<UUID>();
+        if (match == null) return ids;
+        for (Map.Entry<UUID, GameMatch> entry : spectators.entrySet())
+            if (entry.getValue() == match) ids.add(entry.getKey());
+        return ids;
     }
 
     public void spectate(Player player, String arenaId) {
@@ -299,7 +316,7 @@ public final class MatchEngineService implements ManagedService, Listener {
             throw new IllegalStateException("O servidor recusou o teleporte para espectador.");
         }
         spectators.put(player.getUniqueId(), match);
-        fire(MatchLifecycleEvent.Type.SPECTATOR_JOINED, match, null, null);
+        fire(MatchLifecycleEvent.Type.SPECTATOR_JOINED, match, player.getUniqueId());
     }
 
     public void leave(Player player) {
@@ -307,7 +324,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         GameMatch spectatedMatch = spectators.remove(player.getUniqueId());
         if (spectatedMatch != null) {
             teleportToReturn(player);
-            fire(MatchLifecycleEvent.Type.SPECTATOR_LEFT, spectatedMatch, null, null);
+            fire(MatchLifecycleEvent.Type.SPECTATOR_LEFT, spectatedMatch, player.getUniqueId());
             return;
         }
         GameMatch match = byPlayer.get(player.getUniqueId());
@@ -662,6 +679,10 @@ public final class MatchEngineService implements ManagedService, Listener {
         Bukkit.getPluginManager().callEvent(new MatchLifecycleEvent(type, match, participant, team));
     }
 
+    private void fire(MatchLifecycleEvent.Type type, GameMatch match, UUID actorId) {
+        Bukkit.getPluginManager().callEvent(new MatchLifecycleEvent(type, match, null, null, actorId));
+    }
+
     private String message(String path, String fallback, String... tokens) {
         return org.bukkit.ChatColor.translateAlternateColorCodes('&',
             MatchMessageTemplates.format(plugin.getConfig().getString(path, fallback), tokens));
@@ -766,9 +787,11 @@ public final class MatchEngineService implements ManagedService, Listener {
     public void onQuit(PlayerQuitEvent event) {
         final Player player = event.getPlayer();
         boundaryWarnings.forget(player.getUniqueId());
-        if (spectators.remove(player.getUniqueId()) != null) {
+        GameMatch watched = spectators.remove(player.getUniqueId());
+        if (watched != null) {
             returnLocations.remove(player.getUniqueId());
             returnGameModes.remove(player.getUniqueId());
+            fire(MatchLifecycleEvent.Type.SPECTATOR_LEFT, watched, player.getUniqueId());
             return;
         }
         final GameMatch match = byPlayer.get(player.getUniqueId());

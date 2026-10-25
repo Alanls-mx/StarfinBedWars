@@ -6,10 +6,14 @@ import com.starfinplugins.bedwars.domain.arena.ArenaDefinition;
 import com.starfinplugins.bedwars.domain.arena.TeamDefinition;
 import com.starfinplugins.bedwars.domain.match.GameMatch;
 import com.starfinplugins.bedwars.domain.match.MatchState;
+import com.starfinplugins.bedwars.domain.match.GameParticipant;
+import com.starfinplugins.bedwars.domain.match.ParticipantState;
 import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
 import com.starfinplugins.bedwars.match.MatchEngineService;
+import com.starfinplugins.bedwars.match.ArenaAvailability;
 import com.starfinplugins.bedwars.service.ManagedService;
 import com.starfinplugins.bedwars.stats.StatsSettings;
+import com.starfinplugins.minigames.api.ReservationSnapshot;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -43,6 +47,7 @@ public final class NetworkRegistryService implements ManagedService, Listener {
     private MySqlNetworkRepository repository;
     private BukkitTask heartbeat;
     private long lastWarning;
+    private boolean active;
 
     public NetworkRegistryService(StarfinBedWarsPlugin plugin, ArenaService arenas,
                                   MatchEngineService matches) {
@@ -54,14 +59,38 @@ public final class NetworkRegistryService implements ManagedService, Listener {
     @Override public String getName() { return "Catalogo BungeeCord/MySQL"; }
 
     @Override public void start() {
-        settings = NetworkSettings.load(plugin);
+        try { settings = NetworkSettings.load(plugin); }
+        catch (RuntimeException error) {
+            plugin.getLogger().severe("network.yml invalido (" + error.getClass().getSimpleName()
+                + "); catalogo desativado e BedWars local preservado.");
+            return;
+        }
         if (!settings.enabled) {
             plugin.getLogger().info("Catalogo de rede desativado em network.yml (modo local).");
             return;
         }
-        databaseSettings = StatsSettings.load(plugin);
+        org.bukkit.plugin.Plugin minigames = Bukkit.getPluginManager().getPlugin("StarfinMinigames");
+        if (minigames != null && minigames.isEnabled()
+                && minigames instanceof org.bukkit.plugin.java.JavaPlugin) {
+            String sharedId = ((org.bukkit.plugin.java.JavaPlugin) minigames)
+                .getConfig().getString("server-id", "");
+            if (!settings.serverId.equals(sharedId))
+            {
+                plugin.getLogger().severe("server-id divergente: network.yml=" + settings.serverId
+                    + ", StarfinMinigames/config.yml=" + sharedId + ". Catalogo desativado; BedWars local continua ativo.");
+                return;
+            }
+        }
+        try { databaseSettings = StatsSettings.load(plugin); }
+        catch (RuntimeException error) {
+            plugin.getLogger().severe("stats.yml invalido para o catalogo ("
+                + error.getClass().getSimpleName() + "); BedWars local preservado.");
+            return;
+        }
         if (!databaseSettings.enabled) {
-            throw new IllegalStateException("network.yml exige stats.yml enabled: true e MySQL configurado.");
+            plugin.getLogger().severe("network.yml exige stats.yml enabled: true e MySQL configurado."
+                + " Catalogo desativado; BedWars local continua ativo.");
+            return;
         }
         worker = Executors.newSingleThreadExecutor(r -> {
             Thread thread = new Thread(r, "StarfinBedWars-Network-IO");
@@ -71,11 +100,13 @@ public final class NetworkRegistryService implements ManagedService, Listener {
         Bukkit.getPluginManager().registerEvents(this, plugin);
         heartbeat = Bukkit.getScheduler().runTaskTimer(plugin, this::captureAndPublish,
             1L, settings.refreshTicks);
+        active = true;
         plugin.getLogger().info("Catalogo BungeeCord ativo: " + settings.serverId
             + " (instancia " + instanceId + ").");
     }
 
     @Override public void stop() {
+        active = false;
         if (heartbeat != null) heartbeat.cancel();
         HandlerList.unregisterAll(this);
         pending.set(null);
@@ -101,8 +132,42 @@ public final class NetworkRegistryService implements ManagedService, Listener {
         repository = null;
     }
 
-    public boolean isEnabled() { return settings != null && settings.enabled; }
+    public boolean isEnabled() { return active; }
     public String getServerId() { return isEnabled() ? settings.serverId : "local"; }
+    public String getInstanceId() { return instanceId; }
+    public String getLobbyServer() { return isEnabled() ? settings.lobbyServer : ""; }
+
+    /** Read/claim on the existing catalog worker, then return on the Bukkit main thread. */
+    public void claimReservation(UUID playerId, java.util.function.Consumer<ReservationSnapshot> callback) {
+        if (!isEnabled() || worker == null || worker.isShutdown()) {
+            callback.accept(null);
+            return;
+        }
+        worker.execute(() -> {
+            ReservationSnapshot result = null;
+            try {
+                if (repository == null) repository = new MySqlNetworkRepository();
+                repository.open(databaseSettings, settings);
+                result = repository.claimReservation(playerId, settings.serverId, instanceId);
+            } catch (Exception error) {
+                warn("Falha ao consultar reserva distribuida (" + error.getClass().getSimpleName() + ").");
+            }
+            final ReservationSnapshot resolved = result;
+            if (plugin.isEnabled()) Bukkit.getScheduler().runTask(plugin, () -> callback.accept(resolved));
+        });
+    }
+
+    public void finishReservation(UUID reservationId, UUID playerId, boolean confirmed) {
+        if (!isEnabled() || worker == null || worker.isShutdown()) return;
+        worker.execute(() -> {
+            try {
+                if (repository != null && !repository.finishReservation(reservationId, playerId, confirmed))
+                    warn("Reserva " + reservationId + " nao estava ativa para conclusao.");
+            } catch (Exception error) {
+                warn("Falha ao concluir reserva distribuida (" + error.getClass().getSimpleName() + ").");
+            }
+        });
+    }
 
     @EventHandler public void onMatch(MatchLifecycleEvent event) {
         if (!isEnabled()) return;
@@ -140,12 +205,11 @@ public final class NetworkRegistryService implements ManagedService, Listener {
             boolean editing = arenas.isEditing(arena.getId());
             int arenaPlayerCount = match == null ? 0 : match.getParticipantList().size();
             String state = match == null
-                ? (editing ? "EDITING" : arena.isEnabled() ? "AVAILABLE" : "DISABLED")
-                : match.getState().name();
-            boolean joinable = arena.isEnabled() && !editing
-                && (match == null || match.getState() == MatchState.WAITING
-                    || match.getState() == MatchState.STARTING)
-                && arenaPlayerCount < arena.getMaximumPlayers();
+                ? (editing ? "EDITING" : matches.isPreparingArena(arena.getId()) ? "PREPARING"
+                    : arena.isEnabled() ? "AVAILABLE" : "DISABLED")
+                : matches.isOpeningSpawns(arena.getId()) ? "OPENING" : match.getState().name();
+            boolean joinable = ArenaAvailability.isJoinable(arena, match, editing,
+                matches.isPreparingArena(arena.getId()), matches.isOpeningSpawns(arena.getId()));
             int teamSize = -1;
             for (TeamDefinition team : arena.getTeamList()) {
                 if (teamSize == -1) teamSize = team.getCapacity();
@@ -177,11 +241,15 @@ public final class NetworkRegistryService implements ManagedService, Listener {
                 spectator = match != null;
             }
             String teamId = null;
+            String role = match == null ? "LOBBY" : spectator ? "SPECTATOR" : "PLAYER";
             if (match != null && !spectator && match.getParticipant(player.getUniqueId()) != null) {
-                teamId = match.getParticipant(player.getUniqueId()).getTeamId();
+                GameParticipant participant = match.getParticipant(player.getUniqueId());
+                teamId = participant.getTeamId();
+                if (participant.getLifeState() == ParticipantState.RESPAWNING) role = "RESPAWNING";
+                else if (participant.getLifeState() == ParticipantState.ELIMINATED) role = "ELIMINATED";
             }
             players.add(new NetworkSnapshot.Player(player.getUniqueId().toString(),
-                player.getName(), match == null ? "LOBBY" : spectator ? "SPECTATOR" : "PLAYER",
+                player.getName(), role,
                 match == null ? null : match.getArena().getId(),
                 match == null ? null : match.getId().toString(), teamId));
         }

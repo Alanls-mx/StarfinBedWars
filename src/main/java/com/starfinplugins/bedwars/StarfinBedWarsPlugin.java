@@ -21,6 +21,7 @@ import com.starfinplugins.bedwars.match.MatchPointService;
 import com.starfinplugins.bedwars.match.BedHologramService;
 import com.starfinplugins.bedwars.stats.MatchStatisticsService;
 import com.starfinplugins.bedwars.network.NetworkRegistryService;
+import com.starfinplugins.bedwars.network.NetworkReservationDeliveryService;
 import com.starfinplugins.bedwars.integration.BedWarsMinigameIntegration;
 import com.starfinplugins.bedwars.storage.StorageMigrationService;
 import com.starfinplugins.bedwars.menu.BedWarsMenuService;
@@ -68,6 +69,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private BedHologramService bedHolograms;
     private MatchStatisticsService statistics;
     private NetworkRegistryService networkRegistry;
+    private NetworkReservationDeliveryService reservationDelivery;
     private BedWarsMinigameIntegration minigameIntegration;
     private StorageMigrationService storageMigration;
     private boolean initialized;
@@ -160,6 +162,8 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
                 try {
                     minigameIntegration = new BedWarsMinigameIntegration(this, arenaService, matchEngine, networkRegistry);
                     services.add(minigameIntegration);
+                    reservationDelivery = new NetworkReservationDeliveryService(this, networkRegistry, matchEngine);
+                    services.add(reservationDelivery);
                 } catch (LinkageError incompatibleApi) {
                     getLogger().warning("StarfinMinigames incompativel; BedWars segue sem API compartilhada: "
                         + incompatibleApi.getClass().getSimpleName());

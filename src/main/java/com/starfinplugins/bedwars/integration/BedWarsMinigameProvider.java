@@ -7,7 +7,9 @@ import com.starfinplugins.bedwars.domain.match.GameMatch;
 import com.starfinplugins.bedwars.domain.match.GameParticipant;
 import com.starfinplugins.bedwars.domain.match.MatchState;
 import com.starfinplugins.bedwars.domain.match.ParticipantState;
+import com.starfinplugins.bedwars.domain.match.ConnectionState;
 import com.starfinplugins.bedwars.match.MatchEngineService;
+import com.starfinplugins.bedwars.match.ArenaAvailability;
 import com.starfinplugins.minigames.api.MinigameArenaSnapshot;
 import com.starfinplugins.minigames.api.MinigameDescriptor;
 import com.starfinplugins.minigames.api.MinigameMatchSnapshot;
@@ -45,7 +47,8 @@ public final class BedWarsMinigameProvider implements MinigameProvider {
         List<MinigameArenaSnapshot> result = new ArrayList<MinigameArenaSnapshot>();
         for (ArenaDefinition arena : arenas.getArenas()) {
             GameMatch match = matches.getMatchForArena(arena.getId());
-            result.add(snapshotArena(arena, match, arenas.isEditing(arena.getId()), registry.getServerId()));
+            result.add(snapshotArena(arena, match, arenas.isEditing(arena.getId()),
+                matches.isPreparingArena(arena.getId()), matches.isOpeningSpawns(arena.getId()), registry.getServerId()));
         }
         return result;
     }
@@ -65,10 +68,15 @@ public final class BedWarsMinigameProvider implements MinigameProvider {
             GameMatch match = matches.getMatchForArena(arena.getId());
             if (match == null) continue;
             for (GameParticipant participant : match.getParticipantList()) {
-                if (Bukkit.getPlayer(participant.getPlayerId()) == null) continue;
+                if (participant.getLifeState() == ParticipantState.ABANDONED) continue;
+                boolean online = Bukkit.getPlayer(participant.getPlayerId()) != null;
                 result.add(new MinigamePlayerSnapshot(participant.getPlayerId(), "bedwars", match.getId(),
-                    arena.getId(), registry.getServerId(), role(participant)));
+                    arena.getId(), registry.getServerId(), role(participant, online)));
             }
+            for (java.util.UUID spectatorId : matches.getDirectSpectators(match))
+                if (Bukkit.getPlayer(spectatorId) != null)
+                    result.add(new MinigamePlayerSnapshot(spectatorId, "bedwars", match.getId(),
+                        arena.getId(), registry.getServerId(), MinigamePlayerSnapshot.Role.SPECTATOR));
         }
         return result;
     }
@@ -89,20 +97,31 @@ public final class BedWarsMinigameProvider implements MinigameProvider {
     }
 
     static MinigamePlayerSnapshot.Role role(GameParticipant participant) {
+        return role(participant, true);
+    }
+
+    static MinigamePlayerSnapshot.Role role(GameParticipant participant, boolean online) {
+        if (!online || participant.getConnectionState() == ConnectionState.DISCONNECTED)
+            return MinigamePlayerSnapshot.Role.DISCONNECTED;
         ParticipantState state = participant.getLifeState();
-        return state == ParticipantState.RESPAWNING || state == ParticipantState.ELIMINATED
-            ? MinigamePlayerSnapshot.Role.SPECTATOR : MinigamePlayerSnapshot.Role.PLAYER;
+        if (state == ParticipantState.RESPAWNING) return MinigamePlayerSnapshot.Role.RESPAWNING;
+        if (state == ParticipantState.ELIMINATED) return MinigamePlayerSnapshot.Role.ELIMINATED;
+        return MinigamePlayerSnapshot.Role.PLAYER;
     }
 
     static MinigameArenaSnapshot snapshotArena(ArenaDefinition arena, GameMatch match,
                                                boolean editing, String serverId) {
+        return snapshotArena(arena, match, editing, false, false, serverId);
+    }
+
+    static MinigameArenaSnapshot snapshotArena(ArenaDefinition arena, GameMatch match,
+                                               boolean editing, boolean preparing,
+                                               boolean openingSpawns, String serverId) {
         int actualCapacity = arena.getMaximumPlayers();
         int capacity = Math.max(1, actualCapacity);
         int minimum = Math.max(1, Math.min(arena.getMinimumPlayers(), capacity));
         int count = match == null ? 0 : Math.min(capacity, match.getParticipantList().size());
-        boolean joinable = arena.isEnabled() && !editing && actualCapacity >= arena.getMinimumPlayers()
-            && (match == null || match.getState() == MatchState.WAITING
-                || match.getState() == MatchState.STARTING) && count < capacity;
+        boolean joinable = ArenaAvailability.isJoinable(arena, match, editing, preparing, openingSpawns);
         return new MinigameArenaSnapshot("bedwars", arena.getId(), arena.getDisplayName(),
             mode(arena), arena.getGroup(), serverId, minimum, capacity, count,
             arena.isEnabled(), joinable, match == null ? null : match.getId());
