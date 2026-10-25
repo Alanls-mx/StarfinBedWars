@@ -47,3 +47,7 @@ Use `/sbw always status` para ver a regra e o estado real do mundo onde você es
 2. Use `/time set night`, `/difficulty easy` e `/weather rain` na cópia de teste; após um segundo, confirme pelo status que as regras voltaram aos valores configurados.
 3. Configure um mundo comum em `worlds`, recarregue e confira seu status. Desative a regra e confira que os valores anteriores retornaram.
 4. Mude apenas `arenas.<id>`, recarregue e inicie outra partida. Confirme que o mundo de origem e outras arenas não receberam o override.
+
+## Validação conjunta
+
+No servidor BedWars Pterodactyl `f03b4f97`, via proxy `127.0.0.1:25577`, a JAR do commit `a08d8f8` iniciou com o MySQL conectado. O status do mundo comum `world` mostrou `enabled=false`, preservando seus valores originais. O jogador entrou na arena `1`, executou `/sbw always status` e confirmou que a configuração Always funcionou na cópia da partida, incluindo dia, dificuldade 3 e clima limpo. A linha completa do status não foi capturada no relatório; os cenários de alteração manual e overrides por mundo/arena ainda podem ser repetidos quando necessário.
