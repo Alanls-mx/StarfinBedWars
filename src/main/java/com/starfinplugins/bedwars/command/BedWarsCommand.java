@@ -255,6 +255,10 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             handleGameplay(sender, args);
             return true;
         }
+        if ("always".equalsIgnoreCase(args[0])) {
+            handleAlways(sender, args);
+            return true;
+        }
         if ("version".equalsIgnoreCase(args[0]) && args.length == 1) {
             sender.sendMessage(PREFIX + ChatColor.GRAY + "Versao " + plugin.getDescription().getVersion());
             return true;
@@ -1611,6 +1615,36 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             + "Use /sbw gameplay <reload|diagnose|inspect <jogador>|cooldowns <jogador>>.");
     }
 
+    private void handleAlways(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("starfinbedwars.command.always")
+                && !sender.hasPermission("starfinbedwars.admin")) {
+            sender.sendMessage(PREFIX + ChatColor.RED + "Sem permissao.");
+            return;
+        }
+        if (args.length == 2 && "reload".equalsIgnoreCase(args[1])) {
+            try {
+                plugin.getAlways().reload();
+                sender.sendMessage(PREFIX + ChatColor.GREEN + "always.yml validado e recarregado.");
+            } catch (IOException invalid) {
+                sender.sendMessage(PREFIX + ChatColor.RED + invalid.getMessage());
+            }
+            return;
+        }
+        if (args.length >= 2 && args.length <= 3 && "status".equalsIgnoreCase(args[1])) {
+            if (args.length == 2 && sender instanceof Player) {
+                sender.sendMessage(PREFIX + plugin.getAlways().describe(((Player) sender).getWorld()));
+            } else if (args.length == 3 && args[2].toLowerCase(Locale.ROOT).startsWith("arena:")) {
+                sender.sendMessage(PREFIX + plugin.getAlways().describeArena(args[2].substring(6)));
+            } else if (args.length == 3) {
+                World world = plugin.getServer().getWorld(args[2]);
+                sender.sendMessage(PREFIX + plugin.getAlways().describe(world));
+            } else sender.sendMessage(PREFIX + ChatColor.YELLOW
+                + "Use /sbw always status <mundo|arena:id> no console.");
+            return;
+        }
+        sender.sendMessage(PREFIX + ChatColor.YELLOW + "Use /sbw always <status [mundo|arena:id]|reload>.");
+    }
+
     private static Boolean parseInheritedBoolean(String value) {
         if ("inherit".equals(value)) return null;
         if ("on".equals(value) || "true".equals(value)) return true;
@@ -1662,6 +1696,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             if ("world".equals(normalized)) {
                 sender.sendMessage(PREFIX + ChatColor.YELLOW + "Mundos");
                 sender.sendMessage(ChatColor.GRAY + "/sbw world <list|create|import|info|tp|delete|confirm-delete>");
+                sender.sendMessage(ChatColor.GRAY + "/sbw always <status [mundo|arena:id]|reload>");
                 return;
             }
             if ("player".equals(normalized) || "jogador".equals(normalized)) {
@@ -1679,7 +1714,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             return;
         }
         sender.sendMessage(PREFIX + ChatColor.YELLOW + "/" + label
-            + " <help [setup|arena|world|player]|version|status|stats|menu|arena|setarena|world|join|spectate|leave|chat|next|npc|matchpoint>");
+            + " <help [setup|arena|world|player]|version|status|stats|menu|arena|setarena|world|always|join|spectate|leave|chat|next|npc|matchpoint>");
         sender.sendMessage(ChatColor.GRAY + "/sbw menu | /sbw arena menu");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena create <id> <mundo-descarregado> | import <id> <mundo-descarregado>");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena tp <arena> | /sbw arena exit");
@@ -1690,6 +1725,9 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         sender.sendMessage(ChatColor.GRAY + "/sbw arena edit <arena> | /sbw arena edit <publish|cancel> <arena>");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena region <arena> <main|protection|waiting> <wand|worldedit|clear>");
         sender.sendMessage(ChatColor.GRAY + "/sbw world <list|create|import|info|tp|delete|confirm-delete>");
+        if (sender.hasPermission("starfinbedwars.command.always")
+                || sender.hasPermission("starfinbedwars.admin"))
+            sender.sendMessage(ChatColor.GRAY + "/sbw always <status [mundo|arena:id]|reload>");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena min|countdown|validate|enable|disable <arena> ...");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena generator <add|remove|list|setteam> <arena> ...");
         sender.sendMessage(ChatColor.GRAY + "/sbw arena shop <arena> <items|upgrades>");
@@ -1747,6 +1785,8 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 "help", "version", "menu", "arena", "join", "spectate", "leave", "chat",
                 "stats", "perfil", "nivel", "profile", "progress", "rewards", "recompensas",
                 "top", "idioma", "language", "lang", "kit", "ability"));
+            if (sender.hasPermission("starfinbedwars.command.always")
+                    || sender.hasPermission("starfinbedwars.admin")) choices.add("always");
             if (sender.hasPermission("starfinbedwars.command.gameplay.admin")
                     || sender.hasPermission("starfinbedwars.admin")) choices.add("gameplay");
             if (sender.hasPermission("starfinbedwars.command.status")
@@ -1770,6 +1810,15 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         }
         if ("gameplay".equalsIgnoreCase(args[0]) && args.length == 2)
             return filter(Arrays.asList("reload", "diagnose", "inspect", "cooldowns"), args[1]);
+        if ("always".equalsIgnoreCase(args[0]) && args.length == 2)
+            return filter(Arrays.asList("status", "reload"), args[1]);
+        if ("always".equalsIgnoreCase(args[0]) && args.length == 3
+                && "status".equalsIgnoreCase(args[1])) {
+            List<String> targets = new ArrayList<String>();
+            for (World world : plugin.getServer().getWorlds()) targets.add(world.getName());
+            for (ArenaDefinition arena : arenas.getArenas()) targets.add("arena:" + arena.getId());
+            return filter(targets, args[2]);
+        }
         if ("kit".equalsIgnoreCase(args[0]) && args.length == 2)
             return filter(Collections.singletonList("list"), args[1]);
         if ("ability".equalsIgnoreCase(args[0]) && args.length == 2)

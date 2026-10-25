@@ -12,7 +12,7 @@ softdepend:
 commands:
   starfinbedwars:
     description: StarfinBedWars administration and status
-    usage: /starfinbedwars <help|version|status|menu|arena|world|join|spectate|leave|chat|stats|profile|progress|rewards|top|kit|ability|gameplay|matchpoint|migrate>
+    usage: /starfinbedwars <help|version|status|menu|arena|world|always|join|spectate|leave|chat|stats|profile|progress|rewards|top|kit|ability|gameplay|matchpoint|migrate>
     aliases:
       - sbw
   reconnect:
@@ -28,6 +28,7 @@ permissions:
       starfinbedwars.command.world: true
       starfinbedwars.command.matchpoint: true
       starfinbedwars.command.gameplay.admin: true
+      starfinbedwars.command.always: true
   starfinbedwars.command.status:
     description: View StarfinBedWars status
     default: op
@@ -42,6 +43,9 @@ permissions:
     default: op
   starfinbedwars.command.gameplay.admin:
     description: Recarrega e inspeciona kits, habilidades e regras de gameplay
+    default: op
+  starfinbedwars.command.always:
+    description: Recarrega e inspeciona regras Always de mundos e arenas
     default: op
   starfinbedwars.afk.exempt:
     description: Isenta o jogador da remocao por inatividade

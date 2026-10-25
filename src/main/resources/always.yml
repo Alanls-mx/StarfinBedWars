@@ -1,0 +1,30 @@
+# Regras de ambiente. Mundos comuns permanecem inalterados ate serem habilitados.
+# As copias descartaveis das arenas usam arena-defaults e podem ser sobrescritas por ID.
+defaults:
+  enabled: false
+  time: DAY            # DAY, NIGHT, 0..23999 (hora fixa), ou off
+  difficulty: 3        # 0 PEACEFUL, 1 EASY, 2 NORMAL, 3 HARD, ou off
+  weather: CLEAR       # CLEAR, RAIN, THUNDER, ou off
+  mob-spawning: false  # gamerule doMobSpawning
+  mob-griefing: false  # gamerule mobGriefing
+  allow-monsters: false
+  allow-animals: false
+
+arena-defaults:
+  enabled: true
+
+worlds: {}
+# Exemplo:
+# worlds:
+#   Speedway:
+#     enabled: true
+#     time: 1000       # relogio fixo em 1000 ticks
+
+arenas: {}
+# Exemplo:
+# arenas:
+#   '1':
+#     time: NIGHT
+#     difficulty: 2
+#     weather: RAIN
+#     mob-spawning: unchanged # deixa a gamerule original do mundo

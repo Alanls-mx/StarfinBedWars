@@ -36,6 +36,7 @@ import com.starfinplugins.bedwars.shop.special.SpecialItemService;
 import com.starfinplugins.bedwars.upgrades.TeamUpgradeService;
 import com.starfinplugins.bedwars.world.WorldManagementService;
 import com.starfinplugins.bedwars.world.WorldSettings;
+import com.starfinplugins.bedwars.world.AlwaysService;
 import com.starfinplugins.bedwars.world.ManagedMobGuard;
 import java.util.Collections;
 import java.util.List;
@@ -56,6 +57,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private SpecialItemService specialItems;
     private WorldSettings worldSettings;
     private WorldManagementService worldManagement;
+    private AlwaysService always;
     private ArenaEditingService arenaEditing;
     private ArenaRegionSelectionService regionSelection;
     private MatchPresentationService presentation;
@@ -108,6 +110,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             matchEngine = new MatchEngineService(this, arenaService,
                 settings.getRespawnSeconds(),
                 settings.getSpawnOpeningSeconds());
+            always = new AlwaysService(this, arenaService, matchEngine);
             tntAutoIgnite = new TntAutoIgniteService(this, matchEngine, settings);
             reconnect = new ReconnectService(this, matchEngine, ReconnectSettings.load(this));
             matchEngine.setReconnect(reconnect);
@@ -149,6 +152,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services.add(worldManagement);
             services.add(arenaService);
             services.add(matchEngine);
+            services.add(always);
             services.add(statistics);
             services.add(networkRegistry);
             services.add(storageMigration);
@@ -242,6 +246,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     public StorageMigrationService getStorageMigration() { return storageMigration; }
 
     public WorldManagementService getWorldManagement() { return worldManagement; }
+    public AlwaysService getAlways() { return always; }
 
     public ResourceGeneratorService getGeneratorService() {
         return generators;

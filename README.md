@@ -23,6 +23,8 @@ O JAR e `target/StarfinBedWars-1.0.0-SNAPSHOT.jar`. A API Spigot e `provided` e 
 
 O lobby de espera oferece seleção de kit pela estrela do Nether no slot visual 4 e habilidade pelo frasco de encantamento no slot visual 6. As escolhas são persistidas no MySQL compartilhado. Os cinco kits, quatro habilidades, Generator Split, anti-AFK, limites de equipes e regras por arena são configurados em `plugins/StarfinBedWars/gameplay.yml` e `arenas/<id>.yml`. Split e anti-AFK começam desativados para manter o comportamento das arenas existentes. Comandos, permissões, semântica de cada configuração e roteiro de teste em servidor: [docs/PROMPT5_GAMEPLAY.md](docs/PROMPT5_GAMEPLAY.md).
 
+O ambiente Always é configurado em `plugins/StarfinBedWars/always.yml`: hora, dificuldade, clima e spawn/griefing de mobs por mundo e por arena. As cópias de partidas recebem sempre dia e dificuldade 3 por padrão; mundos comuns permanecem intactos até serem habilitados. Consulte [docs/ALWAYS_ENVIRONMENT.md](docs/ALWAYS_ENVIRONMENT.md) para herança, opções e comandos.
+
 ## API compartilhada de minigames (Fase 1)
 
 Com StarfinMinigames presente, BedWars registra `bedwars` no `MinigameRegistry` do Bukkit `ServicesManager`. Arenas, grupos, modalidades, partidas, capacidades, estados e UUIDs dos jogadores sao consultados por snapshots imutaveis. Um adaptador publica eventos genericos a partir de `MatchLifecycleEvent` sem disparar os mesmos eventos internos novamente. O registro e removido no desligamento do BedWars; o StarfinMinigames tambem remove registros quando o plugin proprietario e desabilitado.
