@@ -27,10 +27,10 @@ public final class AbilityCatalog {
     public final int minimumRespawnTicks;
     public final double maximumDamageReduction;
 
-    private AbilityCatalog(YamlConfiguration yaml) {
+    private AbilityCatalog(YamlConfiguration yaml, PurchaseSettings.Scope defaultScope) {
         ConfigurationSection root = required(yaml, "abilities");
         Map<String, Definition> result = new LinkedHashMap<String, Definition>();
-        for (String id : IDS) result.put(id, new Definition(id, required(root, id)));
+        for (String id : IDS) result.put(id, new Definition(id, required(root, id), defaultScope));
         if (root.getKeys(false).size() != IDS.size())
             throw new IllegalArgumentException("abilities.yml deve conter somente os 18 IDs documentados");
         minimumRespawnTicks = yaml.getInt("limits.minimum-respawn-ticks", 20);
@@ -42,11 +42,19 @@ public final class AbilityCatalog {
     }
 
     public static AbilityCatalog load(JavaPlugin plugin) {
+        return load(plugin, PurchaseSettings.Scope.PER_MODE);
+    }
+    public static AbilityCatalog load(JavaPlugin plugin, PurchaseSettings.Scope defaultScope) {
         File file = new File(plugin.getDataFolder(), "abilities.yml");
         if (!file.exists()) plugin.saveResource("abilities.yml", false);
-        return parse(YamlConfiguration.loadConfiguration(file));
+        return parse(YamlConfiguration.loadConfiguration(file), defaultScope);
     }
-    public static AbilityCatalog parse(YamlConfiguration yaml) { return new AbilityCatalog(yaml); }
+    public static AbilityCatalog parse(YamlConfiguration yaml) {
+        return parse(yaml, PurchaseSettings.Scope.PER_MODE);
+    }
+    public static AbilityCatalog parse(YamlConfiguration yaml, PurchaseSettings.Scope defaultScope) {
+        return new AbilityCatalog(yaml, defaultScope);
+    }
 
     public enum Category { COMMON, SPECIAL }
 
@@ -54,6 +62,7 @@ public final class AbilityCatalog {
         public final String id, name, description, permission;
         public final Material icon;
         public final Category category;
+        public final PurchaseSettings.Scope scope;
         public final boolean enabled;
         public final int maxLevel, minimumPlayerLevel, unlockPrice, cooldownSeconds, activationLimit;
         public final Set<String> modes;
@@ -61,7 +70,8 @@ public final class AbilityCatalog {
         private final Map<Integer, Map<String, Double>> levels;
         private final Map<String, Double> parameters;
 
-        private Definition(String id, ConfigurationSection section) {
+        private Definition(String id, ConfigurationSection section,
+                           PurchaseSettings.Scope defaultScope) {
             this.id = id;
             name = text(section, "name", 64);
             description = text(section, "description", 160);
@@ -74,6 +84,9 @@ public final class AbilityCatalog {
             try { category = Category.valueOf(text(section, "category", 12).toUpperCase(Locale.ROOT)); }
             catch (IllegalArgumentException invalid) { throw new IllegalArgumentException(id + ": categoria invalida"); }
             enabled = section.getBoolean("enabled", true);
+            ConfigurationSection purchase = section.getConfigurationSection("purchase");
+            scope = purchase == null ? defaultScope
+                : PurchaseSettings.scope(purchase.getString("scope", defaultScope.name()));
             maxLevel = section.getInt("max-level", 5);
             minimumPlayerLevel = section.getInt("minimum-player-level", 1);
             cooldownSeconds = section.getInt("cooldown-seconds", 0);
@@ -83,7 +96,9 @@ public final class AbilityCatalog {
                     || activationLimit < 0 || activationLimit > 10000)
                 throw new IllegalArgumentException(id + ": nivel ou limite invalido");
             Set<String> modesSet = new LinkedHashSet<String>();
-            for (String mode : section.getStringList("modes")) {
+            List<String> configuredModes = section.contains("allowed-modes")
+                ? section.getStringList("allowed-modes") : section.getStringList("modes");
+            for (String mode : configuredModes) {
                 String normalized = MatchMode.persisted(mode);
                 if (normalized == null) throw new IllegalArgumentException(id + ": modo invalido");
                 modesSet.add(normalized);

@@ -240,25 +240,37 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             if (args.length == 2 && "list".equalsIgnoreCase(args[1])) {
                 sender.sendMessage(PREFIX + (ability ? "Habilidades: "
                     + join(new ArrayList<String>(plugin.getGameplay().getAbilityCatalog().abilities.keySet()))
-                    : "Kits: " + join(new ArrayList<String>(plugin.getGameplay().getSettings().kits.keySet()))));
-            } else if (ability && args.length == 5 && "grant".equalsIgnoreCase(args[1])) {
+                    : "Kits: " + join(new ArrayList<String>(plugin.getGameplay().getKitCatalog().kits.keySet()))));
+            } else if (args.length >= 5 && args.length <= 6
+                    && "grant".equalsIgnoreCase(args[1])) {
                 if (!requireAdmin(sender)) return true;
                 Player target = plugin.getServer().getPlayerExact(args[2]);
-                com.starfinplugins.bedwars.gameplay.AbilityCatalog.Definition definition =
-                    plugin.getGameplay().getAbilityCatalog().abilities.get(args[3]);
+                boolean validId = ability
+                    ? plugin.getGameplay().getAbilityCatalog().abilities.containsKey(args[3])
+                    : plugin.getGameplay().getKitCatalog().kits.containsKey(args[3]);
+                String scope;
+                try { scope = args.length == 5 ? "GLOBAL"
+                    : "global".equalsIgnoreCase(args[4]) ? "GLOBAL"
+                    : com.starfinplugins.bedwars.stats.MatchMode.persisted(args[4]); }
+                catch (IllegalArgumentException invalid) { scope = null; }
                 int level;
-                try { level = Integer.parseInt(args[4]); }
+                try { level = Integer.parseInt(args[args.length - 1]); }
                 catch (NumberFormatException invalid) { level = 0; }
-                if (target == null || definition == null || level < 1 || level > definition.maxLevel) {
-                    sender.sendMessage(PREFIX + ChatColor.RED + "Jogador online, ID e nivel validos obrigatorios.");
+                if (target == null || !validId || scope == null || level < 1 || level > 5) {
+                    sender.sendMessage(PREFIX + ChatColor.RED
+                        + "Use /sbw " + args[0] + " grant <online> <id> [GLOBAL|modo] <1..5>.");
                     return true;
                 }
-                final String grantedId = definition.id;
-                plugin.getStatistics().grantAbility(target.getUniqueId(), grantedId, level,
+                final String grantedId = args[3];
+                final String grantScope = scope;
+                plugin.getStatistics().grantScoped(target.getUniqueId(), ability
+                    ? com.starfinplugins.bedwars.gameplay.ScopedProgress.Kind.ABILITY
+                    : com.starfinplugins.bedwars.gameplay.ScopedProgress.Kind.KIT,
+                    grantedId, grantScope, level,
                     confirmed -> sender.sendMessage(PREFIX + (confirmed == 0 ? ChatColor.RED
                         + "MySQL indisponivel; nenhum desbloqueio concedido."
                         : ChatColor.GREEN + "Desbloqueio confirmado: " + target.getName()
-                            + " / " + grantedId + " nivel " + confirmed)));
+                            + " / " + grantedId + " / " + grantScope + " nivel " + confirmed)));
             } else if (ability && args.length == 2 && "use".equalsIgnoreCase(args[1])
                     && sender instanceof Player) {
                 plugin.getGameplay().useAbility((Player) sender);
@@ -266,8 +278,40 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 if (ability) plugin.getGameplay().openAbilities((Player) sender);
                 else plugin.getGameplay().openKits((Player) sender);
             } else sender.sendMessage(PREFIX + ChatColor.YELLOW
-                + (ability ? "/sbw ability [list|use|grant <jogador> <id> <nivel>]"
-                    : "/sbw kit [list]"));
+                + (ability ? "/sbw ability [list|use|grant <jogador> <id> [GLOBAL|modo] <nivel>]"
+                    : "/sbw kit [list|grant <jogador> <id> [GLOBAL|modo] <nivel>]"));
+            return true;
+        }
+        if ("scope".equalsIgnoreCase(args[0])) {
+            if (!requireAdmin(sender)) return true;
+            boolean preview = args.length == 6 && "preview".equalsIgnoreCase(args[1]);
+            boolean apply = args.length == 7 && "apply".equalsIgnoreCase(args[1])
+                && "confirm".equalsIgnoreCase(args[6]);
+            if (!preview && !apply) {
+                sender.sendMessage(PREFIX + ChatColor.YELLOW
+                    + "Uso: /sbw scope preview <online> <kit|ability> <id> <GLOBAL|PER_MODE>"
+                    + " ou /sbw scope apply <online> <kit|ability> <id> <GLOBAL|PER_MODE> confirm");
+                return true;
+            }
+            Player target = plugin.getServer().getPlayerExact(args[2]);
+            boolean kit = "kit".equalsIgnoreCase(args[3]);
+            boolean ability = "ability".equalsIgnoreCase(args[3]);
+            String id = args[4].toLowerCase(Locale.ROOT);
+            String destination = args[5].toUpperCase(Locale.ROOT);
+            boolean known = kit ? plugin.getGameplay().getKitCatalog().kits.containsKey(id)
+                : ability && plugin.getGameplay().getAbilityCatalog().abilities.containsKey(id);
+            if (target == null || !known || !("GLOBAL".equals(destination)
+                    || "PER_MODE".equals(destination))) {
+                sender.sendMessage(PREFIX + ChatColor.RED
+                    + "Jogador online, tipo, ID ou escopo invalido.");
+                return true;
+            }
+            sender.sendMessage(PREFIX + ChatColor.GRAY + "Consultando aquisicoes no MySQL...");
+            plugin.getStatistics().migrateScope(target.getUniqueId(), kit
+                ? com.starfinplugins.bedwars.gameplay.ScopedProgress.Kind.KIT
+                : com.starfinplugins.bedwars.gameplay.ScopedProgress.Kind.ABILITY,
+                id, destination, sender.getName(), apply,
+                report -> sender.sendMessage(PREFIX + ChatColor.YELLOW + report));
             return true;
         }
         if ("gameplay".equalsIgnoreCase(args[0])) {
@@ -929,9 +973,11 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                 else if ("respawn".equals(key)) respawn = "inherit".equals(value)
                     ? null : Integer.valueOf(value);
                 else if ("kits".equals(key)) kits = parseChoiceList(value,
-                    plugin.getGameplay().getSettings().kits.keySet(), true);
+                    combinedChoices(plugin.getGameplay().getSettings().kits.keySet(),
+                        plugin.getGameplay().getKitCatalog().kits.keySet()), true);
                 else if ("abilities".equals(key)) abilities = parseChoiceList(value,
-                    plugin.getGameplay().getSettings().abilities.keySet(), false);
+                    combinedChoices(plugin.getGameplay().getSettings().abilities.keySet(),
+                        plugin.getGameplay().getAbilityCatalog().abilities.keySet()), false);
                 else throw new IllegalArgumentException("Regra: split, afk, respawn, kits ou abilities.");
                 arenas.setGameplayRules(arena,
                     new ArenaGameplayRules(split, afk, respawn, kits, abilities));
@@ -1598,7 +1644,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                     plugin.getGameplay().getSettings();
                 arenas.setGameplayLimits(settings.maximumTeamSize, settings.maximumTotalPlayers);
                 sender.sendMessage(PREFIX + ChatColor.GREEN
-                    + "gameplay.yml e abilities.yml validados e recarregados.");
+                    + "gameplay.yml, purchase-settings.yml, kits.yml e abilities.yml recarregados.");
             } catch (RuntimeException invalid) {
                 sender.sendMessage(PREFIX + ChatColor.RED + "Configuracao mantida: " + invalid.getMessage());
             }
@@ -1606,14 +1652,18 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         }
         if (args.length == 2 && "diagnose".equalsIgnoreCase(args[1])) {
             com.starfinplugins.bedwars.gameplay.GameplaySettings config = plugin.getGameplay().getSettings();
-            sender.sendMessage(PREFIX + "Kits=" + config.kits.size() + ", habilidades evolutivas="
+            sender.sendMessage(PREFIX + "Kits oficiais="
+                + plugin.getGameplay().getKitCatalog().kits.size() + ", kits legados="
+                + config.kits.size() + ", habilidades evolutivas="
                 + plugin.getGameplay().getAbilityCatalog().abilities.size()
                 + ", habilidades legadas=" + config.abilities.size() + ", Split=" + config.splitEnabled
                 + ", anti-AFK=" + config.antiAfkEnabled + ".");
             for (ArenaDefinition arena : arenas.getArenas()) {
                 ArenaGameplayRules rules = arena.getGameplayRules();
                 if (rules.kits != null) for (String id : rules.kits)
-                    if (!config.kits.containsKey(id)) sender.sendMessage(ChatColor.RED
+                    if (!config.kits.containsKey(id)
+                            && !plugin.getGameplay().getKitCatalog().kits.containsKey(id))
+                        sender.sendMessage(ChatColor.RED
                         + arena.getId() + ": kit desconhecido " + id);
                 if (rules.abilities != null) for (String id : rules.abilities)
                     if (!config.abilities.containsKey(id)
@@ -1685,6 +1735,11 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
         if (kits && !parsed.contains("default"))
             throw new IllegalArgumentException("Kits permitidos devem incluir default.");
         return parsed;
+    }
+    private static Set<String> combinedChoices(Set<String> legacy, Set<String> evolved) {
+        Set<String> combined = new java.util.LinkedHashSet<String>(legacy);
+        combined.addAll(evolved);
+        return combined;
     }
 
     private void sendHelp(CommandSender sender, String label) {
@@ -1843,7 +1898,8 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             return filter(targets, args[2]);
         }
         if ("kit".equalsIgnoreCase(args[0]) && args.length == 2)
-            return filter(Collections.singletonList("list"), args[1]);
+            return filter(sender.hasPermission("starfinbedwars.admin")
+                ? Arrays.asList("list", "grant") : Collections.singletonList("list"), args[1]);
         if ("ability".equalsIgnoreCase(args[0]) && args.length == 2)
             return filter(sender.hasPermission("starfinbedwars.admin")
                 ? Arrays.asList("list", "use", "grant") : Arrays.asList("list", "use"), args[1]);

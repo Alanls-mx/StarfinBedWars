@@ -218,6 +218,47 @@ Para homologacao de rede, instale StarfinCore, StarfinMinigames-Spigot e Starfin
 
 ## Organizacao
 
+## Kits e habilidades por modalidade (Fase 5.2)
+
+`kits.yml` define os 12 kits oficiais com cinco niveis, permissao, modos permitidos,
+escopo (`GLOBAL` ou `PER_MODE`), precos, valores e politica de entrega. O
+`purchase-settings.yml` define os escopos padrao e os cinco modos aceitos. Os IDs
+publicos SOLO/DOUBLES/TRIOS/QUADS/TEAMS correspondem aos IDs internos
+`solo`/`duo`/`trio`/`squad`/`custom`. `abilities.yml` aceita `allowed-modes` e
+`purchase.scope` para as 18 habilidades sem perder niveis antigos. Use
+`/sbw gameplay reload` para validar e recarregar as configuracoes.
+
+Os seletores do lobby continuam nos slots 4 (estrela de kits) e 6 (frasco de
+habilidades). A escolha e salva no MySQL por modalidade. O kit e entregue no
+inicio efetivo da partida. `FIRST_SPAWN` e `ONCE_PER_MATCH` fazem uma unica
+entrega no primeiro nascimento; o segundo nome explicita que uma reconexao nao
+reentrega. `EVERY_RESPAWN` entrega novamente apos cada renascimento e deve ser
+habilitado conscientemente para recursos. O kit Incendiario vem desativado.
+
+Como ainda nao existe provedor de moedas da rede, os precos sao apresentados,
+mas compras e evolucoes ficam bloqueadas. Operadores podem testar com
+`/sbw kit grant <jogador-online> <id> [GLOBAL|modo] <1..5>` ou
+`/sbw ability grant <jogador-online> <id> [GLOBAL|modo] <1..5>`.
+Esses comandos concedem niveis administrativos e nao simulam pagamentos.
+As aquisicoes antigas de habilidades sao preservadas como GLOBAL.
+
+Para uma mudanca controlada de escopo, execute primeiro
+`/sbw scope preview <jogador-online> <kit|ability> <id> <GLOBAL|PER_MODE>` e
+inspecione o relatorio. Aplique com `/sbw scope apply <jogador-online>
+<kit|ability> <id> <GLOBAL|PER_MODE> confirm`. GLOBAL para PER_MODE copia o
+nivel global para cada um dos cinco modos; PER_MODE para GLOBAL usa o maior nivel
+atual. As origens nunca sao removidas. Cada aplicacao e registrada em
+`sbw_scope_migration_history`. Alterar apenas o YAML nao inicia migracao. O
+maior nivel entre o direito global preservado e o direito do modo continua a
+valer; portanto, uma migracao nao diminui niveis previamente adquiridos.
+
+Os testes locais cobrem o catalogo, escopos e migracoes MySQL em MariaDB
+descartavel. Em 26/10/2026, uma rodada conjunta no Pterodactyl confirmou os
+12 kits no menu, as 18 habilidades, dicas sem corte, 12 las do Construtor V e
+ausencia de nova entrega apos morte com cama intacta. O ciclo de compra
+continua bloqueado ate a integracao do provedor monetario. A matriz completa
+de validacao e limites esta em `PROMPT_5_2_VALIDATION.md`.
+
 ```text
 src/main/java/com/starfinplugins/bedwars/
 ├── arena/       # persistencia, validacao e instancias de mundo

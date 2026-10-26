@@ -1,5 +1,6 @@
 package com.starfinplugins.bedwars.stats;
 
+import com.starfinplugins.bedwars.gameplay.ScopedProgress;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
@@ -75,6 +76,27 @@ public final class MySqlStatsRepository implements AutoCloseable {
                 + "acquired_at BIGINT NOT NULL, updated_at BIGINT NOT NULL,"
                 + "PRIMARY KEY(player_uuid,ability_id),INDEX idx_sbw_ability_id (ability_id))"
                 + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            statement.execute("CREATE TABLE IF NOT EXISTS sbw_progression_entitlements ("
+                + "player_uuid CHAR(36) NOT NULL,kind VARCHAR(8) NOT NULL,entry_id VARCHAR(32) NOT NULL,"
+                + "purchase_scope VARCHAR(16) NOT NULL,level TINYINT UNSIGNED NOT NULL,"
+                + "unlocked TINYINT(1) NOT NULL DEFAULT 1,acquisition_type VARCHAR(12) NOT NULL,"
+                + "acquired_at BIGINT NOT NULL,updated_at BIGINT NOT NULL,"
+                + "PRIMARY KEY(player_uuid,kind,entry_id,purchase_scope))"
+                + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            statement.execute("CREATE TABLE IF NOT EXISTS sbw_mode_selections ("
+                + "player_uuid CHAR(36) NOT NULL,mode VARCHAR(16) NOT NULL,kind VARCHAR(8) NOT NULL,"
+                + "entry_id VARCHAR(32) NOT NULL,updated_at BIGINT NOT NULL,"
+                + "PRIMARY KEY(player_uuid,mode,kind)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            statement.execute("CREATE TABLE IF NOT EXISTS sbw_schema_migrations ("
+                + "migration_id INT NOT NULL PRIMARY KEY,applied_at BIGINT NOT NULL)"
+                + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            statement.execute("CREATE TABLE IF NOT EXISTS sbw_scope_migration_history ("
+                + "migration_id CHAR(36) NOT NULL PRIMARY KEY,player_uuid CHAR(36) NOT NULL,"
+                + "kind VARCHAR(8) NOT NULL,entry_id VARCHAR(32) NOT NULL,"
+                + "target_scope VARCHAR(16) NOT NULL,source_levels VARCHAR(160) NOT NULL,"
+                + "result_level TINYINT UNSIGNED NOT NULL,operator_name VARCHAR(32) NOT NULL,"
+                + "applied_at BIGINT NOT NULL,INDEX idx_sbw_scope_player (player_uuid,applied_at))"
+                + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             // Upgrade databases created by earlier BedWars versions without deleting user data.
             ensureColumn(connection, "sbw_profiles", "final_deaths", "BIGINT NOT NULL DEFAULT 0");
             ensureColumn(connection, "sbw_profiles", "first_play", "BIGINT NOT NULL DEFAULT 0");
@@ -90,11 +112,210 @@ public final class MySqlStatsRepository implements AutoCloseable {
                 "(created_at,mode,player_uuid)");
             ensureIndex(connection, "sbw_match_results", "idx_sbw_result_mode_period",
                 "(mode,created_at,player_uuid)");
+            migrateLegacyAbilityLevels(connection);
             pool = dataSource;
             progression = settings.progression;
         } catch (SQLException | RuntimeException error) {
             dataSource.close();
             throw error;
+        }
+    }
+
+    private static void migrateLegacyAbilityLevels(Connection connection) throws SQLException {
+        connection.setAutoCommit(false);
+        try (PreparedStatement migration = connection.prepareStatement(
+                 "SELECT migration_id FROM sbw_schema_migrations WHERE migration_id=52 FOR UPDATE");
+             PreparedStatement copy = connection.prepareStatement(
+                 "INSERT INTO sbw_progression_entitlements"
+                 + " (player_uuid,kind,entry_id,purchase_scope,level,unlocked,acquisition_type,"
+                 + "acquired_at,updated_at)"
+                 + " SELECT player_uuid,'ABILITY',ability_id,'GLOBAL',level,unlocked,'LEGACY',"
+                 + "acquired_at,updated_at FROM sbw_ability_levels WHERE unlocked=1"
+                 + " ON DUPLICATE KEY UPDATE level=GREATEST("
+                 + "sbw_progression_entitlements.level,VALUES(level))");
+             PreparedStatement mark = connection.prepareStatement(
+                 "INSERT IGNORE INTO sbw_schema_migrations(migration_id,applied_at) VALUES(52,?)")) {
+            try (ResultSet row = migration.executeQuery()) {
+                if (!row.next()) {
+                    copy.executeUpdate();
+                    mark.setLong(1, System.currentTimeMillis());
+                    mark.executeUpdate();
+                }
+            }
+            connection.commit();
+        } catch (SQLException | RuntimeException error) {
+            connection.rollback();
+            throw error;
+        } finally { connection.setAutoCommit(true); }
+    }
+
+    public ScopedProgress loadScopedProgress(UUID player) throws SQLException {
+        java.util.Map<String, Integer> levels = new java.util.HashMap<String, Integer>();
+        java.util.Map<String, String> selections = new java.util.HashMap<String, String>();
+        try (Connection connection = pool.getConnection();
+             PreparedStatement entitlements = connection.prepareStatement(
+                 "SELECT kind,entry_id,purchase_scope,level FROM sbw_progression_entitlements"
+                 + " WHERE player_uuid=? AND unlocked=1");
+             PreparedStatement legacy = connection.prepareStatement(
+                 "SELECT ability_id,level FROM sbw_ability_levels WHERE player_uuid=? AND unlocked=1");
+             PreparedStatement choices = connection.prepareStatement(
+                 "SELECT mode,kind,entry_id FROM sbw_mode_selections WHERE player_uuid=?")) {
+            entitlements.setString(1, player.toString());
+            try (ResultSet row = entitlements.executeQuery()) {
+                while (row.next()) {
+                    ScopedProgress.Kind kind = ScopedProgress.Kind.valueOf(row.getString(1));
+                    levels.put(ScopedProgress.key(kind, row.getString(2), row.getString(3)), row.getInt(4));
+                }
+            }
+            legacy.setString(1, player.toString());
+            try (ResultSet row = legacy.executeQuery()) {
+                while (row.next()) {
+                    String key = ScopedProgress.key(ScopedProgress.Kind.ABILITY,
+                        row.getString(1), "GLOBAL");
+                    levels.put(key, Math.max(levels.getOrDefault(key, 0), row.getInt(2)));
+                }
+            }
+            choices.setString(1, player.toString());
+            try (ResultSet row = choices.executeQuery()) {
+                while (row.next()) selections.put(row.getString(2) + "|" + row.getString(1),
+                    row.getString(3));
+            }
+        }
+        return new ScopedProgress(levels, selections);
+    }
+
+    /** Administrative grant only. Purchase processing must first reserve a real currency charge. */
+    public int grantScoped(UUID player, ScopedProgress.Kind kind, String id,
+                           String scope, int level) throws SQLException {
+        ScopedProgress.key(kind, id, scope);
+        if (level < 1 || level > 5) throw new IllegalArgumentException("Nivel invalido");
+        try (Connection connection = pool.getConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement grant = connection.prepareStatement(
+                    "INSERT INTO sbw_progression_entitlements"
+                    + " (player_uuid,kind,entry_id,purchase_scope,level,unlocked,acquisition_type,"
+                    + "acquired_at,updated_at) VALUES (?,?,?,?,?,1,'ADMIN',?,?)"
+                    + " ON DUPLICATE KEY UPDATE level=GREATEST(level,VALUES(level)),"
+                    + "unlocked=1,updated_at=VALUES(updated_at)");
+                 PreparedStatement read = connection.prepareStatement(
+                    "SELECT level FROM sbw_progression_entitlements WHERE player_uuid=?"
+                    + " AND kind=? AND entry_id=? AND purchase_scope=?")) {
+                long now = System.currentTimeMillis();
+                grant.setString(1, player.toString());
+                grant.setString(2, kind.name());
+                grant.setString(3, id);
+                grant.setString(4, scope);
+                grant.setInt(5, level);
+                grant.setLong(6, now);
+                grant.setLong(7, now);
+                grant.executeUpdate();
+                read.setString(1, player.toString());
+                read.setString(2, kind.name());
+                read.setString(3, id);
+                read.setString(4, scope);
+                try (ResultSet row = read.executeQuery()) {
+                    if (!row.next()) throw new SQLException("Grant nao confirmado");
+                    int actual = row.getInt(1);
+                    connection.commit();
+                    return actual;
+                }
+            } catch (SQLException | RuntimeException error) {
+                connection.rollback();
+                throw error;
+            } finally { connection.setAutoCommit(true); }
+        }
+    }
+
+    public void selectScoped(UUID player, ScopedProgress.Kind kind, String mode, String id)
+            throws SQLException {
+        ScopedProgress.key(kind, id, mode);
+        try (Connection connection = pool.getConnection(); PreparedStatement write = connection.prepareStatement(
+                "INSERT INTO sbw_mode_selections(player_uuid,mode,kind,entry_id,updated_at)"
+                + " VALUES(?,?,?,?,?) ON DUPLICATE KEY UPDATE entry_id=VALUES(entry_id),"
+                + "updated_at=GREATEST(updated_at+1,VALUES(updated_at))")) {
+            write.setString(1, player.toString());
+            write.setString(2, MatchMode.persisted(mode));
+            write.setString(3, kind.name());
+            write.setString(4, id);
+            write.setLong(5, System.currentTimeMillis());
+            write.executeUpdate();
+        }
+    }
+
+    /** Preview and apply share the same calculation; applying locks the source rows in MySQL. */
+    public String migrateScope(UUID player, ScopedProgress.Kind kind, String id,
+                               String target, String operator, boolean apply) throws SQLException {
+        if (player == null || operator == null || !operator.matches("[A-Za-z0-9_]{1,32}"))
+            throw new IllegalArgumentException("Operador invalido");
+        ScopedProgress.key(kind, id, "GLOBAL");
+        if (!"GLOBAL".equals(target) && !"PER_MODE".equals(target))
+            throw new IllegalArgumentException("Destino invalido");
+        try (Connection connection = pool.getConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement read = connection.prepareStatement(
+                    "SELECT purchase_scope,level FROM sbw_progression_entitlements"
+                    + " WHERE player_uuid=? AND kind=? AND entry_id=? AND unlocked=1"
+                    + " ORDER BY purchase_scope FOR UPDATE")) {
+                read.setString(1, player.toString());
+                read.setString(2, kind.name());
+                read.setString(3, id);
+                java.util.Map<String, Integer> levels = new java.util.TreeMap<String, Integer>();
+                try (ResultSet rows = read.executeQuery()) {
+                    while (rows.next()) levels.put(rows.getString(1), rows.getInt(2));
+                }
+                int source = 0;
+                if ("PER_MODE".equals(target)) source = levels.getOrDefault("GLOBAL", 0);
+                else for (String mode : MatchMode.STANDARD) source = Math.max(source,
+                    levels.getOrDefault(mode, 0));
+                if (source == 0) {
+                    connection.rollback();
+                    return "Nenhuma aquisicao de origem para migrar. Atual: " + levels;
+                }
+                String report = "Atual: " + levels + " | destino: " + target
+                    + " nivel " + source + ("PER_MODE".equals(target)
+                    ? " em " + MatchMode.STANDARD : " (maior nivel por modo)");
+                if (!apply) { connection.rollback(); return "SIMULACAO: " + report; }
+                try (PreparedStatement write = connection.prepareStatement(
+                        "INSERT INTO sbw_progression_entitlements"
+                        + " (player_uuid,kind,entry_id,purchase_scope,level,unlocked,"
+                        + "acquisition_type,acquired_at,updated_at)"
+                        + " VALUES (?,?,?,?,?,1,'MIGRATION',?,?)"
+                        + " ON DUPLICATE KEY UPDATE level=GREATEST("
+                        + "sbw_progression_entitlements.level,VALUES(level)),unlocked=1,"
+                        + "updated_at=VALUES(updated_at)");
+                     PreparedStatement history = connection.prepareStatement(
+                        "INSERT INTO sbw_scope_migration_history"
+                        + " (migration_id,player_uuid,kind,entry_id,target_scope,source_levels,"
+                        + "result_level,operator_name,applied_at) VALUES (?,?,?,?,?,?,?,?,?)")) {
+                    long now = System.currentTimeMillis();
+                    for (String mode : "GLOBAL".equals(target)
+                            ? java.util.Collections.singletonList("GLOBAL") : MatchMode.STANDARD) {
+                        write.setString(1, player.toString());
+                        write.setString(2, kind.name());
+                        write.setString(3, id);
+                        write.setString(4, mode);
+                        write.setInt(5, source);
+                        write.setLong(6, now);
+                        write.setLong(7, now);
+                        write.executeUpdate();
+                    }
+                    history.setString(1, UUID.randomUUID().toString());
+                    history.setString(2, player.toString());
+                    history.setString(3, kind.name());
+                    history.setString(4, id);
+                    history.setString(5, target);
+                    history.setString(6, levels.toString());
+                    history.setInt(7, source);
+                    history.setString(8, operator);
+                    history.setLong(9, now);
+                    history.executeUpdate();
+                }
+                connection.commit();
+                return "APLICADA: " + report + ". Origens preservadas.";
+            } catch (SQLException | RuntimeException error) {
+                connection.rollback();
+                throw error;
+            } finally { connection.setAutoCommit(true); }
         }
     }
 

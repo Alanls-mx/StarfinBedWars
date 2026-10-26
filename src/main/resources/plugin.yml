@@ -12,13 +12,25 @@ softdepend:
 commands:
   starfinbedwars:
     description: StarfinBedWars administration and status
-    usage: /starfinbedwars <help|version|status|menu|arena|world|always|join|spectate|leave|chat|stats|profile|progress|rewards|top|kit|ability|gameplay|matchpoint|migrate>
+    usage: /starfinbedwars <help|version|status|menu|arena|world|always|join|spectate|leave|chat|stats|profile|progress|rewards|top|kit|ability|scope|gameplay|matchpoint|migrate>
     aliases:
       - sbw
   reconnect:
     description: Retorna a partida BedWars pendente
     usage: /reconnect
 permissions:
+  starfinbedwars.kit.builder: {default: true}
+  starfinbedwars.kit.miner: {default: true}
+  starfinbedwars.kit.lumberjack: {default: true}
+  starfinbedwars.kit.shears: {default: true}
+  starfinbedwars.kit.carpenter: {default: true}
+  starfinbedwars.kit.climber: {default: true}
+  starfinbedwars.kit.blacksmith: {default: true}
+  starfinbedwars.kit.archer: {default: true}
+  starfinbedwars.kit.trapper: {default: true}
+  starfinbedwars.kit.explorer: {default: true}
+  starfinbedwars.kit.defender: {default: true}
+  starfinbedwars.kit.pyromancer: {default: true}
   starfinbedwars.admin:
     description: Administrate StarfinBedWars
     default: op

@@ -10,14 +10,14 @@ import com.starfinplugins.bedwars.event.MatchCombatDeathEvent;
 import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
 import com.starfinplugins.bedwars.domain.economy.ResourceType;
 import com.starfinplugins.bedwars.domain.economy.GeneratorInstance;
+import com.starfinplugins.bedwars.domain.arena.ResourceGeneratorDefinition;
+import com.starfinplugins.bedwars.domain.arena.Position;
 import com.starfinplugins.bedwars.match.MatchEngineService;
 import com.starfinplugins.bedwars.match.MatchEquipmentService;
 import com.starfinplugins.bedwars.service.ManagedService;
 import com.starfinplugins.bedwars.stats.MatchMode;
 import com.starfinplugins.bedwars.stats.MatchStatisticsService;
-import com.starfinplugins.bedwars.stats.PreferencesOutbox;
 import com.starfinplugins.bedwars.stats.StatsProfile;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -35,6 +35,7 @@ import org.bukkit.entity.Arrow;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.SmallFireball;
 import org.bukkit.entity.ThrownExpBottle;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -61,6 +62,7 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Vector;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.craftbukkit.v1_8_R3.entity.CraftPlayer;
+import org.bukkit.metadata.FixedMetadataValue;
 
 /** Selection inventory and match-scoped kit/ability lifecycle on the Bukkit thread. */
 public final class GameplayService implements ManagedService, Listener {
@@ -77,10 +79,14 @@ public final class GameplayService implements ManagedService, Listener {
     private final Map<UUID, Set<String>> countedBuildPositions = new HashMap<UUID, Set<String>>();
     private final Map<UUID, Long> recentCombatVelocity = new HashMap<UUID, Long>();
     private final Map<String, Integer> forgeBonusCounts = new HashMap<String, Integer>();
+    private final Map<UUID, Long> compassNextUpdate = new HashMap<UUID, Long>();
+    private final Set<UUID> emeraldCompassTarget = new HashSet<UUID>();
     private final Random random = new Random();
     private BukkitTask sensingTask;
     private GameplaySettings settings;
     private AbilityCatalog evolved;
+    private KitCatalog officialKits;
+    private PurchaseSettings purchases;
 
     public GameplayService(StarfinBedWarsPlugin plugin, MatchEngineService matches,
                            MatchStatisticsService stats, MatchEquipmentService equipment) {
@@ -89,7 +95,9 @@ public final class GameplayService implements ManagedService, Listener {
     @Override public String getName() { return "kits e habilidades"; }
     @Override public void start() {
         settings = GameplaySettings.load(plugin);
-        evolved = AbilityCatalog.load(plugin);
+        purchases = PurchaseSettings.load(plugin);
+        officialKits = KitCatalog.load(plugin, purchases);
+        evolved = AbilityCatalog.load(plugin, purchases.abilityDefault);
         matches.setRespawnDelayModifier(this::respawnDelayTicks);
         Bukkit.getPluginManager().registerEvents(this, plugin);
         sensingTask = Bukkit.getScheduler().runTaskTimer(plugin, this::senseAndCollect, 20L, 10L);
@@ -103,17 +111,31 @@ public final class GameplayService implements ManagedService, Listener {
         countedBuildPositions.clear();
         recentCombatVelocity.clear();
         forgeBonusCounts.clear();
+        compassNextUpdate.clear();
+        emeraldCompassTarget.clear();
     }
     public GameplaySettings getSettings() { return settings; }
     public AbilityCatalog getAbilityCatalog() { return evolved; }
+    public KitCatalog getKitCatalog() { return officialKits; }
+    public PurchaseSettings getPurchaseSettings() { return purchases; }
     public void reload() {
         GameplaySettings nextGameplay = GameplaySettings.load(plugin);
-        AbilityCatalog nextAbilities = AbilityCatalog.load(plugin);
+        PurchaseSettings nextPurchases = PurchaseSettings.load(plugin);
+        KitCatalog nextKits = KitCatalog.load(plugin, nextPurchases);
+        AbilityCatalog nextAbilities = AbilityCatalog.load(plugin, nextPurchases.abilityDefault);
         settings = nextGameplay;
+        purchases = nextPurchases;
+        officialKits = nextKits;
         evolved = nextAbilities;
     }
     public String selectedKit(UUID player) { return stats.getSelectedKit(player); }
     public String selectedAbility(UUID player) { return stats.getSelectedAbility(player); }
+    private String selected(UUID player, GameMatch match, ScopedProgress.Kind kind) {
+        return stats.getSelection(player, kind, MatchMode.of(match.getArena()));
+    }
+    private int ownedLevel(UUID player, GameMatch match, ScopedProgress.Kind kind, String id) {
+        return stats.getLevel(player, kind, id, MatchMode.of(match.getArena()));
+    }
     public long cooldownRemaining(UUID player) {
         GameMatch match = matches.getMatchForPlayer(player);
         MatchChoices choices = match == null ? null : active.get(match.getId());
@@ -128,7 +150,7 @@ public final class GameplayService implements ManagedService, Listener {
         Player player = Bukkit.getPlayer(playerId);
         AbilityState state = state(match, playerId);
         if (state != null && "respawn_boost".equals(state.id) && state.level == 0)
-            state.level = stats.getAbilityLevel(playerId, state.id);
+            state.level = ownedLevel(playerId, match, ScopedProgress.Kind.ABILITY, state.id);
         if (participant == null || player == null || state == null || state.level == 0
                 || !"respawn_boost".equals(state.id)
                 || !match.getTeam(participant.getTeamId()).isBedAlive()
@@ -159,10 +181,8 @@ public final class GameplayService implements ManagedService, Listener {
                     Player player = Bukkit.getPlayer(participant.getPlayerId());
                     if (player == null || participant.getState() != ParticipantState.CONNECTED) continue;
                     removeSelectors(player);
-                    GameplaySettings.Kit kit = resolvedKit(player, match);
-                    choices.kits.put(player.getUniqueId(), kit.id);
+                    startKit(player, match, participant, choices);
                     choices.abilities.put(player.getUniqueId(), resolvedAbilityState(player, match));
-                    applyKit(player, match, participant, kit, false);
                 }
                 break;
             case PLAYER_RESPAWNED:
@@ -170,8 +190,7 @@ public final class GameplayService implements ManagedService, Listener {
                     Player player = Bukkit.getPlayer(event.getParticipant().getPlayerId());
                     MatchChoices resumed = active.get(match.getId());
                     if (player != null && resumed != null) {
-                        GameplaySettings.Kit kit = settings.kits.get(resumed.kits.get(player.getUniqueId()));
-                        if (kit != null) applyKit(player, match, event.getParticipant(), kit, true);
+                        respawnKit(player, match, event.getParticipant(), resumed);
                         AbilityState state = resumed.abilities.get(player.getUniqueId());
                         GameplaySettings.Ability ability = state == null ? null : settings.abilities.get(state.id);
                         if (ability != null && ability.effect == GameplaySettings.AbilityEffect.RESISTANCE_ON_RESPAWN)
@@ -188,10 +207,8 @@ public final class GameplayService implements ManagedService, Listener {
                         removeSelectors(player);
                         MatchChoices resumed = active.get(match.getId());
                         if (resumed != null && !resumed.kits.containsKey(player.getUniqueId())) {
-                            GameplaySettings.Kit kit = resolvedKit(player, match);
-                            resumed.kits.put(player.getUniqueId(), kit.id);
+                            startKit(player, match, event.getParticipant(), resumed);
                             resumed.abilities.put(player.getUniqueId(), resolvedAbilityState(player, match));
-                            applyKit(player, match, event.getParticipant(), kit, false);
                         }
                         reconcileEffect(player);
                     }
@@ -229,7 +246,14 @@ public final class GameplayService implements ManagedService, Listener {
                     UUID id = event.getParticipant().getPlayerId();
                     clearEffect(id);
                     MatchChoices inMatch = active.get(match.getId());
-                    if (inMatch != null) { inMatch.kits.remove(id); inMatch.abilities.remove(id); }
+                    if (inMatch != null) {
+                        inMatch.kits.remove(id);
+                        inMatch.kitLevels.remove(id);
+                        inMatch.kitDelivered.remove(id);
+                        inMatch.abilities.remove(id);
+                    }
+                    compassNextUpdate.remove(id);
+                    emeraldCompassTarget.remove(id);
                     Player player = Bukkit.getPlayer(id);
                     if (player != null) removeSelectors(player);
                 }
@@ -241,6 +265,8 @@ public final class GameplayService implements ManagedService, Listener {
                 countedBuildPositions.remove(match.getId());
                 forgeBonusCounts.keySet().removeIf(key -> key.startsWith(match.getId().toString() + ":"));
                 for (GameParticipant participant : match.getParticipantList()) {
+                    compassNextUpdate.remove(participant.getPlayerId());
+                    emeraldCompassTarget.remove(participant.getPlayerId());
                     Player player = Bukkit.getPlayer(participant.getPlayerId());
                     if (player != null) removeSelectors(player);
                 }
@@ -461,10 +487,49 @@ public final class GameplayService implements ManagedService, Listener {
                         clearEffect(player.getUniqueId());
                 }
                 if (player == null || !eligibleInGame(player, match)) continue;
+                if ("explorer".equals(entry.getValue().kits.get(player.getUniqueId())))
+                    updateExplorerCompass(player, match, entry.getValue());
                 if (evolvedActive(player, match, state, "sentinel")) senseBed(player, match, state);
                 else if (evolvedActive(player, match, state, "collector")) collectNearby(player, match, state);
             }
         }
+    }
+
+    private String explorerMarker(GameMatch match) {
+        return ChatColor.BLACK + "SBW:EXPLORER:" + match.getId();
+    }
+    private String pyroMarker(GameMatch match) {
+        return ChatColor.BLACK + "SBW:PYRO:" + match.getId();
+    }
+    private static boolean marked(ItemStack item, String marker) {
+        return item != null && item.hasItemMeta() && item.getItemMeta().hasLore()
+            && item.getItemMeta().getLore().contains(marker);
+    }
+    private void updateExplorerCompass(Player player, GameMatch match, MatchChoices choices) {
+        UUID id = player.getUniqueId();
+        KitCatalog.Definition kit = officialKits.kits.get("explorer");
+        int level = choices.kitLevels.getOrDefault(id, 0);
+        if (!officialAvailable(player, match, kit, level)
+                || System.currentTimeMillis() < compassNextUpdate.getOrDefault(id, 0L)) return;
+        boolean hasKitCompass = false;
+        for (ItemStack item : player.getInventory().getContents())
+            if (marked(item, explorerMarker(match))) { hasKitCompass = true; break; }
+        if (!hasKitCompass) return;
+        compassNextUpdate.put(id, System.currentTimeMillis() + kit.value(level) * 1000L);
+        ResourceType targetType = emeraldCompassTarget.contains(id)
+            ? ResourceType.EMERALD : ResourceType.DIAMOND;
+        Position nearest = null;
+        double best = Double.MAX_VALUE;
+        for (ResourceGeneratorDefinition generator : match.getArena().getGeneratorList()) {
+            if (generator.getTeamId() != null || generator.getResource() != targetType) continue;
+            Position point = generator.getPosition();
+            double dx = point.getX() - player.getLocation().getX();
+            double dz = point.getZ() - player.getLocation().getZ();
+            double distance = dx * dx + dz * dz;
+            if (distance < best) { best = distance; nearest = point; }
+        }
+        if (nearest != null) player.setCompassTarget(new Location(player.getWorld(),
+            nearest.getX(), nearest.getY(), nearest.getZ()));
     }
 
     private void senseBed(Player player, GameMatch match, AbilityState state) {
@@ -666,19 +731,123 @@ public final class GameplayService implements ManagedService, Listener {
         player.updateInventory();
     }
 
+    private boolean officialAvailable(Player player, GameMatch match,
+                                      KitCatalog.Definition kit, int level) {
+        if (kit == null) return false;
+        StatsProfile profile = stats.getCachedProfile(player.getUniqueId());
+        return KitAccess.canEquip(kit, level, player.hasPermission(kit.permission),
+            stats.getProgress(profile == null ? 0 : profile.totalXp).level,
+            MatchMode.of(match.getArena()),
+            match.getArena().getGameplayRules().allowsKit(kit.id));
+    }
+
+    private void startKit(Player player, GameMatch match, GameParticipant participant,
+                          MatchChoices choices) {
+        String selected = selected(player.getUniqueId(), match, ScopedProgress.Kind.KIT);
+        KitCatalog.Definition official = officialKits.kits.get(selected);
+        int level = official == null ? 0
+            : ownedLevel(player.getUniqueId(), match, ScopedProgress.Kind.KIT, selected);
+        if (officialAvailable(player, match, official, level)) {
+            choices.kits.put(player.getUniqueId(), selected);
+            choices.kitLevels.put(player.getUniqueId(), level);
+            applyOfficialKit(player, match, participant, choices, official, false);
+            return;
+        }
+        GameplaySettings.Kit legacy = resolvedKit(player, match);
+        choices.kits.put(player.getUniqueId(), legacy.id);
+        applyKit(player, match, participant, legacy, false);
+    }
+
+    private void respawnKit(Player player, GameMatch match, GameParticipant participant,
+                            MatchChoices choices) {
+        String id = choices.kits.get(player.getUniqueId());
+        KitCatalog.Definition official = officialKits.kits.get(id);
+        if (official != null) {
+            applyOfficialKit(player, match, participant, choices, official, true);
+            return;
+        }
+        GameplaySettings.Kit legacy = settings.kits.get(id);
+        if (legacy != null && available(player, match, legacy))
+            applyKit(player, match, participant, legacy, true);
+    }
+
+    private void applyOfficialKit(Player player, GameMatch match, GameParticipant participant,
+                                  MatchChoices choices, KitCatalog.Definition kit, boolean respawn) {
+        if (!eligibleInGame(player, match) || participant.getState() != ParticipantState.CONNECTED
+                || player.getWorld() != matches.getWorld(match.getId())) return;
+        int level = choices.kitLevels.getOrDefault(player.getUniqueId(), 0);
+        if (!officialAvailable(player, match, kit, level)) return;
+        if (!KitAccess.shouldDeliver(kit.delivery, respawn,
+                choices.kitDelivered.contains(player.getUniqueId()))) return;
+        if (!respawn) choices.kitDelivered.add(player.getUniqueId());
+        int value = kit.value(level);
+        ItemStack item;
+        switch (kit.id) {
+            case "builder":
+                item = new ItemStack(Material.WOOL, value,
+                    match.getTeam(participant.getTeamId()).getDefinition().getColorData());
+                break;
+            case "carpenter": item = new ItemStack(Material.WOOD, value); break;
+            case "climber": item = new ItemStack(Material.LADDER, value); break;
+            case "blacksmith": item = new ItemStack(Material.IRON_INGOT, value); break;
+            case "archer": item = new ItemStack(Material.ARROW, value); break;
+            case "trapper": item = new ItemStack(Material.WEB, value); break;
+            case "defender": item = new ItemStack(kit.material, value); break;
+            case "miner": item = limitedTool(player, participant, Material.WOOD_PICKAXE, value); break;
+            case "lumberjack": item = limitedTool(player, participant, Material.WOOD_AXE, value); break;
+            case "shears": item = limitedTool(player, participant, Material.SHEARS, value); break;
+            case "explorer":
+                item = menuItem(Material.COMPASS, ChatColor.AQUA + "Explorador: Diamante",
+                    Arrays.asList(ChatColor.GRAY + "Clique para alternar Diamante/Esmeralda",
+                        explorerMarker(match)));
+                break;
+            case "pyromancer":
+                item = menuItem(kit.material, ChatColor.GOLD + "Incendiario",
+                    Arrays.asList(ChatColor.GRAY + "Projetil temporario sem fogo em blocos",
+                        pyroMarker(match)));
+                item.setAmount(value);
+                break;
+            default: return;
+        }
+        if (item == null) return;
+        Map<Integer, ItemStack> overflow = player.getInventory().addItem(item);
+        if (!overflow.isEmpty()) player.sendMessage(ChatColor.RED
+            + "Sem espaco para item do kit: " + kit.name);
+        player.updateInventory();
+    }
+
+    private ItemStack limitedTool(Player player, GameParticipant participant,
+                                  Material material, int uses) {
+        if (material == Material.WOOD_PICKAXE || material == Material.WOOD_AXE) {
+            if (!equipment.canImprove(participant, material)) return null;
+        }
+        for (ItemStack existing : player.getInventory().getContents()) {
+            if (existing == null) continue;
+            if (material == Material.SHEARS && existing.getType() == Material.SHEARS) return null;
+            if (material == Material.WOOD_PICKAXE && existing.getType().name().endsWith("_PICKAXE"))
+                return null;
+            if (material == Material.WOOD_AXE && existing.getType().name().endsWith("_AXE")) return null;
+        }
+        ItemStack tool = new ItemStack(material);
+        tool.setDurability((short) Math.max(0, material.getMaxDurability() - uses));
+        return tool;
+    }
+
     private GameplaySettings.Kit resolvedKit(Player player, GameMatch match) {
-        GameplaySettings.Kit kit = settings.kits.get(stats.getSelectedKit(player.getUniqueId()));
+        String id = selected(player.getUniqueId(), match, ScopedProgress.Kind.KIT);
+        GameplaySettings.Kit kit = officialKits.kits.containsKey(id) ? null : settings.kits.get(id);
         return available(player, match, kit) ? kit : settings.kits.get("default");
     }
     private GameplaySettings.Ability resolvedAbility(Player player, GameMatch match) {
-        GameplaySettings.Ability ability = settings.abilities.get(stats.getSelectedAbility(player.getUniqueId()));
+        GameplaySettings.Ability ability = settings.abilities.get(
+            selected(player.getUniqueId(), match, ScopedProgress.Kind.ABILITY));
         return available(player, match, ability) ? ability : null;
     }
     private AbilityState resolvedAbilityState(Player player, GameMatch match) {
-        String selected = stats.getSelectedAbility(player.getUniqueId());
+        String selected = selected(player.getUniqueId(), match, ScopedProgress.Kind.ABILITY);
         AbilityCatalog.Definition definition = evolved.abilities.get(selected);
         if (definition != null) return new AbilityState(selected,
-            stats.getAbilityLevel(player.getUniqueId(), selected));
+            ownedLevel(player.getUniqueId(), match, ScopedProgress.Kind.ABILITY, selected));
         // Previously selected IDs stay in MySQL and retain their older effect if the
         // server explicitly grants their individual legacy permission.
         GameplaySettings.Ability legacy = resolvedAbility(player, match);
@@ -696,7 +865,7 @@ public final class GameplayService implements ManagedService, Listener {
     }
     private boolean evolvedActive(Player player, GameMatch match, AbilityState state, String id) {
         if (state != null && state.level == 0 && id.equals(state.id))
-            state.level = stats.getAbilityLevel(player.getUniqueId(), id);
+            state.level = ownedLevel(player.getUniqueId(), match, ScopedProgress.Kind.ABILITY, id);
         return state != null && state.level > 0 && id.equals(state.id)
             && eligibleInGame(player, match)
             && evolvedAvailable(player, match, evolved.abilities.get(id), state.level);
@@ -712,7 +881,7 @@ public final class GameplayService implements ManagedService, Listener {
         return choice.level <= stats.getProgress(profile == null ? 0 : profile.totalXp).level;
     }
 
-    public void openKits(Player player) { open(player, false); }
+    public void openKits(Player player) { openOfficialKits(player); }
     public void openAbilities(Player player) { open(player, true); }
     private void open(Player player, boolean abilities) {
         if (abilities) { openEvolvedAbilities(player); return; }
@@ -761,39 +930,119 @@ public final class GameplayService implements ManagedService, Listener {
         player.openInventory(inventory);
     }
 
+    private void openOfficialKits(Player player) {
+        GameMatch match = matches.getMatchForPlayer(player.getUniqueId());
+        if (!waiting(match)) return;
+        KitView holder = new KitView(match.getId());
+        Inventory inventory = Bukkit.createInventory(holder, 27, ChatColor.DARK_GRAY + "Kits");
+        holder.inventory = inventory;
+        String selected = selected(player.getUniqueId(), match, ScopedProgress.Kind.KIT);
+        String mode = MatchMode.of(match.getArena());
+        inventory.setItem(0, menuItem(Material.WOOL, ChatColor.GREEN + "Kit Padrao",
+            Arrays.asList(ChatColor.GRAY + "Gratuito", ChatColor.YELLOW
+                + ("default".equals(selected) ? "Equipado" : "Clique para equipar"))));
+        holder.ids.put(0, "default");
+        int slot = 1;
+        for (KitCatalog.Definition kit : officialKits.kits.values()) {
+            int level = ownedLevel(player.getUniqueId(), match, ScopedProgress.Kind.KIT, kit.id);
+            List<String> lore = new ArrayList<String>();
+            addWrappedLore(lore, kit.description);
+            lore.add(ChatColor.GRAY + "Categoria: " + kit.category);
+            lore.add(ChatColor.GRAY + "Escopo: " + kit.scope);
+            lore.add(ChatColor.GRAY + "Modo: " + mode);
+            addWrappedLore(lore, "Permitidos: " + String.join(", ", kit.modes));
+            addWrappedLore(lore, "Permissao: " + kit.permission);
+            lore.add(ChatColor.GRAY + "Nivel: " + level + "/5");
+            lore.add(ChatColor.GRAY + "Atual: " + (level == 0 ? "nao adquirido" : kit.value(level)));
+            if (level < 5) {
+                lore.add(ChatColor.GRAY + "Proximo: " + kit.value(level + 1));
+                lore.add(ChatColor.GRAY + "Preco: " + kit.price(level + 1));
+            }
+            StatsProfile profile = stats.getCachedProfile(player.getUniqueId());
+            int profileLevel = stats.getProgress(profile == null ? 0 : profile.totalXp).level;
+            String status = !kit.enabled || !kit.modes.contains(mode)
+                    || !match.getArena().getGameplayRules().allowsKit(kit.id)
+                ? "INDISPONIVEL NO MODO"
+                : !player.hasPermission(kit.permission) ? "SEM PERMISSAO"
+                : profileLevel < kit.minimumPlayerLevel ? "BLOQUEADO"
+                : level == 0 ? "DISPONIVEL PARA COMPRA (sem provedor)"
+                : kit.id.equals(selected) ? "EQUIPADO"
+                : level >= 5 ? "NIVEL MAXIMO" : "ADQUIRIDO";
+            addWrappedLore(lore, status);
+            lore.add(ChatColor.AQUA + "Clique para detalhes");
+            inventory.setItem(slot, menuItem(kit.icon, ChatColor.GREEN + kit.name, lore));
+            holder.ids.put(slot++, kit.id);
+        }
+        player.openInventory(inventory);
+    }
+
+    private void openKitDetail(Player player, GameMatch match, String id) {
+        KitCatalog.Definition kit = officialKits.kits.get(id);
+        if (kit == null) return;
+        int level = ownedLevel(player.getUniqueId(), match, ScopedProgress.Kind.KIT, id);
+        KitDetailView holder = new KitDetailView(match.getId(), id);
+        Inventory inventory = Bukkit.createInventory(holder, 27, ChatColor.DARK_GRAY + "Kit: " + id);
+        holder.inventory = inventory;
+        List<String> lore = new ArrayList<String>();
+        addWrappedLore(lore, kit.description);
+        lore.add(ChatColor.GRAY + "Modo: " + MatchMode.of(match.getArena()));
+        lore.add(ChatColor.GRAY + "Escopo: " + kit.scope);
+        lore.add(ChatColor.GRAY + "Categoria: " + kit.category);
+        addWrappedLore(lore, "Permissao: " + kit.permission);
+        lore.add(ChatColor.GRAY + "Nivel atual: " + level + "/5");
+        lore.add(ChatColor.GRAY + "Beneficio: " + (level == 0 ? "nenhum" : kit.value(level)));
+        if (level < 5) lore.add(ChatColor.GRAY + "Proximo: " + kit.value(level + 1));
+        inventory.setItem(4, menuItem(kit.icon, ChatColor.GREEN + kit.name, lore));
+        inventory.setItem(11, menuItem(Material.NETHER_STAR, ChatColor.GREEN + "Equipar kit",
+            Arrays.asList(ChatColor.GRAY + "Requer aquisicao, modo e permissao.")));
+        inventory.setItem(15, menuItem(Material.EMERALD,
+            ChatColor.YELLOW + (level == 0 ? "Comprar kit" : "Evoluir kit"),
+            Arrays.asList(ChatColor.GRAY + "Preco: " + (level >= 5 ? "nivel maximo"
+                : kit.price(level + 1) + " moedas"),
+                ChatColor.RED + "Aguardando provedor de moedas.")));
+        inventory.setItem(22, menuItem(Material.ARROW, ChatColor.GRAY + "Voltar",
+            Arrays.asList(ChatColor.GRAY + "Lista de kits")));
+        player.openInventory(inventory);
+    }
+
     private void openEvolvedAbilities(Player player) {
         GameMatch match = matches.getMatchForPlayer(player.getUniqueId());
         if (!waiting(match)) return;
         AbilityView holder = new AbilityView(match.getId());
         Inventory inventory = Bukkit.createInventory(holder, 27, ChatColor.DARK_GRAY + "Habilidades");
         holder.inventory = inventory;
+        String selected = selected(player.getUniqueId(), match, ScopedProgress.Kind.ABILITY);
         inventory.setItem(0, menuItem(Material.BARRIER, ChatColor.GRAY + "Nenhuma habilidade",
-            Arrays.asList(ChatColor.YELLOW + ("none".equals(selectedAbility(player.getUniqueId()))
+            Arrays.asList(ChatColor.YELLOW + ("none".equals(selected)
                 ? "Equipada" : "Clique para desequipar"))));
         holder.ids.put(0, "none");
         int slot = 1;
         for (AbilityCatalog.Definition definition : evolved.abilities.values()) {
-            int level = stats.getAbilityLevel(player.getUniqueId(), definition.id);
+            int level = ownedLevel(player.getUniqueId(), match, ScopedProgress.Kind.ABILITY,
+                definition.id);
             List<String> lore = new ArrayList<String>();
-            lore.add(ChatColor.GRAY + ChatColor.stripColor(
+            addWrappedLore(lore, ChatColor.stripColor(
                 ChatColor.translateAlternateColorCodes('&', definition.description)));
             lore.add(ChatColor.GRAY + "Categoria: " + definition.category);
+            lore.add(ChatColor.GRAY + "Modo: " + MatchMode.of(match.getArena()));
+            lore.add(ChatColor.GRAY + "Compra: " + definition.scope);
             lore.add(ChatColor.GRAY + "Nivel: " + level + "/" + definition.maxLevel);
-            lore.add(ChatColor.GRAY + "Atual: " + (level == 0 ? "nao desbloqueada"
+            addWrappedLore(lore, "Atual: " + (level == 0 ? "nao desbloqueada"
                 : effectSummary(definition, level)));
-        if (level < definition.maxLevel)
-            lore.add(ChatColor.GRAY + "Proximo: " + effectSummary(definition, level + 1));
-            lore.add(ChatColor.GRAY + "Permissao: " + definition.permission);
+            if (level < definition.maxLevel)
+                addWrappedLore(lore, "Proximo: " + effectSummary(definition, level + 1));
+            addWrappedLore(lore, "Permissao: " + definition.permission);
             lore.add(ChatColor.GRAY + "Preco: " + (level >= definition.maxLevel ? "nivel maximo"
                 : (level == 0 ? definition.unlockPrice : definition.priceFor(level + 1)) + " moedas"));
-            lore.add((definition.id.equals(selectedAbility(player.getUniqueId()))
-                ? ChatColor.GOLD : !definition.enabled ? ChatColor.RED
-                : !player.hasPermission(definition.permission) ? ChatColor.RED
+            boolean modeAllowed = definition.modes.contains(MatchMode.of(match.getArena()))
+                && match.getArena().getGameplayRules().allowsAbility(definition.id);
+            lore.add((!definition.enabled || !modeAllowed
+                || !player.hasPermission(definition.permission) ? ChatColor.RED
                 : level == 0 ? ChatColor.YELLOW : ChatColor.GREEN)
-                + (definition.id.equals(selectedAbility(player.getUniqueId())) ? "Equipada"
-                    : !definition.enabled ? "Desativada"
+                + (!definition.enabled || !modeAllowed ? "Indisponivel no modo"
                     : !player.hasPermission(definition.permission) ? "Sem permissao"
-                    : level == 0 ? "Compra indisponivel: sem provedor de moedas" : "Desbloqueada"));
+                    : level == 0 ? "Compra sem provedor"
+                    : definition.id.equals(selected) ? "Equipada" : "Desbloqueada"));
             lore.add(ChatColor.AQUA + "Clique para detalhes");
             inventory.setItem(slot, menuItem(definition.icon,
                 ChatColor.translateAlternateColorCodes('&', definition.name), lore));
@@ -805,18 +1054,22 @@ public final class GameplayService implements ManagedService, Listener {
     private void openAbilityDetail(Player player, GameMatch match, String id) {
         AbilityCatalog.Definition definition = evolved.abilities.get(id);
         if (definition == null) return;
-        int level = stats.getAbilityLevel(player.getUniqueId(), id);
+        int level = ownedLevel(player.getUniqueId(), match, ScopedProgress.Kind.ABILITY, id);
         AbilityDetailView holder = new AbilityDetailView(match.getId(), id);
         Inventory inventory = Bukkit.createInventory(holder, 27, ChatColor.DARK_GRAY + "Habilidade: " + id);
         holder.inventory = inventory;
         List<String> lore = new ArrayList<String>();
-        lore.add(ChatColor.GRAY + definition.description);
+        addWrappedLore(lore, ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&',
+            definition.description)));
         lore.add(ChatColor.GRAY + "Categoria: " + definition.category);
+        lore.add(ChatColor.GRAY + "Modo: " + MatchMode.of(match.getArena()));
+        lore.add(ChatColor.GRAY + "Compra: " + definition.scope);
         lore.add(ChatColor.GRAY + "Nivel atual: " + level + "/" + definition.maxLevel);
-        lore.add(ChatColor.GRAY + "Efeito atual: " + (level == 0 ? "nenhum" : effectSummary(definition, level)));
+        addWrappedLore(lore, "Efeito atual: " + (level == 0 ? "nenhum"
+            : effectSummary(definition, level)));
         if (level < definition.maxLevel)
-            lore.add(ChatColor.GRAY + "Proximo efeito: " + effectSummary(definition, level + 1));
-        lore.add(ChatColor.GRAY + "Permissao: " + definition.permission);
+            addWrappedLore(lore, "Proximo efeito: " + effectSummary(definition, level + 1));
+        addWrappedLore(lore, "Permissao: " + definition.permission);
         lore.add(ChatColor.GRAY + "Cooldown: " + definition.cooldownSeconds + "s");
         inventory.setItem(4, menuItem(definition.icon,
             ChatColor.translateAlternateColorCodes('&', definition.name), lore));
@@ -839,9 +1092,56 @@ public final class GameplayService implements ManagedService, Listener {
         return String.join(", ", values);
     }
 
+    /** Minecraft 1.8 tooltips do not wrap long lore and can escape compact screens. */
+    private static void addWrappedLore(List<String> lore, String text) {
+        String remaining = text == null ? "" : text.trim();
+        while (remaining.length() > 25) {
+            int split = remaining.lastIndexOf(' ', 25);
+            if (split < 10) split = 25;
+            lore.add(ChatColor.GRAY + remaining.substring(0, split).trim());
+            remaining = remaining.substring(split).trim();
+        }
+        if (!remaining.isEmpty()) lore.add(ChatColor.GRAY + remaining);
+    }
+
     @EventHandler public void onInteract(PlayerInteractEvent event) {
         Player player = event.getPlayer();
         GameMatch match = matches.getMatchForPlayer(player.getUniqueId());
+        if (eligibleInGame(player, match) && (event.getAction() == Action.RIGHT_CLICK_AIR
+                || event.getAction() == Action.RIGHT_CLICK_BLOCK)) {
+            MatchChoices choices = active.get(match.getId());
+            ItemStack held = event.getItem();
+            if (choices != null && "explorer".equals(choices.kits.get(player.getUniqueId()))
+                    && marked(held, explorerMarker(match))) {
+                event.setCancelled(true);
+                KitCatalog.Definition kit = officialKits.kits.get("explorer");
+                if (!officialAvailable(player, match, kit,
+                        choices.kitLevels.getOrDefault(player.getUniqueId(), 0))) return;
+                if (!emeraldCompassTarget.add(player.getUniqueId()))
+                    emeraldCompassTarget.remove(player.getUniqueId());
+                compassNextUpdate.remove(player.getUniqueId());
+                updateExplorerCompass(player, match, choices);
+                player.sendMessage(ChatColor.AQUA + "Bussola: "
+                    + (emeraldCompassTarget.contains(player.getUniqueId()) ? "Esmeralda" : "Diamante"));
+                return;
+            }
+            if (choices != null && "pyromancer".equals(choices.kits.get(player.getUniqueId()))
+                    && marked(held, pyroMarker(match))) {
+                event.setCancelled(true);
+                KitCatalog.Definition kit = officialKits.kits.get("pyromancer");
+                if (!officialAvailable(player, match, kit,
+                        choices.kitLevels.getOrDefault(player.getUniqueId(), 0))) return;
+                SmallFireball projectile = player.launchProjectile(SmallFireball.class);
+                projectile.setIsIncendiary(false);
+                projectile.setYield(0.0F);
+                projectile.setMetadata("sbw-kit-pyro",
+                    new FixedMetadataValue(plugin, match.getId().toString()));
+                if (held.getAmount() <= 1) player.setItemInHand(null);
+                else { held.setAmount(held.getAmount() - 1); player.setItemInHand(held); }
+                player.updateInventory();
+                return;
+            }
+        }
         if (!waiting(match)) return;
         ItemStack held = event.getItem();
         boolean kit = isSelector(held, false), ability = isSelector(held, true);
@@ -850,6 +1150,32 @@ public final class GameplayService implements ManagedService, Listener {
         if (event.getAction() == Action.RIGHT_CLICK_AIR || event.getAction() == Action.RIGHT_CLICK_BLOCK) {
             if (kit) openKits(player); else openAbilities(player);
         }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onPyromancerHit(EntityDamageByEntityEvent event) {
+        if (!(event.getDamager() instanceof SmallFireball)
+                || !(event.getEntity() instanceof Player)) return;
+        SmallFireball projectile = (SmallFireball) event.getDamager();
+        if (!projectile.hasMetadata("sbw-kit-pyro")
+                || !(projectile.getShooter() instanceof Player)) return;
+        Player attacker = (Player) projectile.getShooter();
+        Player victim = (Player) event.getEntity();
+        GameMatch match = matches.getMatchForPlayer(attacker.getUniqueId());
+        if (!eligibleInGame(attacker, match) || match != matches.getMatchForPlayer(victim.getUniqueId())
+                || !eligibleInGame(victim, match)
+                || !projectile.getMetadata("sbw-kit-pyro").stream().anyMatch(value ->
+                    value.getOwningPlugin() == plugin && value.asString().equals(match.getId().toString())))
+            return;
+        GameParticipant own = match.getParticipant(attacker.getUniqueId());
+        GameParticipant other = match.getParticipant(victim.getUniqueId());
+        if (own.getTeamId().equals(other.getTeamId())) return;
+        MatchChoices choices = active.get(match.getId());
+        if (choices == null || !"pyromancer".equals(choices.kits.get(attacker.getUniqueId()))) return;
+        KitCatalog.Definition kit = officialKits.kits.get("pyromancer");
+        if (!officialAvailable(attacker, match, kit,
+                choices.kitLevels.getOrDefault(attacker.getUniqueId(), 0))) return;
+        victim.setFireTicks(Math.max(victim.getFireTicks(), kit.fireTicks));
     }
     @EventHandler public void onDrop(PlayerDropItemEvent event) {
         GameMatch match = matches.getMatchForPlayer(event.getPlayer().getUniqueId());
@@ -865,6 +1191,48 @@ public final class GameplayService implements ManagedService, Listener {
         if (!(event.getWhoClicked() instanceof Player)) return;
         Player player = (Player) event.getWhoClicked();
         Inventory top = event.getView().getTopInventory();
+        if (top.getHolder() instanceof KitView) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() != top) return;
+            KitView view = (KitView) top.getHolder();
+            GameMatch match = matches.getMatchForPlayer(player.getUniqueId());
+            if (!waiting(match) || !match.getId().equals(view.matchId)) return;
+            String id = view.ids.get(event.getRawSlot());
+            if ("default".equals(id)) select(player, match, false, id);
+            else if (id != null) openKitDetail(player, match, id);
+            return;
+        }
+        if (top.getHolder() instanceof KitDetailView) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() != top) return;
+            KitDetailView view = (KitDetailView) top.getHolder();
+            GameMatch match = matches.getMatchForPlayer(player.getUniqueId());
+            if (!waiting(match) || !match.getId().equals(view.matchId)) return;
+            if (event.getRawSlot() == 22) { openKits(player); return; }
+            KitCatalog.Definition kit = officialKits.kits.get(view.kitId);
+            if (kit == null) return;
+            int level = ownedLevel(player.getUniqueId(), match, ScopedProgress.Kind.KIT, kit.id);
+            if (event.getRawSlot() == 11) {
+                if (!officialAvailable(player, match, kit, level)) {
+                    say(player, "Kit bloqueado, indisponivel no modo ou sem permissao.",
+                        "Kit locked, unavailable in this mode or missing permission.",
+                        "Kit bloqueado, no disponible o sin permiso.");
+                    return;
+                }
+                select(player, match, false, kit.id);
+            } else if (event.getRawSlot() == 15) {
+                if (!kit.enabled || !kit.modes.contains(MatchMode.of(match.getArena()))
+                        || !match.getArena().getGameplayRules().allowsKit(kit.id))
+                    player.sendMessage(ChatColor.RED + "Kit indisponivel nesta modalidade.");
+                else if (!player.hasPermission(kit.permission))
+                    player.sendMessage(ChatColor.RED + "Sem permissao: " + kit.permission);
+                else if (level >= 5)
+                    player.sendMessage(ChatColor.YELLOW + "Nivel maximo alcancado.");
+                else player.sendMessage(ChatColor.RED
+                    + "Compras indisponiveis: falta provedor de moedas da rede.");
+            }
+            return;
+        }
         if (top.getHolder() instanceof AbilityView) {
             event.setCancelled(true);
             if (event.getClickedInventory() != top) return;
@@ -886,7 +1254,8 @@ public final class GameplayService implements ManagedService, Listener {
             if (event.getRawSlot() == 22) { openEvolvedAbilities(player); return; }
             AbilityCatalog.Definition definition = evolved.abilities.get(view.abilityId);
             if (definition == null) return;
-            int level = stats.getAbilityLevel(player.getUniqueId(), definition.id);
+            int level = ownedLevel(player.getUniqueId(), match, ScopedProgress.Kind.ABILITY,
+                definition.id);
             if (event.getRawSlot() == 11) {
                 if (!evolvedAvailable(player, match, definition, level)) {
                     say(player, "Habilidade bloqueada, desativada ou sem permissao.",
@@ -939,6 +1308,8 @@ public final class GameplayService implements ManagedService, Listener {
     @EventHandler public void onDrag(InventoryDragEvent event) {
         if (!(event.getWhoClicked() instanceof Player)) return;
         if (event.getView().getTopInventory().getHolder() instanceof ChoiceView
+                || event.getView().getTopInventory().getHolder() instanceof KitView
+                || event.getView().getTopInventory().getHolder() instanceof KitDetailView
                 || event.getView().getTopInventory().getHolder() instanceof AbilityView
                 || event.getView().getTopInventory().getHolder() instanceof AbilityDetailView) {
             event.setCancelled(true); return;
@@ -947,19 +1318,24 @@ public final class GameplayService implements ManagedService, Listener {
         if (waiting(matches.getMatchForPlayer(player.getUniqueId()))) event.setCancelled(true);
     }
     private void select(Player player, GameMatch match, boolean ability, String id) {
-        try {
-            stats.setGameplaySelection(player, ability ? PreferencesOutbox.Kind.ABILITY
-                : PreferencesOutbox.Kind.KIT, id);
-            say(player, "Selecao salva: " + id, "Selection saved: " + id,
-                "Seleccion guardada: " + id);
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (player.isOnline() && waiting(matches.getMatchForPlayer(player.getUniqueId())))
-                    open(player, ability);
-            });
-        } catch (IOException | IllegalStateException invalid) {
-            say(player, "Nao foi possivel salvar a selecao.", "Could not save the selection.",
-                "No se pudo guardar la seleccion.");
-        }
+        String mode = MatchMode.of(match.getArena());
+        stats.selectScoped(player.getUniqueId(), ability ? ScopedProgress.Kind.ABILITY
+            : ScopedProgress.Kind.KIT, mode, id, saved -> {
+            if (!player.isOnline()) return;
+            if (!saved) {
+                say(player, "Nao foi possivel salvar a selecao no MySQL.",
+                    "Could not save the selection in MySQL.",
+                    "No se pudo guardar la seleccion en MySQL.");
+                return;
+            }
+            say(player, "Selecao salva para " + mode + ": " + id,
+                "Selection saved for " + mode + ": " + id,
+                "Seleccion guardada para " + mode + ": " + id);
+            GameMatch current = matches.getMatchForPlayer(player.getUniqueId());
+            if (waiting(current) && current.getId().equals(match.getId())) {
+                if (ability) openAbilities(player); else openKits(player);
+            }
+        });
     }
     private void installSelectors(Player player) {
         removeSelectors(player);
@@ -977,6 +1353,8 @@ public final class GameplayService implements ManagedService, Listener {
     private void removeSelectors(Player player) {
         if (player.getOpenInventory() != null
                 && (player.getOpenInventory().getTopInventory().getHolder() instanceof ChoiceView
+                    || player.getOpenInventory().getTopInventory().getHolder() instanceof KitView
+                    || player.getOpenInventory().getTopInventory().getHolder() instanceof KitDetailView
                     || player.getOpenInventory().getTopInventory().getHolder() instanceof AbilityView
                     || player.getOpenInventory().getTopInventory().getHolder() instanceof AbilityDetailView))
             player.closeInventory();
@@ -1017,6 +1395,8 @@ public final class GameplayService implements ManagedService, Listener {
 
     private static final class MatchChoices {
         final Map<UUID, String> kits = new HashMap<UUID, String>();
+        final Map<UUID, Integer> kitLevels = new HashMap<UUID, Integer>();
+        final Set<UUID> kitDelivered = new HashSet<UUID>();
         final Map<UUID, AbilityState> abilities = new HashMap<UUID, AbilityState>();
     }
     private static final class AbilityState {
@@ -1049,6 +1429,20 @@ public final class GameplayService implements ManagedService, Listener {
         final Map<Integer, String> ids = new HashMap<Integer, String>();
         Inventory inventory;
         AbilityView(UUID matchId) { this.matchId = matchId; }
+        @Override public Inventory getInventory() { return inventory; }
+    }
+    private static final class KitView implements InventoryHolder {
+        final UUID matchId;
+        final Map<Integer, String> ids = new HashMap<Integer, String>();
+        Inventory inventory;
+        KitView(UUID matchId) { this.matchId = matchId; }
+        @Override public Inventory getInventory() { return inventory; }
+    }
+    private static final class KitDetailView implements InventoryHolder {
+        final UUID matchId;
+        final String kitId;
+        Inventory inventory;
+        KitDetailView(UUID matchId, String kitId) { this.matchId = matchId; this.kitId = kitId; }
         @Override public Inventory getInventory() { return inventory; }
     }
     private static final class AbilityDetailView implements InventoryHolder {

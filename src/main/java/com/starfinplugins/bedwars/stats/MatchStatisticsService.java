@@ -9,6 +9,7 @@ import com.starfinplugins.bedwars.domain.match.ParticipantState;
 import com.starfinplugins.bedwars.event.MatchCombatDeathEvent;
 import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
 import com.starfinplugins.bedwars.event.PlayerProgressionEvent;
+import com.starfinplugins.bedwars.gameplay.ScopedProgress;
 import com.starfinplugins.bedwars.service.ManagedService;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -48,6 +49,9 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     private final Map<UUID, Set<String>> unlocksCache = new ConcurrentHashMap<UUID, Set<String>>();
     private final Map<UUID, Map<String, Integer>> abilityLevelsCache =
         new ConcurrentHashMap<UUID, Map<String, Integer>>();
+    private final Map<UUID, ScopedProgress> scopedCache =
+        new ConcurrentHashMap<UUID, ScopedProgress>();
+    private final Map<UUID, Long> scopedRevisions = new ConcurrentHashMap<UUID, Long>();
     private final Map<UUID, Long> rankPositionCache = new ConcurrentHashMap<UUID, Long>();
     private final Map<UUID, Long> lastMatchXpCache = new ConcurrentHashMap<UUID, Long>();
     private final AtomicInteger pendingRankings = new AtomicInteger();
@@ -104,6 +108,7 @@ public final class MatchStatisticsService implements ManagedService, Listener {
                         refreshProfile(id);
                         refreshPreferences(id, null);
                         refreshAbilityLevels(id);
+                        refreshScopedProgress(id);
                         refreshRewards(id);
                         refreshRankPosition(id);
                         refreshLastMatchXp(id);
@@ -124,6 +129,8 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         preferencesCache.clear();
         unlocksCache.clear();
         abilityLevelsCache.clear();
+        scopedCache.clear();
+        scopedRevisions.clear();
         rankPositionCache.clear();
         lastMatchXpCache.clear();
         preferenceRevisions.clear();
@@ -162,6 +169,89 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     public int getAbilityLevel(UUID uuid, String abilityId) {
         return getAbilityLevels(uuid).getOrDefault(abilityId, 0);
     }
+    public ScopedProgress getScopedProgress(UUID uuid) {
+        return scopedCache.getOrDefault(uuid, ScopedProgress.EMPTY);
+    }
+    public int getLevel(UUID uuid, ScopedProgress.Kind kind, String id, String mode) {
+        return getScopedProgress(uuid).level(kind, id, mode);
+    }
+    public String getSelection(UUID uuid, ScopedProgress.Kind kind, String mode) {
+        return getScopedProgress(uuid).selection(kind, mode,
+            kind == ScopedProgress.Kind.KIT ? getSelectedKit(uuid) : getSelectedAbility(uuid));
+    }
+    public void grantScoped(UUID uuid, ScopedProgress.Kind kind, String id, String scope,
+                            int level, java.util.function.IntConsumer completed) {
+        if (!isEnabled() || worker == null) { completed.accept(0); return; }
+        worker.execute(() -> {
+            int actual = 0;
+            try {
+                ensureOpen();
+                actual = repository.grantScoped(uuid, kind, id, scope, level);
+            } catch (Exception error) { logDatabaseFailure(error); }
+            final int confirmed = actual;
+            if (!plugin.isEnabled()) return;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (confirmed > 0 && Bukkit.getPlayer(uuid) != null) {
+                    scopedCache.put(uuid, getScopedProgress(uuid).withLevel(kind, id, scope, confirmed));
+                    scopedRevisions.put(uuid, revisionCounter.incrementAndGet());
+                }
+                completed.accept(confirmed);
+            });
+        });
+    }
+    public void selectScoped(UUID uuid, ScopedProgress.Kind kind, String mode, String id,
+                             java.util.function.Consumer<Boolean> completed) {
+        if (!isEnabled() || worker == null) { completed.accept(false); return; }
+        worker.execute(() -> {
+            boolean saved = false;
+            try {
+                ensureOpen();
+                repository.selectScoped(uuid, kind, mode, id);
+                saved = true;
+            } catch (Exception error) { logDatabaseFailure(error); }
+            final boolean confirmed = saved;
+            if (!plugin.isEnabled()) return;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (confirmed && Bukkit.getPlayer(uuid) != null) {
+                    scopedCache.put(uuid, getScopedProgress(uuid).withSelection(kind, mode, id));
+                    scopedRevisions.put(uuid, revisionCounter.incrementAndGet());
+                }
+                completed.accept(confirmed);
+            });
+        });
+    }
+
+    public void migrateScope(UUID uuid, ScopedProgress.Kind kind, String id, String target,
+                             String operator, boolean apply,
+                             java.util.function.Consumer<String> completed) {
+        if (!isEnabled() || worker == null) {
+            completed.accept("MySQL indisponivel.");
+            return;
+        }
+        worker.execute(() -> {
+            String report;
+            ScopedProgress refreshed = null;
+            try {
+                ensureOpen();
+                report = repository.migrateScope(uuid, kind, id, target, operator, apply);
+                if (apply && report.startsWith("APLICADA:"))
+                    refreshed = repository.loadScopedProgress(uuid);
+            } catch (Exception error) {
+                logDatabaseFailure(error);
+                report = "Migracao falhou; verifique o log e nenhuma mudanca foi confirmada.";
+            }
+            final String outcome = report;
+            final ScopedProgress snapshot = refreshed;
+            if (!plugin.isEnabled()) return;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (snapshot != null && Bukkit.getPlayer(uuid) != null) {
+                    scopedCache.put(uuid, snapshot);
+                    scopedRevisions.put(uuid, revisionCounter.incrementAndGet());
+                }
+                completed.accept(outcome);
+            });
+        });
+    }
 
     /** An administrative grant is confirmed in MySQL before the cached level is published. */
     public void grantAbility(UUID uuid, String abilityId, int level,
@@ -180,6 +270,9 @@ public final class MatchStatisticsService implements ManagedService, Listener {
                     Map<String, Integer> next = new HashMap<String, Integer>(getAbilityLevels(uuid));
                     next.put(abilityId, confirmed);
                     abilityLevelsCache.put(uuid, Collections.unmodifiableMap(next));
+                    scopedCache.put(uuid, getScopedProgress(uuid).withLevel(
+                        ScopedProgress.Kind.ABILITY, abilityId, "GLOBAL", confirmed));
+                    scopedRevisions.put(uuid, revisionCounter.incrementAndGet());
                 }
                 completed.accept(confirmed);
             });
@@ -273,6 +366,8 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         preferencesCache.remove(id);
         unlocksCache.remove(id);
         abilityLevelsCache.remove(id);
+        scopedCache.remove(id);
+        scopedRevisions.put(id, revisionCounter.incrementAndGet());
         rankPositionCache.remove(id);
         lastMatchXpCache.remove(id);
         preferenceRevisions.put(id, revisionCounter.incrementAndGet());
@@ -299,6 +394,7 @@ public final class MatchStatisticsService implements ManagedService, Listener {
                 flushPreferencesOutbox();
                 refreshPreferences(id, legacy);
                 refreshAbilityLevels(id);
+                refreshScopedProgress(id);
             } catch (Exception error) { logDatabaseFailure(error); }
         });
     }
@@ -614,6 +710,19 @@ public final class MatchStatisticsService implements ManagedService, Listener {
             if (!plugin.isEnabled()) return;
             Bukkit.getScheduler().runTask(plugin, () -> {
                 if (Bukkit.getPlayer(id) != null) abilityLevelsCache.put(id, loaded);
+            });
+        } catch (Exception error) { logDatabaseFailure(error); }
+    }
+    private void refreshScopedProgress(UUID id) {
+        long expected = scopedRevisions.getOrDefault(id, 0L);
+        try {
+            ensureOpen();
+            ScopedProgress loaded = repository.loadScopedProgress(id);
+            if (!plugin.isEnabled()) return;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (Bukkit.getPlayer(id) != null
+                        && scopedRevisions.getOrDefault(id, 0L) == expected)
+                    scopedCache.put(id, loaded);
             });
         } catch (Exception error) { logDatabaseFailure(error); }
     }

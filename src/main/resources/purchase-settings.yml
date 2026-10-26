@@ -1,0 +1,8 @@
+purchase-settings:
+  kits:
+    default-scope: PER_MODE
+  abilities:
+    default-scope: PER_MODE
+  # Alias externos: SOLO, DOUBLES, TRIOS, QUADS, TEAMS.
+  # IDs internos mantidos: solo, duo, trio, squad, custom.
+  modes: [SOLO, DOUBLES, TRIOS, QUADS, TEAMS]

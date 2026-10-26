@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.UUID;
+import com.starfinplugins.bedwars.gameplay.ScopedProgress;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -42,9 +43,15 @@ public class Phase2MySqlIntegrationTest {
         StatsSettings settings = new StatsSettings(yml);
         String url = "jdbc:mysql://" + host + ":" + port + "/" + database + "?sslMode=REQUIRED";
         UUID player = UUID.randomUUID();
+        UUID legacyAbilityPlayer = UUID.randomUUID();
         UUID oldMatch = UUID.randomUUID();
         try (Connection connection = DriverManager.getConnection(url, user, password);
              Statement old = connection.createStatement()) {
+            old.execute("DROP TABLE IF EXISTS sbw_scope_migration_history");
+            old.execute("DROP TABLE IF EXISTS sbw_schema_migrations");
+            old.execute("DROP TABLE IF EXISTS sbw_mode_selections");
+            old.execute("DROP TABLE IF EXISTS sbw_progression_entitlements");
+            old.execute("DROP TABLE IF EXISTS sbw_ability_levels");
             old.execute("DROP TABLE IF EXISTS sbw_reward_unlocks");
             old.execute("DROP TABLE IF EXISTS sbw_player_preferences");
             old.execute("DROP TABLE IF EXISTS sbw_match_results");
@@ -58,6 +65,11 @@ public class Phase2MySqlIntegrationTest {
                 + "created_at BIGINT,PRIMARY KEY(match_id,player_uuid))");
             old.execute("CREATE TABLE sbw_player_preferences (uuid CHAR(36) PRIMARY KEY,"
                 + "language VARCHAR(5) DEFAULT 'pt_BR',quick_buy TEXT,updated_at BIGINT DEFAULT 0)");
+            old.execute("CREATE TABLE sbw_ability_levels (player_uuid CHAR(36),ability_id VARCHAR(32),"
+                + "level TINYINT UNSIGNED,unlocked TINYINT(1),acquired_at BIGINT,updated_at BIGINT,"
+                + "PRIMARY KEY(player_uuid,ability_id))");
+            old.execute("INSERT INTO sbw_ability_levels VALUES ('" + legacyAbilityPlayer
+                + "','respawn_boost',3,1,1,1)");
             old.execute("INSERT INTO sbw_profiles (uuid,last_name,games,wins,total_xp) VALUES ('"
                 + player + "','Legacy',1,1,50)");
             old.execute("INSERT INTO sbw_match_results"
@@ -74,6 +86,38 @@ public class Phase2MySqlIntegrationTest {
              MySqlStatsRepository second = new MySqlStatsRepository()) {
             first.open(settings);
             second.open(settings);
+            assertEquals(3, first.loadScopedProgress(legacyAbilityPlayer)
+                .level(ScopedProgress.Kind.ABILITY, "respawn_boost", "solo"));
+            assertEquals(2, first.grantScoped(player, ScopedProgress.Kind.KIT, "builder", "solo", 2));
+            assertEquals(4, second.grantScoped(player, ScopedProgress.Kind.KIT, "builder", "duo", 4));
+            assertEquals(2, second.loadScopedProgress(player)
+                .level(ScopedProgress.Kind.KIT, "builder", "solo"));
+            assertEquals(4, first.loadScopedProgress(player)
+                .level(ScopedProgress.Kind.KIT, "builder", "duo"));
+            assertEquals(5, first.grantScoped(player, ScopedProgress.Kind.KIT, "builder", "GLOBAL", 5));
+            assertEquals(5, second.loadScopedProgress(player)
+                .level(ScopedProgress.Kind.KIT, "builder", "trio"));
+            assertTrue(first.migrateScope(player, ScopedProgress.Kind.KIT, "builder",
+                "PER_MODE", "Console", false).startsWith("SIMULACAO:"));
+            assertEquals(0, second.loadScopedProgress(player).levels.entrySet().stream()
+                .filter(row -> row.getKey().startsWith("KIT|builder|")
+                    && !row.getKey().endsWith("|GLOBAL") && row.getValue() == 5).count());
+            assertTrue(first.migrateScope(player, ScopedProgress.Kind.KIT, "builder",
+                "PER_MODE", "Console", true).startsWith("APLICADA:"));
+            for (String mode : MatchMode.STANDARD) assertEquals(Integer.valueOf(5),
+                second.loadScopedProgress(player).levels.get("KIT|builder|" + mode));
+            assertEquals(2, first.grantScoped(player, ScopedProgress.Kind.KIT, "miner", "solo", 2));
+            assertEquals(4, second.grantScoped(player, ScopedProgress.Kind.KIT, "miner", "duo", 4));
+            assertTrue(first.migrateScope(player, ScopedProgress.Kind.KIT, "miner",
+                "GLOBAL", "Console", true).startsWith("APLICADA:"));
+            assertEquals(Integer.valueOf(4), second.loadScopedProgress(player)
+                .levels.get("KIT|miner|GLOBAL"));
+            first.selectScoped(player, ScopedProgress.Kind.KIT, "solo", "builder");
+            second.selectScoped(player, ScopedProgress.Kind.KIT, "duo", "miner");
+            assertEquals("builder", second.loadScopedProgress(player)
+                .selection(ScopedProgress.Kind.KIT, "solo", "default"));
+            assertEquals("miner", first.loadScopedProgress(player)
+                .selection(ScopedProgress.Kind.KIT, "duo", "default"));
             assertTrue(first.loadAbilityLevels(player).isEmpty());
             assertEquals(1, first.grantAbility(player, "respawn_boost", 1));
             assertEquals(Integer.valueOf(1), second.loadAbilityLevels(player).get("respawn_boost"));
