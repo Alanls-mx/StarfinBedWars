@@ -85,6 +85,8 @@ public final class MatchEngineService implements ManagedService, Listener {
     private final Map<String, BukkitTask> spawnOpeningTasks = new HashMap<String, BukkitTask>();
     private final Map<String, Integer> spawnOpeningValues = new HashMap<String, Integer>();
     private final Map<String, Boolean> loading = new HashMap<String, Boolean>();
+    private final Map<String, java.util.LinkedHashSet<UUID>> queuedDuringLoading =
+        new HashMap<String, java.util.LinkedHashSet<UUID>>();
     private final Map<UUID, BukkitTask> respawnTasks = new HashMap<UUID, BukkitTask>();
     private final Map<UUID, Long> fallProtectionUntil = new HashMap<UUID, Long>();
     /** setHealth(0) does not reliably report DamageCause.VOID on Spigot 1.8.8. */
@@ -147,6 +149,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         countdownValues.clear();
         spawnOpeningTasks.clear();
         spawnOpeningValues.clear();
+        queuedDuringLoading.clear();
         respawnTasks.clear();
         fallProtectionUntil.clear();
         forcedVoidDeaths.clear();
@@ -279,6 +282,15 @@ public final class MatchEngineService implements ManagedService, Listener {
             throw new IllegalStateException("Arena temporariamente indisponivel durante o modo de edicao.");
         }
         GameMatch match = byArena.get(arena.getId());
+        if (match == null && isPreparingArena(arena.getId())) {
+            java.util.LinkedHashSet<UUID> queued = queuedDuringLoading.computeIfAbsent(
+                arena.getId(), ignored -> new java.util.LinkedHashSet<UUID>());
+            if (!queued.contains(player.getUniqueId())
+                    && queued.size() + 1 >= arena.getMaximumPlayers())
+                throw new IllegalStateException("A arena esta cheia enquanto prepara o mundo.");
+            queued.add(player.getUniqueId());
+            return;
+        }
         if (!ArenaAvailability.isJoinable(arena, match, false,
                 isPreparingArena(arena.getId()), isOpeningSpawns(arena.getId()))) {
             throw new IllegalStateException("A arena nao aceita novos jogadores neste momento.");
@@ -288,11 +300,13 @@ public final class MatchEngineService implements ManagedService, Listener {
             return;
         }
         loading.put(arena.getId(), true);
+        queuedDuringLoading.remove(arena.getId());
         refreshNetworkCatalog();
         try {
             arenas.getWorlds().createInstance(arena, new ArenaServiceWorldCallback(arena, player));
         } catch (RuntimeException failure) {
             loading.remove(arena.getId());
+            queuedDuringLoading.remove(arena.getId());
             refreshNetworkCatalog();
             throw failure;
         }
@@ -1887,9 +1901,17 @@ public final class MatchEngineService implements ManagedService, Listener {
         @Override
         public void complete(World world, Exception error) {
             loading.remove(arena.getId());
+            java.util.LinkedHashSet<UUID> queued = queuedDuringLoading.remove(arena.getId());
+            java.util.List<Player> candidates = new java.util.ArrayList<Player>();
+            if (firstPlayer.isOnline()) candidates.add(firstPlayer);
+            if (queued != null) for (UUID playerId : queued) {
+                Player next = Bukkit.getPlayer(playerId);
+                if (next != null && next.isOnline()) candidates.add(next);
+            }
             if (error != null || world == null) {
                 String reason = error == null ? "instancia nao carregada" : error.getMessage();
-                firstPlayer.sendMessage("§cFalha ao preparar arena: " + reason);
+                for (Player candidate : candidates)
+                    candidate.sendMessage("§cFalha ao preparar arena: " + reason);
                 plugin.getLogger().warning("Falha ao preparar arena " + arena.getId() + ": " + reason);
                 return;
             }
@@ -1902,7 +1924,7 @@ public final class MatchEngineService implements ManagedService, Listener {
                 }
                 return;
             }
-            if (!firstPlayer.isOnline()) {
+            if (candidates.isEmpty()) {
                 try {
                     arenas.getWorlds().removeInstance(world);
                 } catch (IOException cleanupError) {
@@ -1918,9 +1940,10 @@ public final class MatchEngineService implements ManagedService, Listener {
                 com.starfinplugins.bedwars.arena.ArenaBedWorldValidator.validate(arena, world);
             if (!missingBeds.isEmpty()) {
                 String reason = arenas.join(missingBeds);
-                firstPlayer.sendMessage("§cA arena " + arena.getId()
-                    + " nao pode iniciar: " + reason
-                    + ". Corrija na edicao e publique novamente.");
+                for (Player candidate : candidates)
+                    candidate.sendMessage("§cA arena " + arena.getId()
+                        + " nao pode iniciar: " + reason
+                        + ". Corrija na edicao e publique novamente.");
                 plugin.getLogger().warning("Arena " + arena.getId() + " rejeitada: "
                     + reason + "; template preservado.");
                 try {
@@ -1936,7 +1959,16 @@ public final class MatchEngineService implements ManagedService, Listener {
             matchWorlds.put(match.getId(), world);
             fire(MatchLifecycleEvent.Type.CREATED, match, null, null);
             try {
-                addPlayer(match, firstPlayer);
+                for (Player candidate : candidates) {
+                    if (!candidate.isOnline()) continue;
+                    try { addPlayer(match, candidate); }
+                    catch (RuntimeException joinError) {
+                        candidate.sendMessage("§cNao foi possivel entrar na arena: "
+                            + joinError.getMessage());
+                    }
+                }
+                if (match.getParticipantList().isEmpty())
+                    throw new IllegalStateException("Nenhum jogador permaneceu conectado.");
             } catch (RuntimeException joinError) {
                 byArena.remove(arena.getId());
                 matchWorlds.remove(match.getId());
@@ -1945,7 +1977,9 @@ public final class MatchEngineService implements ManagedService, Listener {
                 } catch (IOException cleanupError) {
                     joinError.addSuppressed(cleanupError);
                 }
-                firstPlayer.sendMessage("§cNao foi possivel entrar na arena: " + joinError.getMessage());
+                for (Player candidate : candidates)
+                    if (candidate.isOnline()) candidate.sendMessage(
+                        "§cNao foi possivel entrar na arena: " + joinError.getMessage());
             }
         }
     }
