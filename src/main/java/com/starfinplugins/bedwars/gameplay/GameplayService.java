@@ -87,6 +87,7 @@ public final class GameplayService implements ManagedService, Listener {
     private AbilityCatalog evolved;
     private KitCatalog officialKits;
     private PurchaseSettings purchases;
+    private ProgressionPurchaseGateway purchaseGateway = ProgressionPurchaseGateway.unavailable();
 
     public GameplayService(StarfinBedWarsPlugin plugin, MatchEngineService matches,
                            MatchStatisticsService stats, MatchEquipmentService equipment) {
@@ -118,6 +119,9 @@ public final class GameplayService implements ManagedService, Listener {
     public AbilityCatalog getAbilityCatalog() { return evolved; }
     public KitCatalog getKitCatalog() { return officialKits; }
     public PurchaseSettings getPurchaseSettings() { return purchases; }
+    public void setPurchaseGateway(ProgressionPurchaseGateway gateway) {
+        purchaseGateway = gateway == null ? ProgressionPurchaseGateway.unavailable() : gateway;
+    }
     public void reload() {
         GameplaySettings nextGameplay = GameplaySettings.load(plugin);
         PurchaseSettings nextPurchases = PurchaseSettings.load(plugin);
@@ -1228,8 +1232,8 @@ public final class GameplayService implements ManagedService, Listener {
                     player.sendMessage(ChatColor.RED + "Sem permissao: " + kit.permission);
                 else if (level >= 5)
                     player.sendMessage(ChatColor.YELLOW + "Nivel maximo alcancado.");
-                else player.sendMessage(ChatColor.RED
-                    + "Compras indisponiveis: falta provedor de moedas da rede.");
+                else attemptPurchase(player, match, ScopedProgress.Kind.KIT, kit.id,
+                    kit.scope, level, kit.price(level + 1), kit.minimumPlayerLevel);
             }
             return;
         }
@@ -1265,16 +1269,22 @@ public final class GameplayService implements ManagedService, Listener {
                 }
                 select(player, match, true, definition.id);
             } else if (event.getRawSlot() == 15) {
-                if (!player.hasPermission(definition.permission)) {
+                if (!definition.enabled
+                        || !definition.modes.contains(MatchMode.of(match.getArena()))
+                        || !match.getArena().getGameplayRules().allowsAbility(definition.id)) {
+                    say(player, "Habilidade indisponivel nesta modalidade.",
+                        "Ability unavailable in this mode.",
+                        "Habilidad no disponible en este modo.");
+                } else if (!player.hasPermission(definition.permission)) {
                     say(player, "Sem permissao para comprar ou melhorar.",
                         "No permission to buy or upgrade.", "Sin permiso para comprar o mejorar.");
                 } else if (level >= definition.maxLevel) {
                     say(player, "Nivel maximo alcancado.", "Maximum level reached.",
                         "Nivel maximo alcanzado.");
                 } else {
-                    say(player, "Compras indisponiveis: a rede ainda nao possui provedor de moedas.",
-                        "Purchases unavailable: no network currency provider is configured.",
-                        "Compras no disponibles: falta el proveedor de monedas.");
+                    attemptPurchase(player, match, ScopedProgress.Kind.ABILITY, definition.id,
+                        definition.scope, level, level == 0 ? definition.unlockPrice
+                            : definition.priceFor(level + 1), definition.minimumPlayerLevel);
                 }
             }
             return;
@@ -1336,6 +1346,36 @@ public final class GameplayService implements ManagedService, Listener {
                 if (ability) openAbilities(player); else openKits(player);
             }
         });
+    }
+    private void attemptPurchase(Player player, GameMatch match, ScopedProgress.Kind kind,
+                                 String id, PurchaseSettings.Scope scope, int currentLevel, int price,
+                                 int minimumPlayerLevel) {
+        StatsProfile profile = stats.getCachedProfile(player.getUniqueId());
+        if (stats.getProgress(profile == null ? 0 : profile.totalXp).level < minimumPlayerLevel) {
+            player.sendMessage(ChatColor.RED + "Seu nivel de perfil e insuficiente.");
+            return;
+        }
+        final UUID playerId = player.getUniqueId();
+        final ProgressionPurchaseGateway.Request request =
+            new ProgressionPurchaseGateway.Request(UUID.randomUUID(), playerId, kind, id,
+                PurchaseSettings.purchaseKey(scope, MatchMode.of(match.getArena())),
+                currentLevel, currentLevel + 1, price);
+        purchaseGateway.purchase(request, outcome -> Bukkit.getScheduler().runTask(plugin, () -> {
+            Player current = Bukkit.getPlayer(playerId);
+            if (current == null) return;
+            if (outcome == ProgressionPurchaseGateway.Result.COMMITTED) {
+                stats.requestScopedRefresh(playerId, refreshed -> current.sendMessage(
+                    refreshed ? ChatColor.GREEN + "Compra confirmada e progresso atualizado."
+                        : ChatColor.YELLOW + "Compra persistida; atualizacao pendente. Reconecte."));
+            } else if (outcome == ProgressionPurchaseGateway.Result.INSUFFICIENT_FUNDS)
+                current.sendMessage(ChatColor.RED + "Moedas insuficientes.");
+            else if (outcome == ProgressionPurchaseGateway.Result.CONFLICT)
+                current.sendMessage(ChatColor.YELLOW + "Nivel alterado na rede. Reabra o menu.");
+            else if (outcome == ProgressionPurchaseGateway.Result.FAILED)
+                current.sendMessage(ChatColor.RED + "Compra falhou sem confirmacao. Tente novamente.");
+            else current.sendMessage(ChatColor.RED
+                + "Compras indisponiveis: falta provedor de moedas da rede.");
+        }));
     }
     private void installSelectors(Player player) {
         removeSelectors(player);

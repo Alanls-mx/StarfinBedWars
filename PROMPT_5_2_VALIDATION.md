@@ -18,13 +18,15 @@
   O nivel efetivo preserva o maior direito entre GLOBAL e o modo, inclusive
   quando o administrador muda um YAML. Selecao e independente por modo.
 - Compras mostram precos e permanecem bloqueadas porque a rede ainda nao
-  possui servico de moedas. Grants administrativos fazem testes sem cobranca.
+  possui servico de moedas. `ProgressionPurchaseGateway` exige ID idempotente,
+  nivel anterior e persistencia antes de confirmar uma compra. O gateway ativo
+  responde `UNAVAILABLE`. Grants administrativos fazem testes sem cobranca.
 
 ## Verificacao executada
 
 | Cenario | Resultado |
 | --- | --- |
-| `mvn -B clean verify` no Java 8 alvo | 232 testes; 0 falhas; 1 teste de MariaDB opcional ignorado na suite geral |
+| `mvn -B clean verify` no Java 8 alvo | 233 testes; 0 falhas; 1 teste de MariaDB opcional ignorado na suite geral |
 | Teste MySQL em MariaDB 11.4 descartavel | Passou: migracao legada, dois repositorios, grants GLOBAL/PER_MODE, selecoes e transicoes de escopo |
 | Inicializacao no Pterodactyl BedWars `f03b4f97` | Plugin habilitou, arena `1` carregou e MySQL compartilhado conectou |
 | Cliente 1.8.8 pelo proxy `127.0.0.1:25577` | Usuario e cliente de teste entraram na arena `1`; rodada iniciou e terminou |

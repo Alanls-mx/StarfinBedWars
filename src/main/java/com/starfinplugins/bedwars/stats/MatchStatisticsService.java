@@ -253,6 +253,27 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         });
     }
 
+    /** Reloads authoritative entitlements after an external atomic currency purchase. */
+    public void requestScopedRefresh(UUID uuid, java.util.function.Consumer<Boolean> completed) {
+        if (!isEnabled() || worker == null) { completed.accept(false); return; }
+        worker.execute(() -> {
+            ScopedProgress refreshed = null;
+            try {
+                ensureOpen();
+                refreshed = repository.loadScopedProgress(uuid);
+            } catch (Exception error) { logDatabaseFailure(error); }
+            final ScopedProgress snapshot = refreshed;
+            if (!plugin.isEnabled()) return;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (snapshot != null && Bukkit.getPlayer(uuid) != null) {
+                    scopedCache.put(uuid, snapshot);
+                    scopedRevisions.put(uuid, revisionCounter.incrementAndGet());
+                }
+                completed.accept(snapshot != null);
+            });
+        });
+    }
+
     /** An administrative grant is confirmed in MySQL before the cached level is published. */
     public void grantAbility(UUID uuid, String abilityId, int level,
                              java.util.function.IntConsumer completed) {

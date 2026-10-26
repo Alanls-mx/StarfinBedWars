@@ -241,6 +241,8 @@ mas compras e evolucoes ficam bloqueadas. Operadores podem testar com
 `/sbw ability grant <jogador-online> <id> [GLOBAL|modo] <1..5>`.
 Esses comandos concedem niveis administrativos e nao simulam pagamentos.
 As aquisicoes antigas de habilidades sao preservadas como GLOBAL.
+`ProgressionPurchaseGateway` define o contrato futuro de cobranca com ID de
+transacao e nivel esperado; a implementacao ativa retorna `UNAVAILABLE`.
 
 Para uma mudanca controlada de escopo, execute primeiro
 `/sbw scope preview <jogador-online> <kit|ability> <id> <GLOBAL|PER_MODE>` e
