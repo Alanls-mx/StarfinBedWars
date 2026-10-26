@@ -18,6 +18,7 @@ import com.starfinplugins.bedwars.service.ManagedService;
 import com.starfinplugins.bedwars.stats.MatchMode;
 import com.starfinplugins.bedwars.stats.MatchStatisticsService;
 import com.starfinplugins.bedwars.stats.StatsProfile;
+import net.milkbowl.vault.economy.Economy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -63,6 +64,7 @@ import org.bukkit.util.Vector;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.craftbukkit.v1_8_R3.entity.CraftPlayer;
 import org.bukkit.metadata.FixedMetadataValue;
+import org.bukkit.plugin.RegisteredServiceProvider;
 
 /** Selection inventory and match-scoped kit/ability lifecycle on the Bukkit thread. */
 public final class GameplayService implements ManagedService, Listener {
@@ -99,11 +101,13 @@ public final class GameplayService implements ManagedService, Listener {
         purchases = PurchaseSettings.load(plugin);
         officialKits = KitCatalog.load(plugin, purchases);
         evolved = AbilityCatalog.load(plugin, purchases.abilityDefault);
+        purchaseGateway = new VaultPurchaseGateway(plugin, stats);
         matches.setRespawnDelayModifier(this::respawnDelayTicks);
         Bukkit.getPluginManager().registerEvents(this, plugin);
         sensingTask = Bukkit.getScheduler().runTaskTimer(plugin, this::senseAndCollect, 20L, 10L);
     }
     @Override public void stop() {
+        purchaseGateway = ProgressionPurchaseGateway.unavailable();
         matches.setRespawnDelayModifier(null);
         if (sensingTask != null) sensingTask.cancel();
         HandlerList.unregisterAll(this);
@@ -121,6 +125,12 @@ public final class GameplayService implements ManagedService, Listener {
     public PurchaseSettings getPurchaseSettings() { return purchases; }
     public void setPurchaseGateway(ProgressionPurchaseGateway gateway) {
         purchaseGateway = gateway == null ? ProgressionPurchaseGateway.unavailable() : gateway;
+    }
+    private boolean economyReady() {
+        RegisteredServiceProvider<Economy> provider =
+            Bukkit.getServicesManager().getRegistration(Economy.class);
+        return stats.isEnabled() && provider != null && provider.getProvider() != null
+            && provider.getProvider().isEnabled();
     }
     public void reload() {
         GameplaySettings nextGameplay = GameplaySettings.load(plugin);
@@ -969,7 +979,8 @@ public final class GameplayService implements ManagedService, Listener {
                 ? "INDISPONIVEL NO MODO"
                 : !player.hasPermission(kit.permission) ? "SEM PERMISSAO"
                 : profileLevel < kit.minimumPlayerLevel ? "BLOQUEADO"
-                : level == 0 ? "DISPONIVEL PARA COMPRA (sem provedor)"
+                : level == 0 ? (economyReady() ? "DISPONIVEL PARA COMPRA"
+                    : "DISPONIVEL PARA COMPRA (sem provedor)")
                 : kit.id.equals(selected) ? "EQUIPADO"
                 : level >= 5 ? "NIVEL MAXIMO" : "ADQUIRIDO";
             addWrappedLore(lore, status);
@@ -1003,7 +1014,8 @@ public final class GameplayService implements ManagedService, Listener {
             ChatColor.YELLOW + (level == 0 ? "Comprar kit" : "Evoluir kit"),
             Arrays.asList(ChatColor.GRAY + "Preco: " + (level >= 5 ? "nivel maximo"
                 : kit.price(level + 1) + " moedas"),
-                ChatColor.RED + "Aguardando provedor de moedas.")));
+                economyReady() ? ChatColor.GREEN + "Clique para comprar via Vault."
+                    : ChatColor.RED + "Aguardando provedor de moedas.")));
         inventory.setItem(22, menuItem(Material.ARROW, ChatColor.GRAY + "Voltar",
             Arrays.asList(ChatColor.GRAY + "Lista de kits")));
         player.openInventory(inventory);
@@ -1045,7 +1057,8 @@ public final class GameplayService implements ManagedService, Listener {
                 : level == 0 ? ChatColor.YELLOW : ChatColor.GREEN)
                 + (!definition.enabled || !modeAllowed ? "Indisponivel no modo"
                     : !player.hasPermission(definition.permission) ? "Sem permissao"
-                    : level == 0 ? "Compra sem provedor"
+                    : level == 0 ? (economyReady() ? "Disponivel para compra"
+                        : "Compra sem provedor")
                     : definition.id.equals(selected) ? "Equipada" : "Desbloqueada"));
             lore.add(ChatColor.AQUA + "Clique para detalhes");
             inventory.setItem(slot, menuItem(definition.icon,
@@ -1083,7 +1096,8 @@ public final class GameplayService implements ManagedService, Listener {
             + (level == 0 ? "Comprar habilidade" : "Melhorar habilidade"),
             Arrays.asList(ChatColor.GRAY + "Preco: " + (level >= definition.maxLevel ? "nivel maximo"
                 : (level == 0 ? definition.unlockPrice : definition.priceFor(level + 1)) + " moedas"),
-                ChatColor.RED + "Aguardando provedor de moedas.")));
+                economyReady() ? ChatColor.GREEN + "Clique para comprar via Vault."
+                    : ChatColor.RED + "Aguardando provedor de moedas.")));
         inventory.setItem(22, menuItem(Material.ARROW, ChatColor.GRAY + "Voltar",
             Arrays.asList(ChatColor.GRAY + "Lista de habilidades")));
         player.openInventory(inventory);
@@ -1359,20 +1373,28 @@ public final class GameplayService implements ManagedService, Listener {
         final ProgressionPurchaseGateway.Request request =
             new ProgressionPurchaseGateway.Request(UUID.randomUUID(), playerId, kind, id,
                 PurchaseSettings.purchaseKey(scope, MatchMode.of(match.getArena())),
+                MatchMode.of(match.getArena()),
                 currentLevel, currentLevel + 1, price);
         purchaseGateway.purchase(request, outcome -> Bukkit.getScheduler().runTask(plugin, () -> {
             Player current = Bukkit.getPlayer(playerId);
             if (current == null) return;
             if (outcome == ProgressionPurchaseGateway.Result.COMMITTED) {
-                stats.requestScopedRefresh(playerId, refreshed -> current.sendMessage(
-                    refreshed ? ChatColor.GREEN + "Compra confirmada e progresso atualizado."
-                        : ChatColor.YELLOW + "Compra persistida; atualizacao pendente. Reconecte."));
+                stats.requestScopedRefresh(playerId, refreshed -> {
+                    InventoryHolder holder = current.getOpenInventory().getTopInventory().getHolder();
+                    if (holder instanceof KitDetailView || holder instanceof AbilityDetailView)
+                        current.closeInventory();
+                    current.sendMessage(refreshed
+                        ? ChatColor.GREEN + "Compra confirmada e progresso atualizado."
+                        : ChatColor.YELLOW + "Compra persistida; atualizacao pendente. Reconecte.");
+                });
             } else if (outcome == ProgressionPurchaseGateway.Result.INSUFFICIENT_FUNDS)
                 current.sendMessage(ChatColor.RED + "Moedas insuficientes.");
             else if (outcome == ProgressionPurchaseGateway.Result.CONFLICT)
                 current.sendMessage(ChatColor.YELLOW + "Nivel alterado na rede. Reabra o menu.");
             else if (outcome == ProgressionPurchaseGateway.Result.FAILED)
                 current.sendMessage(ChatColor.RED + "Compra falhou sem confirmacao. Tente novamente.");
+            else if (outcome == ProgressionPurchaseGateway.Result.RECONCILIATION_REQUIRED)
+                current.sendMessage(ChatColor.RED + "Compra pendente de verificacao. Informe a equipe; nao tente comprar de novo.");
             else current.sendMessage(ChatColor.RED
                 + "Compras indisponiveis: falta provedor de moedas da rede.");
         }));

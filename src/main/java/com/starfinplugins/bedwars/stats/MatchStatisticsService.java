@@ -10,6 +10,7 @@ import com.starfinplugins.bedwars.event.MatchCombatDeathEvent;
 import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
 import com.starfinplugins.bedwars.event.PlayerProgressionEvent;
 import com.starfinplugins.bedwars.gameplay.ScopedProgress;
+import com.starfinplugins.bedwars.gameplay.ProgressionPurchaseGateway;
 import com.starfinplugins.bedwars.service.ManagedService;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -178,6 +179,39 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     public String getSelection(UUID uuid, ScopedProgress.Kind kind, String mode) {
         return getScopedProgress(uuid).selection(kind, mode,
             kind == ScopedProgress.Kind.KIT ? getSelectedKit(uuid) : getSelectedAbility(uuid));
+    }
+
+    public enum PurchaseAction { RESERVE, CHARGED, COMMIT, ABORT, REFUND, REFUND_PENDING, STATUS }
+
+    /** Runs every purchase SQL step on the statistics worker and returns on Bukkit's thread. */
+    public void purchaseStep(ProgressionPurchaseGateway.Request request, String provider,
+                             PurchaseAction action,
+                             java.util.function.Consumer<MySqlStatsRepository.PurchaseState> completed) {
+        if (!isEnabled() || worker == null) {
+            completed.accept(MySqlStatsRepository.PurchaseState.UNKNOWN);
+            return;
+        }
+        worker.execute(() -> {
+            MySqlStatsRepository.PurchaseState result = MySqlStatsRepository.PurchaseState.UNKNOWN;
+            try {
+                ensureOpen();
+                switch (action) {
+                    case RESERVE: result = repository.reservePurchase(request, provider); break;
+                    case CHARGED: result = repository.markPurchaseCharged(request); break;
+                    case COMMIT: result = repository.completePurchase(request); break;
+                    case ABORT: result = repository.closePurchase(request,
+                        MySqlStatsRepository.PurchaseState.ABORTED); break;
+                    case REFUND: result = repository.closePurchase(request,
+                        MySqlStatsRepository.PurchaseState.REFUNDED); break;
+                    case REFUND_PENDING: result = repository.closePurchase(request,
+                        MySqlStatsRepository.PurchaseState.REFUND_PENDING); break;
+                    case STATUS: result = repository.purchaseStatus(request.transactionId); break;
+                    default: throw new IllegalStateException("Etapa de compra invalida");
+                }
+            } catch (Exception error) { logDatabaseFailure(error); }
+            final MySqlStatsRepository.PurchaseState confirmed = result;
+            if (plugin.isEnabled()) Bukkit.getScheduler().runTask(plugin, () -> completed.accept(confirmed));
+        });
     }
     public void grantScoped(UUID uuid, ScopedProgress.Kind kind, String id, String scope,
                             int level, java.util.function.IntConsumer completed) {

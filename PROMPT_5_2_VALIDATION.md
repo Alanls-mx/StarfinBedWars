@@ -17,10 +17,12 @@
 - `GLOBAL` vale nos modos permitidos. `PER_MODE` mantem o nivel de cada modo.
   O nivel efetivo preserva o maior direito entre GLOBAL e o modo, inclusive
   quando o administrador muda um YAML. Selecao e independente por modo.
-- Compras mostram precos e permanecem bloqueadas porque a rede ainda nao
-  possui servico de moedas. `ProgressionPurchaseGateway` exige ID idempotente,
-  nivel anterior e persistencia antes de confirmar uma compra. O gateway ativo
-  responde `UNAVAILABLE`. Grants administrativos fazem testes sem cobranca.
+- Vault e dependencia de execucao. O gateway consulta o provedor `Economy`
+  registrado no ServicesManager; sem plugin de economia, a compra continua
+  bloqueada. O ledger MySQL guarda a reserva, debito e confirmacao, com trava
+  por jogador/item entre servidores. Falhas ambiguas ficam pendentes para
+  verificacao manual em vez de arriscar uma segunda cobranca. Grants
+  administrativos fazem testes sem cobranca.
 
 ## Verificacao executada
 
@@ -45,11 +47,37 @@ separadamente contra um banco descartavel com essas variaveis.
 - Permissao revogada e restricoes especificas de arena/modo, inclusive
   Incendiario (desativado por padrao).
 - Reconexao durante partida com kit recebido e nova partida em outro servidor.
-- Teste de concorrencia de compra e cobranca apos existir provedor monetario;
-  hoje nenhuma compra e cobrada ou confirmada.
+- Teste de debito e estorno com um provedor de economia real configurado no
+  backend. O teste MySQL descartavel cobre reservas concorrentes.
 - Persistencia visual de selecoes diferentes nos cinco modos apos reinicio,
   usando arenas com capacidades de equipe correspondentes.
 
 O StarfinCore no ambiente de teste exibiu `Instalacao sem vinculo`; a rodada
 BedWars funcionou mesmo assim. O vinculo depende da ativacao legitima do
 StarfinCore pelo proprietario e nao foi alterado nesta fase.
+
+## Integracao Vault (26/10/2026)
+
+- `VaultAPI:1.7` e dependência `provided`; o plugin Vault esta em `depend` no
+  `plugin.yml`. A dependência transitiva Bukkit 1.13 da API foi excluida para
+  preservar o alvo Spigot 1.8.8.
+- `mvn -B clean verify`: 234 testes, 0 falhas, 2 JDBC opcionais ignorados sem
+  banco de teste. O teste `VaultPurchaseMySqlIntegrationTest` passou em MariaDB
+  11.4 descartavel, incluindo reservas concorrentes, repeticao de ID, commit,
+  estorno pendente e grant administrativo durante a compra.
+- Vault 1.7.3 oficial e BedWars iniciaram no backend Pterodactyl `f03b4f97`;
+  arena `1` e MySQL compartilhado carregaram. EssentialsX 2.19.3 foi instalado
+  temporariamente e registrou `Essentials Economy` no Vault.
+- O bot `P52KitBot` comprou `builder` I no lobby da arena `1`: saldo EssentialsX
+  100000 -> 99000, `sbw_purchase_ledger.status=COMMITTED`,
+  `sbw_progression_entitlements` com `KIT|builder|solo=1`. Compra de habilidade
+  sem permissao foi bloqueada antes do debito.
+- EssentialsX foi retirado do `plugins/`; JAR e dados de teste ficaram
+  preservados em `vault-test-archive/` no volume do backend. A JAR final com
+  Vault permaneceu instalada e reiniciou com arena e MySQL carregados.
+
+Falta validar o debito de habilidade com um jogador que possua a permissao
+especifica, e a economia compartilhada em mais de um backend com o provedor
+definitivo. Vault sozinho nao persiste saldos nem fornece transacoes atomicas
+entre plugin de economia e MySQL; estados ambiguos ficam bloqueados no ledger
+para verificacao manual.

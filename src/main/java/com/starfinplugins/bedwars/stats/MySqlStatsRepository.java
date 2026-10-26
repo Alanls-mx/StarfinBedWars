@@ -1,6 +1,7 @@
 package com.starfinplugins.bedwars.stats;
 
 import com.starfinplugins.bedwars.gameplay.ScopedProgress;
+import com.starfinplugins.bedwars.gameplay.ProgressionPurchaseGateway;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
@@ -97,6 +98,22 @@ public final class MySqlStatsRepository implements AutoCloseable {
                 + "result_level TINYINT UNSIGNED NOT NULL,operator_name VARCHAR(32) NOT NULL,"
                 + "applied_at BIGINT NOT NULL,INDEX idx_sbw_scope_player (player_uuid,applied_at))"
                 + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            statement.execute("CREATE TABLE IF NOT EXISTS sbw_purchase_locks ("
+                + "player_uuid CHAR(36) NOT NULL,kind VARCHAR(8) NOT NULL,entry_id VARCHAR(32) NOT NULL,"
+                + "purchase_scope VARCHAR(16) NOT NULL,transaction_id CHAR(36) NULL,"
+                + "status VARCHAR(24) NOT NULL DEFAULT 'IDLE',updated_at BIGINT NOT NULL,"
+                + "PRIMARY KEY(player_uuid,kind,entry_id))"
+                + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            statement.execute("CREATE TABLE IF NOT EXISTS sbw_purchase_ledger ("
+                + "transaction_id CHAR(36) NOT NULL PRIMARY KEY,player_uuid CHAR(36) NOT NULL,"
+                + "kind VARCHAR(8) NOT NULL,entry_id VARCHAR(32) NOT NULL,"
+                + "purchase_scope VARCHAR(16) NOT NULL,mode VARCHAR(16) NOT NULL,"
+                + "expected_level TINYINT UNSIGNED NOT NULL,"
+                + "next_level TINYINT UNSIGNED NOT NULL,price INT NOT NULL,"
+                + "provider_name VARCHAR(64) NOT NULL,status VARCHAR(24) NOT NULL,"
+                + "created_at BIGINT NOT NULL,updated_at BIGINT NOT NULL,"
+                + "INDEX idx_sbw_purchase_player (player_uuid,updated_at))"
+                + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             // Upgrade databases created by earlier BedWars versions without deleting user data.
             ensureColumn(connection, "sbw_profiles", "final_deaths", "BIGINT NOT NULL DEFAULT 0");
             ensureColumn(connection, "sbw_profiles", "first_play", "BIGINT NOT NULL DEFAULT 0");
@@ -182,6 +199,281 @@ public final class MySqlStatsRepository implements AutoCloseable {
             }
         }
         return new ScopedProgress(levels, selections);
+    }
+
+    public enum PurchaseState {
+        RESERVED, ALREADY_RESERVED, CHARGED, COMMITTED, CONFLICT,
+        ABORTED, REFUNDED, REFUND_PENDING, UNKNOWN
+    }
+
+    /** One lock per player and entry serializes purchases across modes and servers. */
+    public PurchaseState reservePurchase(ProgressionPurchaseGateway.Request request,
+                                         String provider) throws SQLException {
+        if (provider == null || provider.length() > 64 || provider.isEmpty())
+            throw new IllegalArgumentException("Provedor Vault invalido");
+        try (Connection connection = pool.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                long now = System.currentTimeMillis();
+                try (PreparedStatement insert = connection.prepareStatement(
+                        "INSERT IGNORE INTO sbw_purchase_locks"
+                        + " (player_uuid,kind,entry_id,purchase_scope,transaction_id,status,updated_at)"
+                        + " VALUES(?,?,?,?,NULL,'IDLE',?)")) {
+                    bindPurchaseKey(insert, request);
+                    insert.setString(4, request.purchaseScope);
+                    insert.setLong(5, now);
+                    insert.executeUpdate();
+                }
+                String active;
+                try (PreparedStatement lock = connection.prepareStatement(
+                        "SELECT status FROM sbw_purchase_locks WHERE player_uuid=?"
+                        + " AND kind=? AND entry_id=? FOR UPDATE")) {
+                    bindPurchaseKey(lock, request);
+                    try (ResultSet row = lock.executeQuery()) {
+                        if (!row.next()) throw new SQLException("Trava de compra ausente");
+                        active = row.getString(1);
+                    }
+                }
+                PurchaseState existing = purchaseStatus(connection, request.transactionId);
+                if (existing != PurchaseState.UNKNOWN) {
+                    connection.commit();
+                    return existing == PurchaseState.RESERVED
+                        ? PurchaseState.ALREADY_RESERVED : existing;
+                }
+                if (!"IDLE".equals(active) || effectiveLevel(connection, request) != request.expectedLevel) {
+                    connection.commit();
+                    return PurchaseState.CONFLICT;
+                }
+                try (PreparedStatement ledger = connection.prepareStatement(
+                        "INSERT INTO sbw_purchase_ledger"
+                        + " (transaction_id,player_uuid,kind,entry_id,purchase_scope,mode,"
+                        + "expected_level,next_level,price,provider_name,status,created_at,updated_at)"
+                        + " VALUES(?,?,?,?,?,?,?,?,?,?,'RESERVED',?,?)");
+                     PreparedStatement lock = connection.prepareStatement(
+                        "UPDATE sbw_purchase_locks SET transaction_id=?,status='RESERVED',"
+                        + "purchase_scope=?,updated_at=? WHERE player_uuid=? AND kind=? AND entry_id=?")) {
+                    ledger.setString(1, request.transactionId.toString());
+                    ledger.setString(2, request.playerId.toString());
+                    ledger.setString(3, request.kind.name());
+                    ledger.setString(4, request.entryId);
+                    ledger.setString(5, request.purchaseScope);
+                    ledger.setString(6, request.mode);
+                    ledger.setInt(7, request.expectedLevel);
+                    ledger.setInt(8, request.nextLevel);
+                    ledger.setInt(9, request.price);
+                    ledger.setString(10, provider);
+                    ledger.setLong(11, now);
+                    ledger.setLong(12, now);
+                    ledger.executeUpdate();
+                    lock.setString(1, request.transactionId.toString());
+                    lock.setString(2, request.purchaseScope);
+                    lock.setLong(3, now);
+                    bindPurchaseKey(lock, request, 4);
+                    lock.executeUpdate();
+                }
+                connection.commit();
+                return PurchaseState.RESERVED;
+            } catch (SQLException | RuntimeException error) {
+                connection.rollback();
+                throw error;
+            } finally { connection.setAutoCommit(true); }
+        }
+    }
+
+    public PurchaseState markPurchaseCharged(ProgressionPurchaseGateway.Request request)
+            throws SQLException {
+        try (Connection connection = pool.getConnection(); PreparedStatement update =
+                connection.prepareStatement("UPDATE sbw_purchase_ledger SET status='CHARGED',"
+                    + "updated_at=? WHERE transaction_id=? AND status='RESERVED'")) {
+            update.setLong(1, System.currentTimeMillis());
+            update.setString(2, request.transactionId.toString());
+            return update.executeUpdate() == 1 ? PurchaseState.CHARGED
+                : purchaseStatus(connection, request.transactionId);
+        }
+    }
+
+    public PurchaseState completePurchase(ProgressionPurchaseGateway.Request request)
+            throws SQLException {
+        try (Connection connection = pool.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                lockPurchaseRow(connection, request);
+                PurchaseState state = lockedPurchaseStatus(connection, request.transactionId);
+                if (state != PurchaseState.CHARGED) {
+                    connection.commit();
+                    return state;
+                }
+                if (effectiveLevel(connection, request) != request.expectedLevel) {
+                    connection.commit();
+                    return PurchaseState.CONFLICT;
+                }
+                long now = System.currentTimeMillis();
+                try (PreparedStatement grant = connection.prepareStatement(
+                        "INSERT INTO sbw_progression_entitlements"
+                        + " (player_uuid,kind,entry_id,purchase_scope,level,unlocked,"
+                        + "acquisition_type,acquired_at,updated_at)"
+                        + " VALUES(?,?,?,?,?,1,'PURCHASE',?,?)"
+                        + " ON DUPLICATE KEY UPDATE level=GREATEST(level,VALUES(level)),"
+                        + "unlocked=1,updated_at=VALUES(updated_at)")) {
+                    bindPurchaseKey(grant, request);
+                    grant.setString(4, request.purchaseScope);
+                    grant.setInt(5, request.nextLevel);
+                    grant.setLong(6, now);
+                    grant.setLong(7, now);
+                    grant.executeUpdate();
+                }
+                if (effectiveLevel(connection, request) != request.nextLevel) {
+                    connection.rollback();
+                    return PurchaseState.CONFLICT;
+                }
+                setPurchaseStatus(connection, request.transactionId, "COMMITTED", now);
+                releasePurchaseLock(connection, request, now);
+                connection.commit();
+                return PurchaseState.COMMITTED;
+            } catch (SQLException | RuntimeException error) {
+                connection.rollback();
+                throw error;
+            } finally { connection.setAutoCommit(true); }
+        }
+    }
+
+    /** Keep charged or uncertain purchases locked until their outcome is reconciled. */
+    public PurchaseState closePurchase(ProgressionPurchaseGateway.Request request,
+                                       PurchaseState target) throws SQLException {
+        if (target != PurchaseState.ABORTED && target != PurchaseState.REFUNDED
+                && target != PurchaseState.REFUND_PENDING)
+            throw new IllegalArgumentException("Encerramento de compra invalido");
+        try (Connection connection = pool.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                lockPurchaseRow(connection, request);
+                PurchaseState current = lockedPurchaseStatus(connection, request.transactionId);
+                if (current == PurchaseState.COMMITTED || current == PurchaseState.REFUNDED
+                        || current == PurchaseState.ABORTED) {
+                    connection.commit();
+                    return current;
+                }
+                if (current == PurchaseState.UNKNOWN || (target == PurchaseState.ABORTED
+                        && current != PurchaseState.RESERVED
+                        && !(current == PurchaseState.CHARGED && request.price == 0))) {
+                    connection.commit();
+                    return current;
+                }
+                long now = System.currentTimeMillis();
+                setPurchaseStatus(connection, request.transactionId, target.name(), now);
+                if (target != PurchaseState.REFUND_PENDING) releasePurchaseLock(connection, request, now);
+                connection.commit();
+                return target;
+            } catch (SQLException | RuntimeException error) {
+                connection.rollback();
+                throw error;
+            } finally { connection.setAutoCommit(true); }
+        }
+    }
+
+    public PurchaseState purchaseStatus(UUID transactionId) throws SQLException {
+        try (Connection connection = pool.getConnection()) {
+            return purchaseStatus(connection, transactionId);
+        }
+    }
+
+    private static PurchaseState purchaseStatus(Connection connection, UUID transactionId)
+            throws SQLException {
+        try (PreparedStatement read = connection.prepareStatement(
+                "SELECT status FROM sbw_purchase_ledger WHERE transaction_id=?")) {
+            read.setString(1, transactionId.toString());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? PurchaseState.valueOf(row.getString(1)) : PurchaseState.UNKNOWN;
+            }
+        }
+    }
+
+    private static PurchaseState lockedPurchaseStatus(Connection connection, UUID transactionId)
+            throws SQLException {
+        try (PreparedStatement read = connection.prepareStatement(
+                "SELECT status FROM sbw_purchase_ledger WHERE transaction_id=? FOR UPDATE")) {
+            read.setString(1, transactionId.toString());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? PurchaseState.valueOf(row.getString(1)) : PurchaseState.UNKNOWN;
+            }
+        }
+    }
+
+    private static void lockPurchaseRow(Connection connection,
+                                        ProgressionPurchaseGateway.Request request)
+            throws SQLException {
+        try (PreparedStatement lock = connection.prepareStatement(
+                "SELECT status FROM sbw_purchase_locks WHERE player_uuid=?"
+                + " AND kind=? AND entry_id=? FOR UPDATE")) {
+            bindPurchaseKey(lock, request);
+            try (ResultSet row = lock.executeQuery()) {
+                if (!row.next()) throw new SQLException("Trava de compra ausente");
+            }
+        }
+    }
+
+    private static int effectiveLevel(Connection connection,
+                                      ProgressionPurchaseGateway.Request request) throws SQLException {
+        int level = 0;
+        try (PreparedStatement read = connection.prepareStatement(
+                "SELECT level FROM sbw_progression_entitlements WHERE player_uuid=?"
+                + " AND kind=? AND entry_id=? AND purchase_scope IN ('GLOBAL',?)"
+                + " AND unlocked=1 FOR UPDATE")) {
+            bindPurchaseKey(read, request);
+            read.setString(4, request.mode);
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) level = Math.max(level, row.getInt(1));
+            }
+        }
+        if (request.kind == ScopedProgress.Kind.ABILITY) {
+            try (PreparedStatement legacy = connection.prepareStatement(
+                    "SELECT level FROM sbw_ability_levels WHERE player_uuid=?"
+                    + " AND ability_id=? AND unlocked=1 FOR UPDATE")) {
+                legacy.setString(1, request.playerId.toString());
+                legacy.setString(2, request.entryId);
+                try (ResultSet row = legacy.executeQuery()) {
+                    if (row.next()) level = Math.max(level, row.getInt(1));
+                }
+            }
+        }
+        return level;
+    }
+
+    private static void setPurchaseStatus(Connection connection, UUID id, String status, long now)
+            throws SQLException {
+        try (PreparedStatement update = connection.prepareStatement(
+                "UPDATE sbw_purchase_ledger SET status=?,updated_at=? WHERE transaction_id=?")) {
+            update.setString(1, status);
+            update.setLong(2, now);
+            update.setString(3, id.toString());
+            if (update.executeUpdate() != 1) throw new SQLException("Compra sem ledger");
+        }
+    }
+
+    private static void releasePurchaseLock(Connection connection,
+                                            ProgressionPurchaseGateway.Request request, long now)
+            throws SQLException {
+        try (PreparedStatement update = connection.prepareStatement(
+                "UPDATE sbw_purchase_locks SET transaction_id=NULL,status='IDLE',updated_at=?"
+                + " WHERE player_uuid=? AND kind=? AND entry_id=? AND transaction_id=?")) {
+            update.setLong(1, now);
+            bindPurchaseKey(update, request, 2);
+            update.setString(5, request.transactionId.toString());
+            if (update.executeUpdate() != 1) throw new SQLException("Trava de compra divergente");
+        }
+    }
+
+    private static void bindPurchaseKey(PreparedStatement statement,
+                                        ProgressionPurchaseGateway.Request request) throws SQLException {
+        bindPurchaseKey(statement, request, 1);
+    }
+
+    private static void bindPurchaseKey(PreparedStatement statement,
+                                        ProgressionPurchaseGateway.Request request, int index)
+            throws SQLException {
+        statement.setString(index, request.playerId.toString());
+        statement.setString(index + 1, request.kind.name());
+        statement.setString(index + 2, request.entryId);
     }
 
     /** Administrative grant only. Purchase processing must first reserve a real currency charge. */

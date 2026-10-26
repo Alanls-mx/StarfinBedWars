@@ -235,14 +235,33 @@ entrega no primeiro nascimento; o segundo nome explicita que uma reconexao nao
 reentrega. `EVERY_RESPAWN` entrega novamente apos cada renascimento e deve ser
 habilitado conscientemente para recursos. O kit Incendiario vem desativado.
 
-Como ainda nao existe provedor de moedas da rede, os precos sao apresentados,
-mas compras e evolucoes ficam bloqueadas. Operadores podem testar com
+Vault 1.7 e dependencia obrigatoria de execucao. Instale `Vault.jar` na pasta
+`plugins/` de cada backend BedWars e um plugin de economia compativel que
+registre `Economy` no Bukkit ServicesManager. Vault sozinho nao fornece saldo:
+sem esse provedor, os precos aparecem, mas compras e evolucoes ficam
+bloqueadas. Em rede, configure o plugin de economia para compartilhar os saldos
+entre servidores; o MySQL do BedWars compartilha os direitos adquiridos, mas
+nao substitui o banco de saldos do provedor.
+
+Operadores podem testar os direitos com
 `/sbw kit grant <jogador-online> <id> [GLOBAL|modo] <1..5>` ou
 `/sbw ability grant <jogador-online> <id> [GLOBAL|modo] <1..5>`.
 Esses comandos concedem niveis administrativos e nao simulam pagamentos.
 As aquisicoes antigas de habilidades sao preservadas como GLOBAL.
-`ProgressionPurchaseGateway` define o contrato futuro de cobranca com ID de
-transacao e nivel esperado; a implementacao ativa retorna `UNAVAILABLE`.
+As compras via Vault reservam o nivel no MySQL antes de chamar o provedor,
+registram o debito e so confirmam depois de persistir o direito. As tabelas
+`sbw_purchase_locks` e `sbw_purchase_ledger` impedem compras simultaneas do
+mesmo kit ou habilidade em servidores diferentes. Quando nao e possivel
+confirmar se o debito ou o estorno ocorreu, a compra fica pendente e bloqueada
+para verificacao manual; procure o ID da transacao no log e no ledger antes de
+liberar o direito ou repetir uma cobranca. Vault nao oferece transacao
+distribuida com MySQL: uma queda exatamente entre debito e registro exige
+essa conferencia. Faca backup do banco antes da primeira instalacao.
+No phpMyAdmin, localize pendencias com
+`SELECT * FROM sbw_purchase_ledger WHERE status IN ('RESERVED','CHARGED','REFUND_PENDING');`
+e confira o historico do provedor de economia antes de corrigir manualmente
+qualquer direito ou saldo. Nunca limpe `sbw_purchase_locks` apenas para
+destravar uma compra pendente.
 
 Para uma mudanca controlada de escopo, execute primeiro
 `/sbw scope preview <jogador-online> <kit|ability> <id> <GLOBAL|PER_MODE>` e
@@ -258,7 +277,7 @@ Os testes locais cobrem o catalogo, escopos e migracoes MySQL em MariaDB
 descartavel. Em 26/10/2026, uma rodada conjunta no Pterodactyl confirmou os
 12 kits no menu, as 18 habilidades, dicas sem corte, 12 las do Construtor V e
 ausencia de nova entrega apos morte com cama intacta. O ciclo de compra
-continua bloqueado ate a integracao do provedor monetario. A matriz completa
+pode ser usado apos instalar um provedor monetario Vault. A matriz completa
 de validacao e limites esta em `PROMPT_5_2_VALIDATION.md`.
 
 ```text
