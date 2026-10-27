@@ -5,7 +5,7 @@ import java.util.UUID;
 public final class GameParticipant {
     private final UUID playerId;
     private final String matchId;
-    private final String teamId;
+    private String teamId;
     private ParticipantState state;
     private ParticipantState lifeState;
     private ConnectionState connectionState;
@@ -26,6 +26,10 @@ public final class GameParticipant {
     public UUID getPlayerId() { return playerId; }
     public String getMatchId() { return matchId; }
     public String getTeamId() { return teamId; }
+    void setTeamId(String teamId) {
+        if (teamId == null) throw new IllegalArgumentException("team ausente");
+        this.teamId = teamId;
+    }
     public ParticipantState getState() { return state; }
     public ParticipantState getLifeState() { return lifeState; }
     public ConnectionState getConnectionState() { return connectionState; }

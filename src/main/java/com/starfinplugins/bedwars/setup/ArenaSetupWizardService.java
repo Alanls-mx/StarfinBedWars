@@ -586,9 +586,8 @@ public final class ArenaSetupWizardService implements ManagedService, Listener {
             if (draft.stage == Stage.SPAWN) {
                 int centerX = floor(player.getLocation().getX());
                 int centerZ = floor(player.getLocation().getZ());
-                SpawnPlatformLayout layout = new SpawnPlatformLayout(centerX,
-                    floor(player.getLocation().getY()) - 1, centerZ, team.getCapacity() == 1,
-                    player.getLocation().getYaw());
+                SpawnPlatformLayout layout = SpawnPlatformLayout.forTeamCapacity(centerX,
+                    floor(player.getLocation().getY()) - 1, centerZ, team.getCapacity());
                 spawnExit = findSpawnExit(player, layout);
                 Position selected = editing.canonicalPosition(arena, player.getLocation());
                 Position spawn = new Position(selected.getWorld(), selected.getX(), selected.getY(),
@@ -1454,7 +1453,10 @@ public final class ArenaSetupWizardService implements ManagedService, Listener {
             case SPAWN:
                 player.sendMessage(ChatColor.YELLOW + "Fique no spawn de " + team.getDisplayName()
                     + " e clique com o botao direito. Sera criada a sala de spawn "
-                    + (team.getCapacity() == 1 ? "Solo 3x3 (interior 1x1)" : "Equipe 5x5 (interior 3x3)")
+                    + SpawnPlatformLayout.widthForTeamCapacity(team.getCapacity()) + "x"
+                    + SpawnPlatformLayout.widthForTeamCapacity(team.getCapacity())
+                    + " (interior " + (SpawnPlatformLayout.widthForTeamCapacity(team.getCapacity()) - 2)
+                    + "x" + (SpawnPlatformLayout.widthForTeamCapacity(team.getCapacity()) - 2) + ")"
                     + ", com paredes de 3 blocos e teto. Ar e o piso central sob voce serao substituidos.");
                 break;
             case RESPAWN:
@@ -1707,7 +1709,7 @@ public final class ArenaSetupWizardService implements ManagedService, Listener {
             String path = "undo." + action + ".";
             String world = yaml.getString(path + "world");
             int blockCount = yaml.getInt(path + "block-count", -1);
-            if (world == null || blockCount < 0 || blockCount > 256) {
+            if (world == null || blockCount < 0 || blockCount > 1024) {
                 throw new IOException("registro de undo invalido");
             }
             UndoRecord record = new UndoRecord(world);

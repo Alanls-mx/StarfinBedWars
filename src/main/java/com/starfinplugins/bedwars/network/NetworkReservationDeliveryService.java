@@ -41,11 +41,13 @@ public final class NetworkReservationDeliveryService implements ManagedService, 
         if (!network.isEnabled()) return;
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, "BungeeCord");
         Bukkit.getPluginManager().registerEvents(this, plugin);
+        matches.setReservationFailureHandler(this::failPending);
         started = true;
     }
 
     @Override public void stop() {
         started = false;
+        matches.setReservationFailureHandler(null);
         HandlerList.unregisterAll(this);
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, "BungeeCord");
         for (Pending item : pending.values()) {
@@ -73,20 +75,29 @@ public final class NetworkReservationDeliveryService implements ManagedService, 
             reject(player, reservation, "Reserva invalida ou ja em processamento.");
             return;
         }
+        int graceSeconds = Math.max(5, Math.min(120,
+            plugin.getConfig().getInt("party-matchmaking.arrival-grace-seconds", 20)));
+        if (reservation.getGroupId() != null && reservation.getGroupSize() > 1
+                && reservation.getCreatedAtMillis() + graceSeconds * 1000L <= System.currentTimeMillis()) {
+            reject(player, reservation, "A reserva da Party expirou.");
+            return;
+        }
         BukkitTask timeout = Bukkit.getScheduler().runTaskLater(plugin, () -> {
             Pending current = pending.get(playerId);
             if (current != null && current.reservation.getId().equals(reservation.getId())) {
                 pending.remove(playerId);
+                matches.cancelPendingReservation(playerId);
                 reject(Bukkit.getPlayer(playerId), reservation, "Tempo esgotado ao preparar a arena.");
             }
         }, Math.max(1L, Math.min(1800L,
             (reservation.getExpiresAtMillis() - System.currentTimeMillis()) / 50L)));
         pending.put(playerId, new Pending(reservation, timeout));
         try {
-            matches.join(player, reservation.getArenaId());
+            matches.join(player, reservation.getArenaId(), reservation);
         } catch (RuntimeException error) {
             pending.remove(playerId);
             timeout.cancel();
+            matches.cancelPendingReservation(playerId);
             reject(player, reservation, error.getMessage());
         }
     }
@@ -106,6 +117,7 @@ public final class NetworkReservationDeliveryService implements ManagedService, 
         Pending item = pending.remove(event.getPlayer().getUniqueId());
         if (item == null) return;
         item.timeout.cancel();
+        matches.cancelPendingReservation(event.getPlayer().getUniqueId());
         network.finishReservation(item.reservation.getId(), item.reservation.getPlayerId(), false);
     }
 
@@ -121,6 +133,14 @@ public final class NetworkReservationDeliveryService implements ManagedService, 
             out.writeUTF(lobby);
             player.sendPluginMessage(plugin, "BungeeCord", out.toByteArray());
         }
+    }
+
+    private void failPending(UUID playerId, String reason) {
+        Pending item = pending.remove(playerId);
+        if (item == null) return;
+        item.timeout.cancel();
+        matches.cancelPendingReservation(playerId);
+        reject(Bukkit.getPlayer(playerId), item.reservation, reason);
     }
 
     private static final class Pending {

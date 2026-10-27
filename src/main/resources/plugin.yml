@@ -69,3 +69,6 @@ permissions:
   starfinbedwars.chat.color:
     description: Permite usar codigos de cor com & nas mensagens da partida
     default: op
+  starfinbedwars.teamselector.solo:
+    description: Permite escolher a equipe manualmente no modo Solo
+    default: op

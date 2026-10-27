@@ -15,6 +15,11 @@ public final class GameMatch {
     private final ArenaDefinition arena;
     private final Map<String, GameTeam> teams = new LinkedHashMap<String, GameTeam>();
     private final Map<UUID, GameParticipant> participants = new LinkedHashMap<UUID, GameParticipant>();
+    private final Map<UUID, TeamHold> teamHolds = new LinkedHashMap<UUID, TeamHold>();
+    private final Map<UUID, TeamHold> admittedHolds = new LinkedHashMap<UUID, TeamHold>();
+    private final Map<UUID, UUID> participantGroups = new LinkedHashMap<UUID, UUID>();
+    private final Map<UUID, Integer> groupSizes = new LinkedHashMap<UUID, Integer>();
+    private final Map<UUID, UUID> groupLeaders = new LinkedHashMap<UUID, UUID>();
     private MatchState state = MatchState.WAITING;
     private MatchEndReason endReason;
     private String winnerTeamId;
@@ -57,22 +62,144 @@ public final class GameMatch {
         return count;
     }
     public boolean addParticipant(UUID player) {
+        return addParticipant(player, null, null, 1, 0L);
+    }
+
+    /** A network reservation names a team; unreserved players retain normal balancing. */
+    public boolean addParticipant(UUID player, String teamId, UUID groupId,
+                                  int groupSize, long groupExpiresAt) {
+        return addParticipant(player, teamId, groupId, groupSize, groupExpiresAt, null);
+    }
+
+    public boolean addParticipant(UUID player, String teamId, UUID groupId,
+                                  int groupSize, long groupExpiresAt, UUID leaderId) {
         if ((state != MatchState.WAITING && state != MatchState.STARTING) || participants.containsKey(player)
                 || participants.size() >= arena.getMaximumPlayers()) {
             return false;
         }
+        expireTeamHolds(System.currentTimeMillis());
         GameTeam selected = null;
-        for (GameTeam team : teams.values()) {
-            if (team.getMembers().size() < team.getDefinition().getCapacity()
-                    && (selected == null || team.getMembers().size() < selected.getMembers().size())) {
-                selected = team;
+        if (teamId != null) {
+            selected = teams.get(teamId);
+            if (selected == null || selected.getMembers().size() >= selected.getDefinition().getCapacity())
+                return false;
+            if (groupId != null && groupSize > 1 && selected.getDefinition().getCapacity() > 1) {
+                if (!holdGroup(groupId, teamId, groupSize, groupExpiresAt)) return false;
+                TeamHold hold = teamHolds.get(groupId);
+                if (!hold.teamId.equals(teamId) || hold.remaining < 1) return false;
+            } else if (freeSlots(selected) < 1) return false;
+        } else {
+            for (GameTeam team : teams.values()) {
+                if (freeSlots(team) > 0 && (selected == null
+                        || team.getMembers().size() + heldSlots(team.getDefinition().getId())
+                            < selected.getMembers().size() + heldSlots(selected.getDefinition().getId())))
+                    selected = team;
             }
         }
         if (selected == null || !selected.add(player)) {
             return false;
         }
+        TeamHold hold = groupId == null ? null : teamHolds.get(groupId);
+        if (hold != null) {
+            admittedHolds.put(player, hold);
+            if (--hold.remaining == 0) teamHolds.remove(groupId);
+        }
         participants.put(player, new GameParticipant(player, id.toString(), selected.getDefinition().getId()));
+        if (groupId != null && groupSize > 1 && selected.getDefinition().getCapacity() > 1) {
+            participantGroups.put(player, groupId);
+            groupSizes.put(groupId, groupSize);
+            if (leaderId != null) groupLeaders.put(groupId, leaderId);
+        }
         return true;
+    }
+
+    public enum TeamChoice { MOVED, ALREADY, FULL, WAIT_FOR_PARTY, LEADER_ONLY, UNAVAILABLE }
+
+    public int availableTeamSlots(String teamId) {
+        GameTeam team = teams.get(teamId);
+        if (team == null) return 0;
+        expireTeamHolds(System.currentTimeMillis());
+        return Math.max(0, freeSlots(team));
+    }
+
+    /** Move every admitted member of a Party together, while still in the lobby. */
+    public TeamChoice chooseTeam(UUID player, String targetId) {
+        if ((state != MatchState.WAITING && state != MatchState.STARTING)
+                || !participants.containsKey(player)) return TeamChoice.UNAVAILABLE;
+        GameTeam target = teams.get(targetId);
+        if (target == null) return TeamChoice.UNAVAILABLE;
+        GameParticipant requester = participants.get(player);
+        if (requester.getTeamId().equals(targetId)) return TeamChoice.ALREADY;
+        UUID groupId = participantGroups.get(player);
+        java.util.List<UUID> moving = new java.util.ArrayList<UUID>();
+        if (groupId != null) {
+            UUID leader = groupLeaders.get(groupId);
+            if (leader != null && !leader.equals(player)) return TeamChoice.LEADER_ONLY;
+            for (Map.Entry<UUID, UUID> entry : participantGroups.entrySet())
+                if (groupId.equals(entry.getValue())) moving.add(entry.getKey());
+            if (moving.size() != groupSizes.get(groupId) || teamHolds.containsKey(groupId))
+                return TeamChoice.WAIT_FOR_PARTY;
+        } else moving.add(player);
+        if (availableTeamSlots(targetId) < moving.size()) return TeamChoice.FULL;
+        GameTeam previous = teams.get(requester.getTeamId());
+        for (UUID member : moving) {
+            GameParticipant participant = participants.get(member);
+            if (participant == null || !participant.getTeamId().equals(requester.getTeamId()))
+                return TeamChoice.UNAVAILABLE;
+        }
+        for (UUID member : moving) previous.remove(member);
+        for (UUID member : moving) {
+            target.add(member);
+            participants.get(member).setTeamId(targetId);
+        }
+        if (groupId != null) {
+            TeamHold hold = admittedHolds.get(player);
+            if (hold != null) hold.teamId = targetId;
+        }
+        return TeamChoice.MOVED;
+    }
+
+    public boolean hasPendingGroup() {
+        expireTeamHolds(System.currentTimeMillis());
+        return !teamHolds.isEmpty();
+    }
+
+    public boolean holdGroup(UUID groupId, String teamId, int size, long expiresAt) {
+        if (groupId == null || teamId == null || size < 2) return false;
+        expireTeamHolds(System.currentTimeMillis());
+        TeamHold existing = teamHolds.get(groupId);
+        if (existing != null) return existing.teamId.equals(teamId);
+        GameTeam team = teams.get(teamId);
+        if (team == null || team.getDefinition().getCapacity() < size
+                || freeSlots(team) < size || expiresAt <= System.currentTimeMillis()) return false;
+        teamHolds.put(groupId, new TeamHold(groupId, teamId, size, expiresAt));
+        return true;
+    }
+
+    private int freeSlots(GameTeam team) {
+        return team.getDefinition().getCapacity() - team.getMembers().size()
+            - heldSlots(team.getDefinition().getId());
+    }
+
+    private int heldSlots(String teamId) {
+        int count = 0;
+        for (TeamHold hold : teamHolds.values()) if (hold.teamId.equals(teamId)) count += hold.remaining;
+        return count;
+    }
+
+    private void expireTeamHolds(long now) {
+        teamHolds.values().removeIf(hold -> hold.expiresAt <= now);
+    }
+
+    private static final class TeamHold {
+        final UUID groupId;
+        String teamId;
+        int remaining;
+        final long expiresAt;
+        TeamHold(UUID groupId, String teamId, int remaining, long expiresAt) {
+            this.groupId = groupId; this.teamId = teamId;
+            this.remaining = remaining; this.expiresAt = expiresAt;
+        }
     }
     public boolean removeWaitingParticipant(UUID player) {
         if (state != MatchState.WAITING && state != MatchState.STARTING) {
@@ -83,6 +210,16 @@ public final class GameMatch {
             return false;
         }
         teams.get(participant.getTeamId()).remove(player);
+        TeamHold hold = admittedHolds.remove(player);
+        UUID groupId = participantGroups.remove(player);
+        if (groupId != null && !participantGroups.containsValue(groupId)) {
+            groupSizes.remove(groupId);
+            groupLeaders.remove(groupId);
+        }
+        if (hold != null && hold.expiresAt > System.currentTimeMillis()) {
+            hold.remaining++;
+            teamHolds.put(hold.groupId, hold);
+        }
         return true;
     }
     public boolean setParticipantState(UUID player, ParticipantState next) {

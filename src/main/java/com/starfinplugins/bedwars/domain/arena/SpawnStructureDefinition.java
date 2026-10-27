@@ -11,7 +11,7 @@ public final class SpawnStructureDefinition {
 
     public SpawnStructureDefinition(int blockTypeId, int blockData, List<BlockPosition> blocks) {
         if (blockTypeId < 1 || blockTypeId > 4095 || blockData < 0 || blockData > 255
-                || blocks == null || blocks.size() > 128) {
+                || blocks == null || blocks.size() > 1024) {
             throw new IllegalArgumentException("Definicao da estrutura de spawn invalida.");
         }
         this.blockTypeId = blockTypeId;

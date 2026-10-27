@@ -257,7 +257,7 @@ public final class ArenaRepository {
                 team.setUpgradeShop(readPosition(teamConfig, "shops.upgrades"));
                 int structureCount = teamConfig.getInt("spawn-structure.count", -1);
                 if (structureCount >= 0) {
-                    if (structureCount > 128) throw new IOException("estrutura de spawn excede o limite: " + id);
+                    if (structureCount > 1024) throw new IOException("estrutura de spawn excede o limite: " + id);
                     List<SpawnStructureDefinition.BlockPosition> blocks =
                         new ArrayList<SpawnStructureDefinition.BlockPosition>();
                     for (int index = 0; index < structureCount; index++) {

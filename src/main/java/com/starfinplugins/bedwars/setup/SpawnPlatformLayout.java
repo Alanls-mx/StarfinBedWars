@@ -19,6 +19,22 @@ public final class SpawnPlatformLayout {
         this(centerX, baseY, centerZ, solo ? 3 : 5, solo ? 3 : 5);
     }
 
+    public static SpawnPlatformLayout forTeamCapacity(int centerX, int baseY, int centerZ,
+                                                       int capacity) {
+        int width = widthForTeamCapacity(capacity);
+        return new SpawnPlatformLayout(centerX, baseY, centerZ, width, width);
+    }
+
+    public static int widthForTeamCapacity(int capacity) {
+        if (capacity < 1) throw new IllegalArgumentException("Capacidade da equipe invalida.");
+        if (capacity == 1) return 3;
+        if (capacity == 2) return 5;
+        if (capacity <= 4) return 7;
+        int interior = Math.max(7, (int) Math.ceil(Math.sqrt(capacity * 4.0D)));
+        if ((interior & 1) == 0) interior++;
+        return interior + 2;
+    }
+
     public SpawnPlatformLayout(int centerX, int baseY, int centerZ, int width, int depth) {
         if (width < 3 || depth < 3) throw new IllegalArgumentException("A sala deve ter no minimo 3x3.");
         minimumX = centerX - width / 2;

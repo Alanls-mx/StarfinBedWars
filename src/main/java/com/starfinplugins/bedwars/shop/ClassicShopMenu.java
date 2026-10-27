@@ -155,8 +155,8 @@ public final class ClassicShopMenu implements InventoryHolder {
             if ("knockback-stick".equals(definition.getId())) {
                 lore.add(ChatColor.GRAY + "Repulsão I");
             }
-            lore.add(ChatColor.GRAY + "Preço: " + ChatColor.GOLD + definition.getCost()
-                + " " + currencyLabel(definition.getCostType().name()));
+            lore.add(com.starfinplugins.bedwars.domain.economy.ResourcePriceText.price(
+                definition.getCostType(), definition.getCost()));
             lore.add(" ");
             lore.add(ChatColor.AQUA + "Segure Shift para adicionar à compra rápida.");
             lore.add(editing ? ChatColor.AQUA + "Clique para alterar favoritos"
@@ -233,14 +233,6 @@ public final class ClassicShopMenu implements InventoryHolder {
         }
         for (int index = 0; index < ids.length; index++) if (ids[index].equals(id)) return index;
         return 1000;
-    }
-
-    private static String currencyLabel(String name) {
-        if ("IRON".equals(name)) return "Ferros";
-        if ("GOLD".equals(name)) return "Ouros";
-        if ("DIAMOND".equals(name)) return "Diamantes";
-        if ("EMERALD".equals(name)) return "Esmeraldas";
-        return name;
     }
 
     private static int count(Player player, Material material) {

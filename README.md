@@ -1,5 +1,40 @@
 # StarfinBedWars
 
+## Times de Party (4.4.1)
+
+Reservas persistidas no banco trazem a equipe escolhida sob bloqueio da arena.
+O `GameMatch` valida a capacidade real da `TeamDefinition`, retém as vagas dos
+membros ainda em trânsito e preserva o balanceamento individual de entradas
+locais. A ordem de chegada, inclusive durante o carregamento do mundo, não
+troca a equipe da Party. Em Solo cada membro recebe um time individual.
+
+`party-matchmaking.wait-for-reserved-members` segura o início no fim da
+contagem enquanto há integrantes pendentes; `arrival-grace-seconds` (padrão
+20) limita essa espera e deve coincidir com o valor no proxy. Uma falha no
+carregamento libera as reservas imediatamente. Após entrada real, a reserva
+é confirmada; a reconexão existente mantém equipe, kits e habilidades sem
+nova reserva. Consulte o README do StarfinMinigames para migração e política
+de transferência parcial.
+
+A partida só inicia com pelo menos duas equipes ativas. Uma Party de Dupla
+sozinha permanece no lobby de espera até chegar um adversário; a saída de
+uma equipe durante a contagem a cancela sem dividir a Party.
+
+No lobby de espera, a bússola no nono slot abre o seletor de times. Modos de
+equipe mostram o seletor a todos; no Solo ele exige a permissão
+`starfinbedwars.teamselector.solo` (padrão: operador). O líder move toda a
+Party quando todos os integrantes reservados já chegaram, desde que o time
+escolhido tenha vagas. A escolha fecha na abertura dos spawns. A loja mostra
+preços com as cores dos recursos: Ferro branco, Ouro dourado, Diamante aqua e
+Esmeralda verde; as melhorias de equipe mostram Diamantes em aqua.
+No servidor BedWars, jogadores mantêm fome cheia no lobby e nas partidas.
+O dano ao teleportar com ender pearl é definido por
+`match.ender-pearl-damage` (padrão: 4 pontos de vida, ou 2 corações; `0`
+desativa). O dano padrão da versão 1.8.8 é substituído por esse valor.
+Camas decorativas ou sem equipe configurada são removidas da cópia da partida
+ao carregar seus chunks; as camas registradas e suas duas metades são
+preservadas. Jogadores não podem colocar novas camas durante a partida.
+
 Plugin de BedWars para **Java 8** e **Spigot 1.8.8**. Esta versao implementa arenas em instancias isoladas, engine casual, reconnect local, assistente de configuracao, geradores de recursos, loja classica, NPCs de loja, equipamentos persistentes, upgrades de equipe e armadilhas.
 
 Para o historico dos prompts e o inventario anterior, consulte `STARFINBEDWARS_PROJECT_STATUS.md`. As correcoes do Prompt 6.1 estao em `STARFINBEDWARS_VISUAL_AND_GAMEPLAY_FIXES.md`; a entrega do Prompt 6.2 esta em `STARFINBEDWARS_INVENTORY_AND_VISUALS.md`.
@@ -192,7 +227,7 @@ Geradores de equipe produzem ferro a cada 4 segundos e ouro a cada 15 segundos n
 
 Geradores centrais respeitam limite efetivo de quatro unidades no chao, inclusive quando um `generators.yml` antigo ainda declara um limite maior. O tempo do ciclo continua passando enquanto estao cheios. Recursos com regiao configurada sao produzidos somente em pontos validos dessa regiao; itens que escapam dela sao reposicionados a cada segundo. Novos geradores centrais do assistente usam o bloco clicado como ancora e registram uma pequena regiao acima dele.
 
-Configure e confirme POS1/POS2 antes de escolher o modo ou criar equipes: `/sbw setarena center here` para calcular automaticamente ou `/sbw setarena pos1` e `/sbw setarena pos2` para marcar manualmente, depois `/sbw setarena confirm`. O plugin bloqueia as etapas seguintes enquanto os limites nao estiverem salvos. Depois, siga modo, capacidade de equipe e criacao das equipes nessa ordem. Depois de informar o nome de cada time, o assistente apresenta as 16 cores como opcoes clicaveis no chat; a escolha aplica tambem a cor de bloco correspondente, sem exigir codigo `&`. Apos configurar cama, spawn, respawn e lojas de cada time, marque uma vez POS1 e POS2 da regiao do gerador para criar juntos os geradores de Iron, Gold e Esmeralda daquele time. Ao final, digite `diamond` ou `emerald` e clique com o botao direito no bloco de cada gerador central; o minerio nasce sobre esse bloco, enquanto o holograma fica acima apenas para informar o nivel e o ciclo. O `/sbw setup status` exibe a etapa e instrucao reais. O assistente salva equipes, cores de bloco, lojas por equipe, regioes de geradores, limites e blocos das estruturas de spawn no schema YAML v7, mantendo leitura de arenas v1–v6. Solo usa footprint 3x3 com interior 1x1; Equipe usa 5x5 com interior 3x3. As estruturas registradas somem somente na copia isolada quando a partida inicia; o estado `STARTING` cancela dano antes do teleporte. Rascunhos e historico de Undo sobrevivem a reinicios, mas o clone temporario nao: reabra o editor para retomar; alteracoes de bloco nao publicadas no clone antigo nao sao recuperadas. O lobby deve ser configurado separadamente e o wizard nao habilita a arena.
+Configure e confirme POS1/POS2 antes de escolher o modo ou criar equipes: `/sbw setarena center here` para calcular automaticamente ou `/sbw setarena pos1` e `/sbw setarena pos2` para marcar manualmente, depois `/sbw setarena confirm`. O plugin bloqueia as etapas seguintes enquanto os limites nao estiverem salvos. Depois, siga modo, capacidade de equipe e criacao das equipes nessa ordem. Depois de informar o nome de cada time, o assistente apresenta as 16 cores como opcoes clicaveis no chat; a escolha aplica tambem a cor de bloco correspondente, sem exigir codigo `&`. Apos configurar cama, spawn, respawn e lojas de cada time, marque uma vez POS1 e POS2 da regiao do gerador para criar juntos os geradores de Iron, Gold e Esmeralda daquele time. Ao final, digite `diamond` ou `emerald` e clique com o botao direito no bloco de cada gerador central; o minerio nasce sobre esse bloco, enquanto o holograma fica acima apenas para informar o nivel e o ciclo. O `/sbw setup status` exibe a etapa e instrucao reais. O assistente salva equipes, cores de bloco, lojas por equipe, regioes de geradores, limites e blocos das estruturas de spawn no schema YAML v7, mantendo leitura de arenas v1–v6. A sala segue a capacidade: Solo 3x3, Dupla 5x5, Trio/Quarteto 7x7 e equipes de 5 a 8 jogadores 9x9. Estruturas antigas menores são ampliadas somente na copia isolada da partida. As estruturas registradas somem somente na copia isolada quando a partida inicia; o estado `STARTING` cancela dano antes do teleporte. Rascunhos e historico de Undo sobrevivem a reinicios, mas o clone temporario nao: reabra o editor para retomar; alteracoes de bloco nao publicadas no clone antigo nao sao recuperadas. O lobby deve ser configurado separadamente e o wizard nao habilita a arena.
 
 Ao concluir o setup, valide e publique a copia antes de habilitar: `/sbw arena validate <arena>`, `/sbw arena edit publish <arena>`, depois `/sbw arena enable <arena>`. A publicacao confere os blocos fisicos das camas; se um template antigo estiver incompleto, a partida tambem e recusada antes de admitir jogadores, com uma mensagem indicando a equipe e as coordenadas a corrigir. Geradores centrais mostram um bloco flutuante, quatro icones orbitais e nivel/recurso/contagem regressiva. Os indicadores das camas sao enviados individualmente aos clientes. Consulte `STARFINBEDWARS_ANIMATED_HOLOGRAMS.md`.
 

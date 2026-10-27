@@ -2,6 +2,8 @@ package com.starfinplugins.bedwars.upgrades;
 
 import com.starfinplugins.bedwars.domain.economy.TeamTrapType;
 import com.starfinplugins.bedwars.domain.economy.TeamUpgradeType;
+import com.starfinplugins.bedwars.domain.economy.ResourcePriceText;
+import com.starfinplugins.bedwars.domain.economy.ResourceType;
 import com.starfinplugins.bedwars.domain.match.GameTeam;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -80,8 +82,8 @@ public final class UpgradeMenu implements InventoryHolder {
             boolean owned = index < level;
             lore.add((owned ? ChatColor.GREEN + "✓ " : ChatColor.RED + "✗ ")
                 + ChatColor.GRAY + "Nível " + (index + 1) + ": " + effect + " "
-                + roman(index + 1) + ", " + ChatColor.AQUA + costs.get(index)
-                + " Diamantes");
+                + roman(index + 1) + ", "
+                + ResourcePriceText.amount(ResourceType.DIAMOND, costs.get(index)));
         }
         lore.add(" ");
         if (level >= costs.size() || !available) {
@@ -111,11 +113,11 @@ public final class UpgradeMenu implements InventoryHolder {
                 lore.add((index <= level ? ChatColor.GREEN + "✓ " : ChatColor.RED + "✗ ")
                     + ChatColor.GRAY + "Nível " + index + ": " + title + " "
                     + roman(index) + " por " + (settings.getTrapDurationTicks(type, index) / 20)
-                    + " segundos, " + ChatColor.AQUA + settings.getTrapCost(type, index)
-                    + " Diamantes");
+                    + " segundos, " + ResourcePriceText.amount(ResourceType.DIAMOND,
+                        settings.getTrapCost(type, index)));
             }
         } else {
-            lore.add(ChatColor.GRAY + "Preço: " + ChatColor.AQUA + cost + " Diamante");
+            lore.add(ResourcePriceText.price(ResourceType.DIAMOND, cost));
         }
         lore.add(" ");
         if (level >= maximum && maximum > 1) {

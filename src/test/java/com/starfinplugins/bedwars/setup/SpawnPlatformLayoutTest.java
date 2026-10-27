@@ -23,6 +23,23 @@ public class SpawnPlatformLayoutTest {
         assertLayout(false, 5, 5, 3, 3, 25, 25, 48, 98);
     }
 
+    @Test
+    public void spawnRoomsGrowWithActualTeamCapacity() {
+        assertCapacity(1, 3, 1);
+        assertCapacity(2, 5, 3);
+        assertCapacity(3, 7, 5);
+        assertCapacity(4, 7, 5);
+        assertCapacity(5, 9, 7);
+        assertCapacity(8, 9, 7);
+    }
+
+    private void assertCapacity(int capacity, int width, int interior) {
+        SpawnPlatformLayout layout = SpawnPlatformLayout.forTeamCapacity(20, 63, -10, capacity);
+        assertEquals(width, layout.getMaximumX() - layout.getMinimumX() + 1);
+        assertEquals(width, layout.getMaximumZ() - layout.getMinimumZ() + 1);
+        assertInteriorSize(layout, interior, interior);
+    }
+
     private void assertLayout(boolean solo, int width, int depth, int interiorWidth,
                               int interiorDepth, int baseCount,
                               int roofCount, int wallCount, int total) {

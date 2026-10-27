@@ -6,6 +6,7 @@ general:
 match:
   respawn-seconds: 3
   spawn-opening-seconds: 10
+  ender-pearl-damage: 4.0 # Pontos de vida: 4 = 2 coracoes; 0 desativa o dano.
   tnt-auto-prime: true # Colocar TNT durante a partida acende automaticamente o pavio.
   tnt-fuse-ticks: 40 # 2 segundos; entre 1 e 200 ticks.
   # Vitoria: 9 segundos para os fogos antes de retornar ao lobby.
@@ -425,3 +426,6 @@ messages:
     combat-killer: '&7{player} &7foi eliminado por &e{killer}&7.'
     generic: '&7{player} &7morreu.'
     generic-killer: '&7{player} &7foi eliminado por &e{killer}&7.'
+party-matchmaking:
+  wait-for-reserved-members: true
+  arrival-grace-seconds: 20

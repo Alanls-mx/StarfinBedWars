@@ -10,7 +10,9 @@ import com.starfinplugins.bedwars.domain.arena.ResourceGeneratorDefinition;
 import com.starfinplugins.bedwars.domain.arena.SpawnStructureDefinition;
 import com.starfinplugins.bedwars.domain.arena.TeamDefinition;
 import com.starfinplugins.bedwars.domain.economy.ResourceType;
+import com.starfinplugins.bedwars.setup.SpawnPlatformLayout;
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.nio.file.Files;
@@ -25,6 +27,25 @@ import static org.junit.Assert.assertTrue;
 public class ArenaRepositoryTest {
     @Rule
     public final TemporaryFolder temporaryFolder = new TemporaryFolder();
+
+    @Test
+    public void savesLargerTeamSpawnRoom() throws Exception {
+        ArenaRepository repository = new ArenaRepository(temporaryFolder.getRoot());
+        ArenaDefinition arena = new ArenaDefinition("large", "template");
+        TeamDefinition team = new TeamDefinition("red", "Vermelho", "c", 8);
+        List<SpawnStructureDefinition.BlockPosition> blocks =
+            new ArrayList<SpawnStructureDefinition.BlockPosition>();
+        for (SpawnPlatformLayout.BlockCoordinate coordinate :
+                SpawnPlatformLayout.forTeamCapacity(0, 64, 0, 8).getBlocks())
+            blocks.add(new SpawnStructureDefinition.BlockPosition(coordinate.getX(),
+                coordinate.getY(), coordinate.getZ()));
+        team.setSpawnStructure(new SpawnStructureDefinition(95, 14, blocks));
+        arena.addTeam(team);
+        repository.save(arena);
+        assertEquals(blocks.size(), repository.loadAll().get(0).getTeams().get("red")
+            .getSpawnStructure().getBlocks().size());
+        assertTrue(blocks.size() > 256);
+    }
 
     @Test
     public void savesAndLoadsArenaDefinition() throws Exception {

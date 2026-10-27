@@ -10,6 +10,7 @@ import com.starfinplugins.bedwars.arena.ArenaRegionSelectionService;
 import com.starfinplugins.bedwars.reconnect.ReconnectService;
 import com.starfinplugins.bedwars.reconnect.ReconnectSettings;
 import com.starfinplugins.bedwars.match.MatchEngineService;
+import com.starfinplugins.bedwars.match.TeamSelectorService;
 import com.starfinplugins.bedwars.match.TntAutoIgniteService;
 import com.starfinplugins.bedwars.match.ParticipantInventoryService;
 import com.starfinplugins.bedwars.match.MatchPresentationService;
@@ -141,6 +142,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             bedHolograms = new BedHologramService(this, arenaService, matchEngine, mobGuard);
             statistics = new MatchStatisticsService(this);
             gameplay = new GameplayService(this, matchEngine, statistics, equipment);
+            TeamSelectorService teamSelector = new TeamSelectorService(this, matchEngine);
             antiAfk = new AntiAfkService(this, matchEngine, statistics, gameplay);
             generators.setGameplay(gameplay);
             progressionMenus = new ProgressionMenuService(this, statistics);
@@ -168,6 +170,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services.add(teamUpgrades);
             services.add(equipment);
             services.add(gameplay);
+            services.add(teamSelector);
             services.add(antiAfk);
             services.add(shops);
             services.add(specialItems);
