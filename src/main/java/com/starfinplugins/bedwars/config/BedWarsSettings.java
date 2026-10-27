@@ -73,6 +73,14 @@ public final class BedWarsSettings {
         requireBoolean(config, "general.debug");
         int respawnDelay = readInteger(config, "match.respawn-seconds", 3, 0, 30);
         int spawnOpeningDelay = readInteger(config, "match.spawn-opening-seconds", 10, 1, 60);
+        readInteger(config, "match.void-depth-below-lowest-block", 48, 0, 128);
+        if (config.contains("match.ender-pearl-damage")
+                && (!(config.isDouble("match.ender-pearl-damage")
+                    || config.isInt("match.ender-pearl-damage"))
+                    || !Double.isFinite(config.getDouble("match.ender-pearl-damage"))
+                    || config.getDouble("match.ender-pearl-damage") < 0.0D
+                    || config.getDouble("match.ender-pearl-damage") > 20.0D))
+            throw new IOException("match.ender-pearl-damage deve ser entre 0 e 20.");
         if (config.contains("match.tnt-auto-prime") && !config.isBoolean("match.tnt-auto-prime")) {
             throw new IOException("match.tnt-auto-prime deve ser true ou false.");
         }

@@ -101,6 +101,7 @@ public final class MatchEngineService implements ManagedService, Listener {
     private final Map<UUID, BukkitTask> respawnTasks = new HashMap<UUID, BukkitTask>();
     private final Map<UUID, Long> fallProtectionUntil = new HashMap<UUID, Long>();
     private final Map<UUID, Long> pearlLandings = new HashMap<UUID, Long>();
+    private final Map<UUID, Integer> matchVoidHeights = new HashMap<UUID, Integer>();
     /** setHealth(0) does not reliably report DamageCause.VOID on Spigot 1.8.8. */
     private final Map<UUID, UUID> forcedVoidDeaths = new HashMap<UUID, UUID>();
     private final ArenaBoundaryWarnings boundaryWarnings = new ArenaBoundaryWarnings();
@@ -179,6 +180,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         respawnTasks.clear();
         fallProtectionUntil.clear();
         pearlLandings.clear();
+        matchVoidHeights.clear();
         forcedVoidDeaths.clear();
         boundaryWarnings.clear();
         for (GameMatch match : byArena.values()) {
@@ -485,7 +487,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         Location spawn = openingSpawns
             ? arenas.toLocation(match.getTeam(participant.getTeamId()).getDefinition().getSpawn(), world)
             : arenas.toLocation(match.getArena().getLobby(), world);
-        if (openingSpawns) spawn.setPitch(0.0F);
+        spawn.setPitch(0.0F);
         if (participantInventory != null) participantInventory.capture(player);
         player.setGameMode(GameMode.SURVIVAL);
         if (!player.teleport(spawn)) {
@@ -710,6 +712,58 @@ public final class MatchEngineService implements ManagedService, Listener {
             + match.getArena().getId() + " (chunk " + chunk.getX() + "," + chunk.getZ() + ").");
     }
 
+    private int calculateVoidHeight(ArenaDefinition arena, World world) {
+        int depth = Math.max(0, Math.min(128,
+            plugin.getConfig().getInt("match.void-depth-below-lowest-block", 48)));
+        ArenaRegion bounds = arena.getBounds();
+        if (bounds == null) return VoidDepthPolicy.deathHeight(-1, depth, arena.getVoidHeight());
+        int minChunkX = Math.floorDiv(bounds.getMinimumX(), 16);
+        int maxChunkX = Math.floorDiv(bounds.getMaximumX(), 16);
+        int minChunkZ = Math.floorDiv(bounds.getMinimumZ(), 16);
+        int maxChunkZ = Math.floorDiv(bounds.getMaximumZ(), 16);
+        long chunks = (long) (maxChunkX - minChunkX + 1) * (maxChunkZ - minChunkZ + 1);
+        if (chunks > 1024L) {
+            plugin.getLogger().warning("Arena " + arena.getId()
+                + " excede 1024 chunks para localizar o fundo; usando altura de void segura.");
+            return VoidDepthPolicy.deathHeight(-1, depth, arena.getVoidHeight());
+        }
+        int lowest = world.getMaxHeight();
+        int topY = Math.min(world.getMaxHeight() - 1, arena.getCeilingHeight());
+        for (int cx = minChunkX; cx <= maxChunkX; cx++) {
+            for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
+                org.bukkit.ChunkSnapshot snapshot = world.getChunkAt(cx, cz)
+                    .getChunkSnapshot(false, false, false);
+                int fromX = Math.max(0, bounds.getMinimumX() - cx * 16);
+                int toX = Math.min(15, bounds.getMaximumX() - cx * 16);
+                int fromZ = Math.max(0, bounds.getMinimumZ() - cz * 16);
+                int toZ = Math.min(15, bounds.getMaximumZ() - cz * 16);
+                boolean found = false;
+                for (int section = 0; section <= Math.min(topY, lowest - 1) / 16 && !found;
+                        section++) {
+                    if (snapshot.isSectionEmpty(section)) continue;
+                    int sectionTop = Math.min(section * 16 + 15, Math.min(topY, lowest - 1));
+                    for (int y = section * 16; y <= sectionTop && !found; y++) {
+                        for (int x = fromX; x <= toX && !found; x++) {
+                            for (int z = fromZ; z <= toZ; z++) {
+                                Material material = Material.getMaterial(snapshot.getBlockTypeId(x, y, z));
+                                if (material == null || !material.isSolid()) continue;
+                                lowest = y;
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        int height = VoidDepthPolicy.deathHeight(
+            lowest == world.getMaxHeight() ? -1 : lowest, depth, arena.getVoidHeight());
+        plugin.getLogger().info("Void da arena " + arena.getId() + ": bloco mais baixo Y="
+            + (lowest == world.getMaxHeight() ? "nao encontrado" : lowest)
+            + ", profundidade=" + depth + ", morte abaixo de Y=" + height + ".");
+        return height;
+    }
+
     @EventHandler public void onMatchChunkLoad(ChunkLoadEvent event) {
         GameMatch match = matchInWorld(event.getWorld());
         if (match != null) removeUnconfiguredBeds(match, event.getChunk());
@@ -728,6 +782,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         World world = matchWorlds.get(match.getId());
         if (world == null) return;
         Location lobby = arenas.toLocation(match.getArena().getLobby(), world);
+        lobby.setPitch(0.0F);
         for (GameParticipant participant : match.getParticipantList()) {
             Player player = Bukkit.getPlayer(participant.getPlayerId());
             if (player == null || participant.getState() != ParticipantState.CONNECTED) continue;
@@ -807,8 +862,10 @@ public final class MatchEngineService implements ManagedService, Listener {
         for (GameParticipant participant : match.getParticipantList()) {
             cancel(respawnTasks.remove(participant.getPlayerId()));
             fallProtectionUntil.remove(participant.getPlayerId());
+            pearlLandings.remove(participant.getPlayerId());
             boundaryWarnings.forget(participant.getPlayerId());
         }
+        matchVoidHeights.remove(match.getId());
         BukkitTask countdown = countdowns.remove(match.getArena().getId());
         cancel(countdown);
         countdownValues.remove(match.getArena().getId());
@@ -984,6 +1041,7 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (location != null && location.getWorld() != null) {
             GameMode gameMode = returnGameModes.remove(player.getUniqueId());
             player.setGameMode(gameMode == null ? GameMode.SURVIVAL : gameMode);
+            location.setPitch(0.0F);
             player.teleport(location);
         } else {
             returnGameModes.remove(player.getUniqueId());
@@ -1046,7 +1104,10 @@ public final class MatchEngineService implements ManagedService, Listener {
                 World world = old.getWorld() == null ? null : Bukkit.getWorld(old.getWorld().getName());
                 Location destination = world == null || world != old.getWorld()
                     ? (Bukkit.getWorlds().isEmpty() ? null : Bukkit.getWorlds().get(0).getSpawnLocation()) : old;
-                if (destination != null) player.teleport(destination);
+                if (destination != null) {
+                    destination.setPitch(0.0F);
+                    player.teleport(destination);
+                }
                 player.setGameMode(mode == null ? GameMode.SURVIVAL : mode);
             }
         });
@@ -1809,7 +1870,8 @@ public final class MatchEngineService implements ManagedService, Listener {
             return;
         }
         ArenaDefinition arena = match.getArena();
-        if (event.getTo().getY() < arena.getVoidHeight()) {
+        if (event.getTo().getY() < matchVoidHeights.getOrDefault(match.getId(),
+                arena.getVoidHeight())) {
             forcedVoidDeaths.put(player.getUniqueId(), match.getId());
             if (!player.isDead() && player.getHealth() > 0.0D) player.setHealth(0.0D);
             return;
@@ -1960,12 +2022,11 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (!(event.getEntity() instanceof Player)) return;
         Player player = (Player) event.getEntity();
         if (event.getCause() == EntityDamageEvent.DamageCause.FALL) {
-            Long pearlAt = pearlLandings.remove(player.getUniqueId());
+            Long pearlAt = pearlLandings.get(player.getUniqueId());
             if (pearlAt != null && System.currentTimeMillis() - pearlAt <= 500L) {
-                double damage = Math.max(0.0D, Math.min(20.0D,
-                    plugin.getConfig().getDouble("match.ender-pearl-damage", 4.0D)));
-                if (damage == 0.0D) event.setCancelled(true);
-                else event.setDamage(damage);
+                // Spigot's built-in pearl hit varies with damage immunity. Apply the
+                // configured fixed health cost once on the following server tick.
+                event.setCancelled(true);
                 return;
             }
         }
@@ -1994,9 +2055,24 @@ public final class MatchEngineService implements ManagedService, Listener {
         Player player = event.getPlayer();
         GameMatch match = byPlayer.get(player.getUniqueId());
         GameParticipant participant = match == null ? null : match.getParticipant(player.getUniqueId());
-        if (match != null && match.getState() == MatchState.IN_GAME && participant != null
-                && participant.getState() == ParticipantState.CONNECTED)
-            pearlLandings.put(player.getUniqueId(), System.currentTimeMillis());
+        if (match == null || match.getState() != MatchState.IN_GAME || participant == null
+                || participant.getState() != ParticipantState.CONNECTED) return;
+        UUID playerId = player.getUniqueId();
+        long landing = System.currentTimeMillis();
+        pearlLandings.put(playerId, landing);
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            Long current = pearlLandings.get(playerId);
+            if (current == null || current != landing) return;
+            pearlLandings.remove(playerId);
+            if (!player.isOnline() || player.isDead() || byPlayer.get(playerId) != match
+                    || match.getState() != MatchState.IN_GAME
+                    || match.getParticipant(playerId) == null
+                    || match.getParticipant(playerId).getState() != ParticipantState.CONNECTED)
+                return;
+            double damage = Math.max(0.0D, Math.min(20.0D,
+                plugin.getConfig().getDouble("match.ender-pearl-damage", 4.0D)));
+            if (damage > 0.0D) player.setHealth(Math.max(0.0D, player.getHealth() - damage));
+        });
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -2175,6 +2251,7 @@ public final class MatchEngineService implements ManagedService, Listener {
             matchWorlds.put(match.getId(), world);
             for (org.bukkit.Chunk chunk : world.getLoadedChunks())
                 removeUnconfiguredBeds(match, chunk);
+            matchVoidHeights.put(match.getId(), calculateVoidHeight(arena, world));
             fire(MatchLifecycleEvent.Type.CREATED, match, null, null);
             try {
                 for (Player candidate : candidates) {
@@ -2189,6 +2266,7 @@ public final class MatchEngineService implements ManagedService, Listener {
             } catch (RuntimeException joinError) {
                 byArena.remove(arena.getId());
                 matchWorlds.remove(match.getId());
+                matchVoidHeights.remove(match.getId());
                 try {
                     arenas.getWorlds().removeInstance(world);
                 } catch (IOException cleanupError) {

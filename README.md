@@ -31,6 +31,11 @@ No servidor BedWars, jogadores mantêm fome cheia no lobby e nas partidas.
 O dano ao teleportar com ender pearl é definido por
 `match.ender-pearl-damage` (padrão: 4 pontos de vida, ou 2 corações; `0`
 desativa). O dano padrão da versão 1.8.8 é substituído por esse valor.
+`match.void-depth-below-lowest-block` (padrão: 48) define quantos blocos o
+jogador pode cair abaixo do bloco sólido mais baixo da arena antes da morte por
+void; a altura antiga da arena permanece como limite máximo para evitar mortes
+mais cedo. Ao entrar ou voltar ao lobby, o jogador olha reto, mantendo o yaw
+horizontal configurado.
 Camas decorativas ou sem equipe configurada são removidas da cópia da partida
 ao carregar seus chunks; as camas registradas e suas duas metades são
 preservadas. Jogadores não podem colocar novas camas durante a partida.
