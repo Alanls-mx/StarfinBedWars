@@ -1043,6 +1043,10 @@ public final class MatchEngineService implements ManagedService, Listener {
             player.setGameMode(gameMode == null ? GameMode.SURVIVAL : gameMode);
             location.setPitch(0.0F);
             player.teleport(location);
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (player.isOnline() && !byPlayer.containsKey(player.getUniqueId()))
+                    player.updateInventory();
+            });
         } else {
             returnGameModes.remove(player.getUniqueId());
         }
@@ -2071,7 +2075,11 @@ public final class MatchEngineService implements ManagedService, Listener {
                 return;
             double damage = Math.max(0.0D, Math.min(20.0D,
                 plugin.getConfig().getDouble("match.ender-pearl-damage", 4.0D)));
-            if (damage > 0.0D) player.setHealth(Math.max(0.0D, player.getHealth() - damage));
+            if (damage > 0.0D) {
+                player.playSound(player.getLocation(), org.bukkit.Sound.HURT_FLESH, 1.0F, 1.0F);
+                player.playEffect(org.bukkit.EntityEffect.HURT);
+                player.setHealth(Math.max(0.0D, player.getHealth() - damage));
+            }
         });
     }
 

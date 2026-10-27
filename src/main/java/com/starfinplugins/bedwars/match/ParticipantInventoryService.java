@@ -74,7 +74,8 @@ public final class ParticipantInventoryService implements ManagedService, Listen
                 || event.getType() == MatchLifecycleEvent.Type.INSTANCE_REMOVED) {
             for (GameParticipant participant : event.getMatch().getParticipantList()) {
                 Player player = Bukkit.getPlayer(participant.getPlayerId());
-                if (player != null) restore(participant.getPlayerId(), player);
+                if (player != null && snapshots.containsKey(participant.getPlayerId()))
+                    restore(participant.getPlayerId(), player);
             }
         }
     }
@@ -127,7 +128,15 @@ public final class ParticipantInventoryService implements ManagedService, Listen
 
     private void restore(UUID playerId, Player player) {
         Snapshot snapshot = snapshots.remove(playerId);
-        if (snapshot == null) return;
+        if (snapshot == null) {
+            // A restart or an interrupted admission may leave match armor without
+            // a lobby snapshot. Never carry that armor out of a match.
+            player.getInventory().setArmorContents(new ItemStack[4]);
+            player.updateInventory();
+            plugin.getLogger().warning("Inventario anterior ausente para " + player.getName()
+                + "; armadura da partida removida no retorno.");
+            return;
+        }
         player.getInventory().setContents(cloneItems(snapshot.contents));
         player.getInventory().setArmorContents(cloneItems(snapshot.armor));
         player.getInventory().setHeldItemSlot(snapshot.heldSlot);
@@ -150,6 +159,7 @@ public final class ParticipantInventoryService implements ManagedService, Listen
         player.setWalkSpeed(snapshot.walkSpeed);
         double health = Math.max(0.5, Math.min(snapshot.health, player.getMaxHealth()));
         player.setHealth(health);
+        player.updateInventory();
     }
 
     private ItemStack[] cloneItems(ItemStack[] items) {

@@ -30,7 +30,8 @@ Esmeralda verde; as melhorias de equipe mostram Diamantes em aqua.
 No servidor BedWars, jogadores mantêm fome cheia no lobby e nas partidas.
 O dano ao teleportar com ender pearl é definido por
 `match.ender-pearl-damage` (padrão: 4 pontos de vida, ou 2 corações; `0`
-desativa). O dano padrão da versão 1.8.8 é substituído por esse valor.
+desativa). O dano padrão da versão 1.8.8 é substituído por esse valor, com
+som e animação de impacto.
 `match.void-depth-below-lowest-block` (padrão: 48) define quantos blocos o
 jogador pode cair abaixo do bloco sólido mais baixo da arena antes da morte por
 void; a altura antiga da arena permanece como limite máximo para evitar mortes

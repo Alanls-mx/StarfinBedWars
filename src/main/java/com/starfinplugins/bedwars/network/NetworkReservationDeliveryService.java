@@ -1,6 +1,7 @@
 package com.starfinplugins.bedwars.network;
 
 import com.google.common.io.ByteArrayDataOutput;
+import com.google.common.io.ByteArrayDataInput;
 import com.google.common.io.ByteStreams;
 import com.starfinplugins.bedwars.StarfinBedWarsPlugin;
 import com.starfinplugins.bedwars.event.MatchLifecycleEvent;
@@ -19,9 +20,12 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.plugin.messaging.PluginMessageListener;
 
 /** Persistent reservation delivery. A reservation is confirmed only after PLAYER_JOINED. */
-public final class NetworkReservationDeliveryService implements ManagedService, Listener {
+public final class NetworkReservationDeliveryService
+        implements ManagedService, Listener, PluginMessageListener {
+    private static final String SAME_SERVER_CHANNEL = "SMJoin";
     private final StarfinBedWarsPlugin plugin;
     private final NetworkRegistryService network;
     private final MatchEngineService matches;
@@ -40,6 +44,8 @@ public final class NetworkReservationDeliveryService implements ManagedService, 
     @Override public void start() {
         if (!network.isEnabled()) return;
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, "BungeeCord");
+        plugin.getServer().getMessenger().registerIncomingPluginChannel(
+            plugin, SAME_SERVER_CHANNEL, this);
         Bukkit.getPluginManager().registerEvents(this, plugin);
         matches.setReservationFailureHandler(this::failPending);
         started = true;
@@ -50,6 +56,8 @@ public final class NetworkReservationDeliveryService implements ManagedService, 
         matches.setReservationFailureHandler(null);
         HandlerList.unregisterAll(this);
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, "BungeeCord");
+        plugin.getServer().getMessenger().unregisterIncomingPluginChannel(
+            plugin, SAME_SERVER_CHANNEL, this);
         for (Pending item : pending.values()) {
             item.timeout.cancel();
             network.finishReservation(item.reservation.getId(), item.reservation.getPlayerId(), false);
@@ -61,6 +69,21 @@ public final class NetworkReservationDeliveryService implements ManagedService, 
     public void onJoin(PlayerJoinEvent event) {
         if (!started) return;
         UUID playerId = event.getPlayer().getUniqueId();
+        network.claimReservation(playerId, reservation -> deliver(playerId, reservation));
+    }
+
+    @Override public void onPluginMessageReceived(String channel, Player carrier, byte[] message) {
+        if (!started || !SAME_SERVER_CHANNEL.equals(channel) || message == null) return;
+        final UUID playerId;
+        try {
+            ByteArrayDataInput input = ByteStreams.newDataInput(message);
+            playerId = UUID.fromString(input.readUTF());
+        } catch (RuntimeException invalid) {
+            plugin.getLogger().warning("Mensagem de entrada local invalida recebida do proxy.");
+            return;
+        }
+        Player target = Bukkit.getPlayer(playerId);
+        if (target == null || !target.isOnline()) return;
         network.claimReservation(playerId, reservation -> deliver(playerId, reservation));
     }
 
