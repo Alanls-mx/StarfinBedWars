@@ -1,0 +1,45 @@
+# Motor competitivo. A Fase 6.2 fornecerá a admissão pelo proxy.
+enabled: false
+context: preseason-1
+authorized-plugins: []
+rating:
+  initial: 1000
+  minimum: 0
+  k-factor: 24
+placement:
+  required-matches: 5
+modes:
+  solo: true
+  duo: true
+  trio: true
+  squad: true
+  custom: false
+abandonment:
+  # Um abandono definitivo recebe resultado de derrota mesmo se a equipe vencer.
+  outcome: LOSS
+draws:
+  allow-legitimate: true
+history:
+  enabled: true
+queries:
+  maximum-results: 50
+diagnostics:
+  enabled: false
+advantages:
+  kits: false
+  abilities: false
+divisions:
+  bronze: {minimum-rating: 0, name: 'Bronze', color: '&6', order: 1, icon: CLAY_BRICK}
+  silver: {minimum-rating: 900, name: 'Prata', color: '&7', order: 2, icon: IRON_INGOT}
+  gold: {minimum-rating: 1100, name: 'Ouro', color: '&e', order: 3, icon: GOLD_INGOT}
+  diamond: {minimum-rating: 1300, name: 'Diamante', color: '&b', order: 4, icon: DIAMOND}
+  master: {minimum-rating: 1500, name: 'Mestre', color: '&d', order: 5, icon: NETHER_STAR}
+  legend: {minimum-rating: 1800, name: 'Lenda', color: '&c', order: 6, icon: DRAGON_EGG}
+messages:
+  unavailable: '&cO sistema competitivo está indisponível no momento.'
+  disabled: '&eRanqueadas ainda não estão abertas para entrada.'
+  loading: '&7Consultando perfil competitivo...'
+  no-player: '&cJogador não encontrado.'
+  profile: '&b{player} &7| &f{mode} &7| MMR: &f{rating} &7| {division} &7| Posicionamento: &f{placement} &7| V: &a{wins} &7D: &c{losses} &7E: &f{draws}'
+  last-match: '&7Última partida: &f{date}'
+  admin-status: '&bCompetitivo: &f{enabled} &7| Banco: &f{database} &7| Contexto: &f{context}'

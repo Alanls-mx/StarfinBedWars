@@ -134,6 +134,10 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             sendHelp(sender, label, args.length > 1 ? args[1] : null);
             return true;
         }
+        if ("ranked".equalsIgnoreCase(args[0])) {
+            RankedCommand.execute(plugin, sender, args);
+            return true;
+        }
         if ("migrate".equalsIgnoreCase(args[0])) {
             if (!sender.hasPermission("starfinbedwars.admin")) {
                 sender.sendMessage(PREFIX + ChatColor.RED + "Migracao SQL exige starfinbedwars.admin.");
@@ -1862,7 +1866,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             List<String> choices = new ArrayList<String>(Arrays.asList(
                 "help", "version", "menu", "arena", "join", "spectate", "leave", "chat",
                 "stats", "perfil", "nivel", "profile", "progress", "rewards", "recompensas",
-                "top", "idioma", "language", "lang", "kit", "ability"));
+                "top", "ranked", "idioma", "language", "lang", "kit", "ability"));
             if (sender.hasPermission("starfinbedwars.command.always")
                     || sender.hasPermission("starfinbedwars.admin")) choices.add("always");
             if (sender.hasPermission("starfinbedwars.command.gameplay.admin")
@@ -1878,6 +1882,16 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             if (sender.hasPermission("starfinbedwars.command.world")
                     || sender.hasPermission("starfinbedwars.admin")) choices.add("world");
             return filter(choices, args[0]);
+        }
+        if ("ranked".equalsIgnoreCase(args[0])) {
+            if (args.length == 2) return filter(sender.hasPermission("starfinbedwars.ranked.admin")
+                ? Arrays.asList("profile", "status", "admin")
+                : Arrays.asList("profile", "status"), args[1]);
+            if (args.length == 3 && "admin".equalsIgnoreCase(args[1])
+                    && sender.hasPermission("starfinbedwars.ranked.admin"))
+                return filter(Arrays.asList("status", "inspect"), args[2]);
+            if (args.length == 4 && "profile".equalsIgnoreCase(args[1]))
+                return filter(com.starfinplugins.bedwars.stats.MatchMode.STANDARD, args[3]);
         }
         if ("migrate".equalsIgnoreCase(args[0]) && sender.hasPermission("starfinbedwars.admin")) {
             if (args.length == 2) return filter(Arrays.asList("preview", "apply"), args[1]);

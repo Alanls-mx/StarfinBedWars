@@ -10,6 +10,7 @@ import com.starfinplugins.bedwars.arena.ArenaRegionSelectionService;
 import com.starfinplugins.bedwars.reconnect.ReconnectService;
 import com.starfinplugins.bedwars.reconnect.ReconnectSettings;
 import com.starfinplugins.bedwars.match.MatchEngineService;
+import com.starfinplugins.bedwars.domain.match.RankedService;
 import com.starfinplugins.bedwars.match.TeamSelectorService;
 import com.starfinplugins.bedwars.match.TntAutoIgniteService;
 import com.starfinplugins.bedwars.match.ParticipantInventoryService;
@@ -75,6 +76,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private MatchPointService matchPoint;
     private BedHologramService bedHolograms;
     private MatchStatisticsService statistics;
+    private RankedService ranked;
     private GameplayService gameplay;
     private AntiAfkService antiAfk;
     private NetworkRegistryService networkRegistry;
@@ -141,6 +143,8 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             matchPoint = new MatchPointService(this, matchEngine, mobGuard);
             bedHolograms = new BedHologramService(this, arenaService, matchEngine, mobGuard);
             statistics = new MatchStatisticsService(this);
+            ranked = new RankedService(this);
+            matchEngine.setRanked(ranked);
             gameplay = new GameplayService(this, matchEngine, statistics, equipment);
             TeamSelectorService teamSelector = new TeamSelectorService(this, matchEngine);
             antiAfk = new AntiAfkService(this, matchEngine, statistics, gameplay);
@@ -158,6 +162,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services.add(always);
             services.add(statistics);
             services.add(networkRegistry);
+            services.add(ranked);
             services.add(storageMigration);
             services.add(tntAutoIgnite);
             services.add(reconnect);
@@ -244,6 +249,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     public ReconnectService getReconnect() { return reconnect; }
     public MatchChatService getMatchChat() { return matchChat; }
     public MatchStatisticsService getStatistics() { return statistics; }
+    public RankedService getRanked() { return ranked; }
     public GameplayService getGameplay() { return gameplay; }
     public ProgressionMenuService getProgressionMenus() { return progressionMenus; }
     public NetworkRegistryService getNetworkRegistry() { return networkRegistry; }

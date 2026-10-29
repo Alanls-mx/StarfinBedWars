@@ -107,6 +107,8 @@ public final class MatchEngineService implements ManagedService, Listener {
     private final ArenaBoundaryWarnings boundaryWarnings = new ArenaBoundaryWarnings();
     private boolean started;
     private ReconnectService reconnect;
+    private com.starfinplugins.bedwars.domain.match.RankedService ranked;
+    public void setRanked(com.starfinplugins.bedwars.domain.match.RankedService ranked) { this.ranked = ranked; }
     private java.util.function.BiConsumer<UUID, String> reservationFailureHandler;
     private MatchEquipmentService equipment;
     private ParticipantInventoryService participantInventory;
@@ -296,7 +298,8 @@ public final class MatchEngineService implements ManagedService, Listener {
     public GameMatch.TeamChoice chooseTeam(Player player, String teamId) {
         if (player == null || teamId == null) return GameMatch.TeamChoice.UNAVAILABLE;
         GameMatch match = byPlayer.get(player.getUniqueId());
-        if (match == null || isOpeningSpawns(match.getArena().getId()))
+        if (match == null || match.getType() == com.starfinplugins.bedwars.domain.match.MatchType.RANKED
+                || isOpeningSpawns(match.getArena().getId()))
             return GameMatch.TeamChoice.UNAVAILABLE;
         Map<UUID, String> previous = new HashMap<UUID, String>();
         for (GameParticipant participant : match.getParticipantList())
@@ -364,6 +367,8 @@ public final class MatchEngineService implements ManagedService, Listener {
             throw new IllegalStateException("A arena nao aceita novos jogadores neste momento.");
         }
         if (match != null) {
+            if (match.getType() == com.starfinplugins.bedwars.domain.match.MatchType.RANKED)
+                throw new IllegalStateException("Elenco competitivo fechado para novas entradas.");
             addPlayer(match, player);
             return;
         }
@@ -449,6 +454,8 @@ public final class MatchEngineService implements ManagedService, Listener {
             match.removeWaitingParticipant(player.getUniqueId());
             fire(MatchLifecycleEvent.Type.PLAYER_LEFT, match, participant,
                 participant == null ? null : participant.getTeamId());
+            if (match.getType() == com.starfinplugins.bedwars.domain.match.MatchType.RANKED)
+                finish(match, MatchEndReason.CANCELLED, null);
         } else if (match.getState() == MatchState.IN_GAME && participant != null) {
             match.setParticipantState(player.getUniqueId(), ParticipantState.ABANDONED);
             fire(MatchLifecycleEvent.Type.PLAYER_LEFT, match, participant, participant.getTeamId());
@@ -573,9 +580,18 @@ public final class MatchEngineService implements ManagedService, Listener {
     }
 
     private void beginSpawnOpening(final GameMatch match) {
+        if (match.getType() == com.starfinplugins.bedwars.domain.match.MatchType.RANKED
+                && (ranked == null || !ranked.isOperational())) {
+            finish(match, MatchEndReason.CANCELLED, null);
+            return;
+        }
         if (match.getState() != MatchState.STARTING) return;
         if (match.getConnectedCount() < match.getArena().getMinimumPlayers()
                 || match.getEligibleTeams().size() < 2) {
+            if (match.getType() == com.starfinplugins.bedwars.domain.match.MatchType.RANKED) {
+                finish(match, MatchEndReason.CANCELLED, null);
+                return;
+            }
             match.transition(MatchState.WAITING);
             fire(MatchLifecycleEvent.Type.COUNTDOWN_CANCELLED, match, null, null);
             return;
@@ -631,6 +647,10 @@ public final class MatchEngineService implements ManagedService, Listener {
                 }
                 if (remaining <= 0 && (match.getConnectedCount() < match.getArena().getMinimumPlayers()
                         || match.getEligibleTeams().size() < 2)) {
+                    if (match.getType() == com.starfinplugins.bedwars.domain.match.MatchType.RANKED) {
+                        finish(match, MatchEndReason.CANCELLED, null);
+                        return;
+                    }
                     // Hold closed spawns at zero until a new player joins directly at an island.
                     if (++waitingSeconds == 1 || waitingSeconds % 15 == 0) {
                         announce(match, "messages.spawn-waiting-players",
@@ -659,6 +679,11 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (match.getState() != MatchState.STARTING
                 || match.getConnectedCount() < match.getArena().getMinimumPlayers()
                 || match.getEligibleTeams().size() < 2) return;
+        if (match.getType() == com.starfinplugins.bedwars.domain.match.MatchType.RANKED
+                && (ranked == null || !ranked.isOperational())) {
+            finish(match, MatchEndReason.CANCELLED, null);
+            return;
+        }
         World world = matchWorlds.get(match.getId());
         if (world == null) {
             finish(match, MatchEndReason.CANCELLED, null);

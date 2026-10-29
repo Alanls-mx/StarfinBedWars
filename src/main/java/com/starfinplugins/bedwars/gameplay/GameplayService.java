@@ -195,8 +195,14 @@ public final class GameplayService implements ManagedService, Listener {
                     Player player = Bukkit.getPlayer(participant.getPlayerId());
                     if (player == null || participant.getState() != ParticipantState.CONNECTED) continue;
                     removeSelectors(player);
-                    startKit(player, match, participant, choices);
-                    choices.abilities.put(player.getUniqueId(), resolvedAbilityState(player, match));
+                    if (match.getType() != com.starfinplugins.bedwars.domain.match.MatchType.RANKED
+                            || (plugin.getRanked() != null && plugin.getRanked().getSettings() != null
+                                && plugin.getRanked().getSettings().kits))
+                        startKit(player, match, participant, choices);
+                    if (match.getType() != com.starfinplugins.bedwars.domain.match.MatchType.RANKED
+                            || (plugin.getRanked() != null && plugin.getRanked().getSettings() != null
+                                && plugin.getRanked().getSettings().abilities))
+                        choices.abilities.put(player.getUniqueId(), resolvedAbilityState(player, match));
                 }
                 break;
             case PLAYER_RESPAWNED:
@@ -221,8 +227,14 @@ public final class GameplayService implements ManagedService, Listener {
                         removeSelectors(player);
                         MatchChoices resumed = active.get(match.getId());
                         if (resumed != null && !resumed.kits.containsKey(player.getUniqueId())) {
-                            startKit(player, match, event.getParticipant(), resumed);
-                            resumed.abilities.put(player.getUniqueId(), resolvedAbilityState(player, match));
+                            if (match.getType() != com.starfinplugins.bedwars.domain.match.MatchType.RANKED
+                                    || (plugin.getRanked() != null && plugin.getRanked().getSettings() != null
+                                        && plugin.getRanked().getSettings().kits))
+                                startKit(player, match, event.getParticipant(), resumed);
+                            if (match.getType() != com.starfinplugins.bedwars.domain.match.MatchType.RANKED
+                                    || (plugin.getRanked() != null && plugin.getRanked().getSettings() != null
+                                        && plugin.getRanked().getSettings().abilities))
+                                resumed.abilities.put(player.getUniqueId(), resolvedAbilityState(player, match));
                         }
                         reconcileEffect(player);
                     }

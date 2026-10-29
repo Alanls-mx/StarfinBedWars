@@ -25,6 +25,8 @@ public final class GameMatch {
     private String winnerTeamId;
     private Instant startedAt;
     private Instant endedAt;
+    private MatchType type = MatchType.CASUAL;
+    private String competitiveContext;
 
     public GameMatch(ArenaDefinition arena) {
         if (arena == null) {
@@ -43,6 +45,17 @@ public final class GameMatch {
     public String getWinnerTeamId() { return winnerTeamId; }
     public Instant getStartedAt() { return startedAt; }
     public Instant getEndedAt() { return endedAt; }
+    public MatchType getType() { return type; }
+    public String getCompetitiveContext() { return competitiveContext; }
+    /** Called only by the authorized ranked admission service before the opening starts. */
+    void authorizeRanked(String context) {
+        if ((state != MatchState.WAITING && state != MatchState.STARTING)
+                || startedAt != null || type != MatchType.CASUAL
+                || context == null || !context.matches("[a-z0-9_-]{1,32}"))
+            throw new IllegalStateException("Contexto competitivo invalido ou tardio");
+        type = MatchType.RANKED;
+        competitiveContext = context;
+    }
     public Map<String, GameTeam> getTeams() { return Collections.unmodifiableMap(teams); }
     public Map<UUID, GameParticipant> getParticipants() { return Collections.unmodifiableMap(participants); }
     public List<GameParticipant> getParticipantList() {
@@ -73,7 +86,8 @@ public final class GameMatch {
 
     public boolean addParticipant(UUID player, String teamId, UUID groupId,
                                   int groupSize, long groupExpiresAt, UUID leaderId) {
-        if ((state != MatchState.WAITING && state != MatchState.STARTING) || participants.containsKey(player)
+        if (type == MatchType.RANKED
+                || (state != MatchState.WAITING && state != MatchState.STARTING) || participants.containsKey(player)
                 || participants.size() >= arena.getMaximumPlayers()) {
             return false;
         }
@@ -124,7 +138,8 @@ public final class GameMatch {
 
     /** Move every admitted member of a Party together, while still in the lobby. */
     public TeamChoice chooseTeam(UUID player, String targetId) {
-        if ((state != MatchState.WAITING && state != MatchState.STARTING)
+        if (type == MatchType.RANKED
+                || (state != MatchState.WAITING && state != MatchState.STARTING)
                 || !participants.containsKey(player)) return TeamChoice.UNAVAILABLE;
         GameTeam target = teams.get(targetId);
         if (target == null) return TeamChoice.UNAVAILABLE;

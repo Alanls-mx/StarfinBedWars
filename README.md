@@ -251,13 +251,25 @@ Ao concluir o setup, valide e publique a copia antes de habilitar: `/sbw arena v
 - Arenas invalidadas no startup ficam desativadas; nada e corrigido automaticamente no arquivo de origem.
 - O mundo-fonte pode ser carregado para consulta. `/sbw arena edit <id>` cria uma copia temporaria; somente `/sbw arena edit publish <id>` atualiza o template, preservando o mundo original.
 
-Ainda nao implementados: ranked, temporadas, torneios, recuperacao de partidas apos reinicios, StarfinParty, cosmeticos e conquistas. O adaptador de proxy BungeeCord cobre reservas individuais BedWars; Party e reserva em lote nao fazem parte desta fase. O modo Maluca nao esta disponivel; a capacidade dinamica das equipes nao fixa o jogo em quatro jogadores por equipe.
+O motor de classificacao competitiva da Fase 6.1 esta implementado e documentado em `RANKED_PHASE_6_1.md`. A admissao competitiva por matchmaking permanece fechada ate a Fase 6.2; o comportamento atual de `/smjoin` continua casual. StarfinSocial cuida das Parties, StarfinMinigames das reservas em lote e o BedWars das equipes efetivas. Temporadas completas e torneios ainda nao estao implementados.
 
 Os NPCs de loja usam villager registrado no protocolo 1.8 com objetivos de caminho desativados; o clique abre a loja BedWars. Quando pontos de loja nao foram salvos, o fallback cria NPCs perto dos spawns; configure os pontos pelo setup para posiciona-los nas bancadas. Textos por idioma individual e integracao com StarfinMinigames dependem de uma API compartilhada disponivel. Em 23/10/2026, uma partida completa com dois clientes de protocolo 1.8.8 em PaperSpigot 1.8.8 confirmou entrada, lobby limpo, NPCs e menus, geradores de equipe e centrais, evolucao temporizada, protecao de armadura, respawn separado, quebra da cama inimiga, eliminacao, vitoria, restauracao do inventario e carregamento da arena apos reinicio. Em 24/10/2026, outra partida no servidor isolado confirmou os hologramas centrais e de loja, a abertura dos NPCs de itens e melhorias, a personalizacao da sidebar e do TAB, o fallback dos NPCs sem posicao salva e a quebra de la colocada com preservacao da pedra original. Uma validacao adicional do protocolo confirmou os NPCs como `Villager` visivel, o texto de dominio personalizado no TAB, a cor preservada ao dividir linhas da sidebar e a migracao dos intervalos iniciais dos geradores. O assistente de setup foi testado com varinha unica no quinto slot, menu por clique no ar e pausa pelo menu. Veja `STARFINBEDWARS_DEVELOPMENT_STATUS.md` para o escopo exato do teste; um servidor de producao com outros plugins ainda exige verificacao propria.
 
 Para homologacao de rede, instale StarfinCore, StarfinMinigames-Spigot e StarfinBedWars no backend, e StarfinMinigames-Bungee no proxy. Configure o mesmo MySQL nos dois lados, `server-id` coerente no Spigot e o mapeamento autorizado no proxy. Teste `/smnetwork servers`, `/smjoin bedwars solo`, lotacao, destino offline, desconexao, reconexao e retorno ao lobby. Preserve backup das JARs e YAML para rollback; o schema existente nao e recriado.
 
 ## Organizacao
+
+## Classificacao competitiva (Fase 6.1)
+
+`ranked.yml` define rating inicial/minimo, K-factor, posicionamento, divisoes,
+modalidades, regras de abandono e vantagens permitidas. O motor esta
+desativado por padrao e `/smjoin` continua casual ate que a Fase 6.2 forneca
+um emissor de admissao explicitamente autorizado. `/sbw ranked profile
+[jogador] [modo]` e `/sbw ranked status` consultam perfis sem tocar no MySQL
+na thread do jogo; `/sbw ranked admin status|inspect <jogador>` exige
+`starfinbedwars.ranked.admin`. As tabelas `sbw_ranked_*` ficam separadas das
+estatisticas casuais. Consulte [a arquitetura, formula, validacao e roteiro de
+homologacao](RANKED_PHASE_6_1.md).
 
 ## Kits e habilidades por modalidade (Fase 5.2)
 

@@ -839,3 +839,12 @@ de producao ainda deve confirmar a interacao com plugins instalados la.
 Os logs e as arenas deste ensaio ficaram somente em `target/`, fora do
 JAR e do versionamento. A validacao conjunta visual em producao continua
 pertencendo ao usuario e depende do conjunto real de plugins e mapas.
+
+## Classificacao competitiva — Fase 6.1 (29/10/2026)
+
+Motor Elo/MMR independente por modalidade, comparacoes par a par entre equipes,
+posicionamento, divisoes configuraveis, persistencia transacional e outbox
+foram adicionados. A entrada ranqueada exige emissor de admissao autorizado;
+`/smjoin` permanece casual. Fase 6.2: implementar emissao de admissoes pelo
+matchmaking Bungee, regras de Party e testes de partidas ranqueadas reais.
+Detalhes e resultados em `RANKED_PHASE_6_1.md`.

@@ -13,7 +13,7 @@ softdepend:
 commands:
   starfinbedwars:
     description: StarfinBedWars administration and status
-    usage: /starfinbedwars <help|version|status|menu|arena|world|always|join|spectate|leave|chat|stats|profile|progress|rewards|top|kit|ability|scope|gameplay|matchpoint|migrate>
+    usage: /starfinbedwars <help|version|status|menu|arena|world|always|join|spectate|leave|chat|stats|profile|progress|rewards|top|ranked|kit|ability|scope|gameplay|matchpoint|migrate>
     aliases:
       - sbw
   reconnect:
@@ -42,6 +42,10 @@ permissions:
       starfinbedwars.command.matchpoint: true
       starfinbedwars.command.gameplay.admin: true
       starfinbedwars.command.always: true
+      starfinbedwars.ranked.admin: true
+  starfinbedwars.ranked.admin:
+    description: Inspecionar o sistema competitivo
+    default: op
   starfinbedwars.command.status:
     description: View StarfinBedWars status
     default: op
