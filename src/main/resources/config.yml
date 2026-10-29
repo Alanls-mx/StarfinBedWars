@@ -178,6 +178,10 @@ match-chat:
 
 tab:
   enabled: true
+  ranked:
+    enabled: false
+    header: '&b&lSTARFIN RANQUEADAS\n&7{ranked_season} &8| &f{ranked_mode}'
+    footer: '&f{ranked_division} &8| &b{ranked_rating} MMR'
   isolate-matches: true # Lobby principal e cada partida mostram apenas seus proprios jogadores.
   # Placeholders: {arena}, {mode}, {players}, {max}, {footer}. Use \n para novas linhas.
   header: '&b&lSTARFIN BEDWARS\n{footer}'
@@ -197,6 +201,9 @@ tab:
 
 scoreboard:
   enabled: true
+  ranked:
+    enabled: false # Layouts de espera, partida e resultado ranqueados.
+    lobby-enabled: false # Sidebar do lobby principal com dados competitivos.
   # Lobby PRINCIPAL: jogadores fora de qualquer arena. Separado de layouts.lobby
   # (sala de espera de uma partida). Desative se o StarfinLobby for dono da sidebar.
   main-lobby:
@@ -262,6 +269,43 @@ scoreboard:
   # {footer} usa scoreboard.footer. Para um dominio proprio, altere scoreboard.footer,
   # ou substitua {footer} por um texto literal em cada layout.
   layouts:
+    ranked-lobby:
+      - '&b{ranked_season}'
+      - ''
+      - '&fDivisao: &e{ranked_division}'
+      - '&fMMR: &b{ranked_rating}'
+      - '&fPosicao: &e{ranked_position}'
+      - '&fPosic.: &7{ranked_placement}'
+      - ''
+      - '{footer}'
+    ranked-waiting:
+      - '&b{ranked_season}'
+      - '&7{arena} &8| &f{ranked_mode}'
+      - '&fJogadores: &a{players}&7/{max}'
+      - '&e{countdown_title} &a{countdown}'
+      - ''
+      - '&fDivisao: &e{ranked_division}'
+      - '&fMMR: &b{ranked_rating}'
+      - ''
+      - '{footer}'
+    ranked-in-game:
+      - '&b{ranked_season}'
+      - '&fMMR: &b{ranked_rating}'
+      - '&fDivisao: &e{ranked_division}'
+      - ''
+      - '{next_upgrade_title}'
+      - '{next_upgrade}'
+      - ''
+      - '{teams}'
+      - '{footer}'
+    ranked-ending:
+      - '&b{ranked_season}'
+      - ''
+      - '&ePartida encerrada'
+      - '&fVencedor: &a{winner}'
+      - '{result}'
+      - ''
+      - '{footer}'
     lobby:
       - '{date}  &8{arena_id}'
       - '&7Mapa: &a{arena}'

@@ -82,24 +82,36 @@ public final class RankedRepository implements AutoCloseable {
                     "INSERT IGNORE INTO sbw_ranked_schema_migrations(migration_id,applied_at) VALUES(61,?)")) {
                 mark.setLong(1, System.currentTimeMillis()); mark.executeUpdate();
             }
+            RankedSeasonRepository.ensureSchema(connection);
             pool = created;
         } catch (SQLException | RuntimeException failed) { created.close(); throw failed; }
     }
 
     public boolean isOpen() { return pool != null && !pool.isClosed(); }
+    Connection connection() throws SQLException { return pool.getConnection(); }
 
     public void publishPolicy(String serverId, String instanceId, RankedSettings settings,
-                              boolean issuerAvailable)
+                              boolean issuerAvailable, RankedSeason season, int pendingResults,
+                              int activeMatches)
             throws SQLException {
         try (Connection connection = pool.getConnection(); PreparedStatement update = connection.prepareStatement(
-                "INSERT INTO sbw_ranked_policy(server_id,instance_id,enabled,context,initial_rating,updated_at)"
-                + " VALUES(?,?,?,?,?,?) ON DUPLICATE KEY UPDATE instance_id=VALUES(instance_id),"
+                "INSERT INTO sbw_ranked_policy(server_id,instance_id,enabled,context,initial_rating,"
+                + "updated_at,season_version,pending_results,active_matches)"
+                + " VALUES(?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE instance_id=VALUES(instance_id),"
                 + "enabled=VALUES(enabled),context=VALUES(context),"
-                + "initial_rating=VALUES(initial_rating),updated_at=VALUES(updated_at)")) {
+                + "initial_rating=VALUES(initial_rating),updated_at=VALUES(updated_at),"
+                + "season_version=VALUES(season_version),pending_results=VALUES(pending_results),"
+                + "active_matches=VALUES(active_matches)")) {
             update.setString(1, serverId); update.setString(2, instanceId);
-            update.setBoolean(3, settings.enabled && issuerAvailable);
-            update.setString(4, settings.context);
-            update.setInt(5, settings.initial); update.setLong(6, System.currentTimeMillis());
+            update.setBoolean(3, settings.enabled && issuerAvailable
+                && (season == null || (season.state == RankedSeason.State.ACTIVE
+                    && System.currentTimeMillis() >= season.startsAt
+                    && System.currentTimeMillis() < season.endsAt)));
+            update.setString(4, season == null ? settings.context : season.id);
+            update.setInt(5, season == null ? settings.initial : season.initialRating);
+            update.setLong(6, System.currentTimeMillis());
+            update.setLong(7, season == null ? 0L : season.version);
+            update.setInt(8, pendingResults); update.setInt(9, activeMatches);
             update.executeUpdate();
         }
     }
@@ -112,9 +124,13 @@ public final class RankedRepository implements AutoCloseable {
                 || !instanceId.equals(reservation.getServerInstance().toString())) return null;
         long now = System.currentTimeMillis();
         try (Connection c = pool.getConnection(); PreparedStatement query = c.prepareStatement(
-                "SELECT server_id,server_instance,arena_id,mode,context,state,expected_players,expires_at"
-                + " FROM sm_ranked_allocations WHERE allocation_id=?")) {
+                "SELECT a.server_id,a.server_instance,a.arena_id,a.mode,a.context,a.state,"
+                + "a.expected_players,a.expires_at FROM sm_ranked_allocations a"
+                + " JOIN sbw_ranked_policy p ON p.server_id=a.server_id"
+                + " WHERE a.allocation_id=? AND p.enabled=1 AND p.context=a.context"
+                + " AND p.instance_id=a.server_instance AND p.updated_at>?")) {
             query.setString(1, reservation.getRankedAllocationId().toString());
+            query.setLong(2, now - 120000L);
             try (ResultSet row = query.executeQuery()) {
                 if (!row.next() || !serverId.equals(row.getString(1))
                         || !instanceId.equals(row.getString(2))
@@ -163,6 +179,27 @@ public final class RankedRepository implements AutoCloseable {
         try (Connection c = pool.getConnection()) {
             c.setAutoCommit(false);
             try {
+                String activeContext;
+                long policyVersion;
+                try (PreparedStatement control = c.prepareStatement(
+                        "SELECT active_id,policy_version FROM sbw_ranked_season_control"
+                        + " WHERE control_id=1 FOR UPDATE"); ResultSet row = control.executeQuery()) {
+                    if (!row.next()) { c.rollback(); return false; }
+                    activeContext = row.getString(1);
+                    policyVersion = row.getLong(2);
+                    if (activeContext != null) {
+                        try (PreparedStatement season = c.prepareStatement(
+                                "SELECT state,ends_at FROM sbw_ranked_seasons WHERE season_id=?")) {
+                            season.setString(1, activeContext);
+                            try (ResultSet current = season.executeQuery()) {
+                                if (!current.next() || !"ACTIVE".equals(current.getString(1))
+                                        || current.getLong(2) <= System.currentTimeMillis()) {
+                                    c.rollback(); return false;
+                                }
+                            }
+                        }
+                    }
+                }
                 try (PreparedStatement update = c.prepareStatement(
                         "UPDATE sm_ranked_allocation_members SET state='ADMITTED'"
                         + " WHERE allocation_id=? AND reservation_id=? AND player_uuid=?"
@@ -173,13 +210,21 @@ public final class RankedRepository implements AutoCloseable {
                 }
                 int expected;
                 try (PreparedStatement allocation = c.prepareStatement(
-                        "SELECT expected_players,state,expires_at FROM sm_ranked_allocations"
-                        + " WHERE allocation_id=? FOR UPDATE")) {
+                        "SELECT a.expected_players,a.state,a.expires_at,a.context,p.context,"
+                        + "p.season_version,p.enabled FROM sm_ranked_allocations a"
+                        + " JOIN sbw_ranked_policy p ON p.server_id=a.server_id"
+                        + " AND p.instance_id=a.server_instance"
+                        + " WHERE a.allocation_id=? FOR UPDATE")) {
                     allocation.setString(1, allocationId.toString());
                     try (ResultSet row = allocation.executeQuery()) {
                         if (!row.next() || row.getLong(3) <= System.currentTimeMillis()
                                 || !("RESERVED".equals(row.getString(2))
-                                    || "TRANSFERRING".equals(row.getString(2)))) {
+                                    || "TRANSFERRING".equals(row.getString(2)))
+                                || !row.getBoolean(7) || !row.getString(4).equals(row.getString(5))
+                                || (activeContext != null
+                                    ? !activeContext.equals(row.getString(4))
+                                        || row.getLong(6) != policyVersion
+                                    : row.getLong(6) != 0 || policyVersion != 0)) {
                             c.rollback(); return false;
                         }
                         expected = row.getInt(1);
@@ -233,7 +278,12 @@ public final class RankedRepository implements AutoCloseable {
                 if (row.next()) return readProfile(player, mode, context, row);
             }
         }
-        return new RankedProfile(player, mode, context, initial, initial, 0, 0, 0, 0, 0, 0L);
+        int starting = initial;
+        try (Connection connection = pool.getConnection()) {
+            RankedSeason season = RankedSeasonRepository.lockContext(connection, context);
+            if (season != null) starting = RankedSeasonRepository.startingRating(connection, season, player, mode);
+        }
+        return new RankedProfile(player, mode, context, starting, starting, 0, 0, 0, 0, 0, 0L);
     }
 
     public List<RankedResult> results(UUID matchId) throws SQLException {
@@ -245,6 +295,24 @@ public final class RankedRepository implements AutoCloseable {
             try (ResultSet row = query.executeQuery()) {
                 while (row.next()) found.add(new RankedResult(matchId, UUID.fromString(row.getString(1)),
                     row.getString(2), row.getString(3), row.getInt(4), row.getInt(5),
+                    row.getInt(6), row.getLong(7)));
+            }
+        }
+        return Collections.unmodifiableList(found);
+    }
+    public List<RankedResult> playerResults(UUID player, String context, int page) throws SQLException {
+        List<RankedResult> found = new ArrayList<RankedResult>();
+        try (Connection connection = pool.getConnection(); PreparedStatement query = connection.prepareStatement(
+                "SELECT r.match_id,r.team_id,r.outcome,r.rating_before,r.rating_delta,"
+                + "r.rating_after,r.completed_at FROM sbw_ranked_results r"
+                + " JOIN sbw_ranked_matches m ON m.match_id=r.match_id"
+                + " WHERE r.player_uuid=? AND m.context=?"
+                + " ORDER BY r.completed_at DESC,r.match_id DESC LIMIT 36 OFFSET ?")) {
+            query.setString(1, player.toString()); query.setString(2, context);
+            query.setInt(3, Math.max(0, page - 1) * 36);
+            try (ResultSet row = query.executeQuery()) {
+                while (row.next()) found.add(new RankedResult(UUID.fromString(row.getString(1)),
+                    player, row.getString(2), row.getString(3), row.getInt(4), row.getInt(5),
                     row.getInt(6), row.getLong(7)));
             }
         }
@@ -281,6 +349,16 @@ public final class RankedRepository implements AutoCloseable {
         try (Connection connection = pool.getConnection()) {
             connection.setAutoCommit(false);
             try {
+                int placementRequired = settings.placements;
+                RankedSeason season = RankedSeasonRepository.lockContext(connection, match.context);
+                if (season != null) {
+                    if (season.state != RankedSeason.State.ACTIVE
+                            && season.state != RankedSeason.State.CLOSING)
+                        throw new SQLException("Resultado para temporada nao processavel: " + match.context);
+                    if (match.startedAt < season.startsAt || match.startedAt >= season.endsAt)
+                        throw new SQLException("Inicio de partida fora da temporada: " + match.matchId);
+                    placementRequired = season.placementRequired;
+                }
                 try (PreparedStatement insert = connection.prepareStatement(
                         "INSERT INTO sbw_ranked_matches(match_id,mode,arena_id,server_id,instance_id,"
                         + "context,winner_team,draw,snapshot_hash,started_at,ended_at,processed_at,status)"
@@ -313,8 +391,10 @@ public final class RankedRepository implements AutoCloseable {
                             "INSERT IGNORE INTO sbw_ranked_profiles(player_uuid,mode,context,rating,"
                             + "peak_rating,updated_at) VALUES(?,?,?,?,?,?)")) {
                         create.setString(1, member.playerId.toString()); create.setString(2, match.mode);
-                        create.setString(3, match.context); create.setInt(4, match.initialRating);
-                        create.setInt(5, match.initialRating); create.setLong(6, System.currentTimeMillis());
+                        int starting = season == null ? match.initialRating
+                            : RankedSeasonRepository.startingRating(connection, season, member.playerId, match.mode);
+                        create.setString(3, match.context); create.setInt(4, starting);
+                        create.setInt(5, starting); create.setLong(6, System.currentTimeMillis());
                         create.executeUpdate();
                     }
                     try (PreparedStatement lock = connection.prepareStatement(
@@ -333,12 +413,20 @@ public final class RankedRepository implements AutoCloseable {
                 Map<UUID, Integer> deltas = RankedRatingMath.changes(match, ratings, match.kFactor);
                 List<RankedResult> results = new ArrayList<RankedResult>();
                 List<UUID> placed = new ArrayList<UUID>();
+                Map<UUID, RankedSettings.Division> beforeDivisions =
+                    new HashMap<UUID, RankedSettings.Division>();
+                Map<UUID, RankedSettings.Division> afterDivisions =
+                    new HashMap<UUID, RankedSettings.Division>();
                 for (RankedMatchSnapshot.Member member : ordered) {
                     RankedProfile old = before.get(member.playerId);
-                    if (settings.placements > 0 && old.placementGames + 1 == settings.placements)
+                    if (placementRequired > 0 && old.placementGames + 1 == placementRequired)
                         placed.add(member.playerId);
                     long raw = (long) old.rating + deltas.get(member.playerId);
                     int next = (int) Math.max(match.minimumRating, Math.min(Integer.MAX_VALUE, raw));
+                    beforeDivisions.put(member.playerId, RankedSeasonRepository.division(
+                        connection, match.context, old.rating, settings));
+                    afterDivisions.put(member.playerId, RankedSeasonRepository.division(
+                        connection, match.context, next, settings));
                     String outcome = member.abandoned ? "LOSS" : match.draw ? "DRAW"
                         : member.teamId.equals(match.winnerTeam) ? "WIN" : "LOSS";
                     try (PreparedStatement update = connection.prepareStatement(
@@ -369,7 +457,7 @@ public final class RankedRepository implements AutoCloseable {
                 }
                 connection.commit();
                 return new Applied(true, Collections.unmodifiableList(results),
-                    Collections.unmodifiableList(placed));
+                    Collections.unmodifiableList(placed), beforeDivisions, afterDivisions);
             } catch (SQLException | RuntimeException error) {
                 connection.rollback(); throw error;
             } finally { connection.setAutoCommit(true); }
@@ -445,12 +533,19 @@ public final class RankedRepository implements AutoCloseable {
         public final boolean newResult;
         public final List<RankedResult> results;
         public final List<UUID> placementCompletions;
+        public final Map<UUID, RankedSettings.Division> beforeDivisions, afterDivisions;
         Applied(boolean newResult, List<RankedResult> results) {
-            this(newResult, results, Collections.<UUID>emptyList());
+            this(newResult, results, Collections.<UUID>emptyList(),
+                Collections.<UUID, RankedSettings.Division>emptyMap(),
+                Collections.<UUID, RankedSettings.Division>emptyMap());
         }
-        Applied(boolean newResult, List<RankedResult> results, List<UUID> placementCompletions) {
+        Applied(boolean newResult, List<RankedResult> results, List<UUID> placementCompletions,
+                Map<UUID, RankedSettings.Division> beforeDivisions,
+                Map<UUID, RankedSettings.Division> afterDivisions) {
             this.newResult = newResult; this.results = results;
             this.placementCompletions = placementCompletions;
+            this.beforeDivisions = Collections.unmodifiableMap(new HashMap<UUID, RankedSettings.Division>(beforeDivisions));
+            this.afterDivisions = Collections.unmodifiableMap(new HashMap<UUID, RankedSettings.Division>(afterDivisions));
         }
     }
 }

@@ -8,6 +8,7 @@ import com.starfinplugins.bedwars.domain.match.GameMatch;
 import com.starfinplugins.bedwars.domain.match.GameParticipant;
 import com.starfinplugins.bedwars.domain.match.GameTeam;
 import com.starfinplugins.bedwars.domain.match.MatchState;
+import com.starfinplugins.bedwars.domain.match.MatchType;
 import com.starfinplugins.bedwars.domain.match.ParticipantState;
 import com.starfinplugins.bedwars.domain.economy.ResourceType;
 import com.starfinplugins.bedwars.economy.generator.ResourceGeneratorService;
@@ -246,7 +247,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
             renderInGame(board, match, player, spectating || own != null
                 && own.getState() == ParticipantState.ELIMINATED);
         } else {
-            renderLobby(board, match);
+            renderLobby(board, match, player);
         }
         syncNameTags(board, match);
         skins.refresh(player, match);
@@ -255,11 +256,14 @@ public final class MatchPresentationService implements ManagedService, Listener 
 
     private void updateTab(Player player, GameMatch match) {
         if (!tabAvailable || !plugin.getConfig().getBoolean("tab.enabled", true)) return;
-        String header = plugin.getConfig().getString("tab.header",
+        boolean competitive = match.getType() == MatchType.RANKED
+            && plugin.getConfig().getBoolean("tab.ranked.enabled", false);
+        String header = plugin.getConfig().getString(competitive ? "tab.ranked.header" : "tab.header",
             "&b&lSTARFIN BEDWARS\n{footer}");
-        String footer = plugin.getConfig().getString("tab.footer",
+        String footer = plugin.getConfig().getString(competitive ? "tab.ranked.footer" : "tab.footer",
             "&eStarfinPlugins");
         Map<String, String> tokens = commonTokens(match);
+        rankedTokens(player, match, tokens);
         tokens.put("mode", gameMode(match));
         tokens.put("players", Integer.toString(onlineCount(match)));
         tokens.put("max", Integer.toString(match.getArena().getMaximumPlayers()));
@@ -281,6 +285,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
                 || !plugin.getConfig().getBoolean("tab.lobby.enabled", true)) return;
         Map<String, String> tokens = new HashMap<String, String>();
         tokens.put("footer", brandFooter());
+        rankedTokens(player, null, tokens);
         String header = formatTabText(plugin.getConfig().getString("tab.lobby.header",
             "&b&lSTARFIN BEDWARS\\n{footer}"), tokens);
         String footer = formatTabText(plugin.getConfig().getString("tab.lobby.footer",
@@ -404,7 +409,9 @@ public final class MatchPresentationService implements ManagedService, Listener 
         tokens.put("footer", brandFooter());
         tokens.put("status", stats == null || !stats.isEnabled() ? "&cMySQL desativado"
             : profile == null ? "&eCarregando..." : "&aOnline");
-        String path = "scoreboard.main-lobby.languages." + language;
+        rankedTokens(player, null, tokens);
+        String path = plugin.getConfig().getBoolean("scoreboard.ranked.lobby-enabled", false)
+            ? "scoreboard.layouts.ranked-lobby" : "scoreboard.main-lobby.languages." + language;
         if (plugin.getConfig().getStringList(path).isEmpty()) path = "scoreboard.main-lobby.lines";
         List<String> lines = configuredLines(path, Arrays.asList(
             "{date}", "", "&fNivel: &e{level}", "&fXP: &b{xp_current}/{xp_required}",
@@ -426,9 +433,11 @@ public final class MatchPresentationService implements ManagedService, Listener 
         return bar.toString();
     }
 
-    private void renderLobby(Scoreboard board, GameMatch match) {
-        if ("CLASSIC".equalsIgnoreCase(plugin.getConfig().getString("scoreboard.preset", "CLASSIC"))) {
-            renderConfiguredLobby(board, match);
+    private void renderLobby(Scoreboard board, GameMatch match, Player viewer) {
+        if (match.getType() == MatchType.RANKED
+                && plugin.getConfig().getBoolean("scoreboard.ranked.enabled", false)
+                || "CLASSIC".equalsIgnoreCase(plugin.getConfig().getString("scoreboard.preset", "CLASSIC"))) {
+            renderConfiguredLobby(board, match, viewer);
             return;
         }
         List<String> lines = new ArrayList<String>();
@@ -459,7 +468,9 @@ public final class MatchPresentationService implements ManagedService, Listener 
 
     private void renderInGame(Scoreboard board, GameMatch match, Player viewer,
                               boolean spectating) {
-        if ("CLASSIC".equalsIgnoreCase(plugin.getConfig().getString("scoreboard.preset", "CLASSIC"))) {
+        if (match.getType() == MatchType.RANKED
+                && plugin.getConfig().getBoolean("scoreboard.ranked.enabled", false)
+                || "CLASSIC".equalsIgnoreCase(plugin.getConfig().getString("scoreboard.preset", "CLASSIC"))) {
             renderClassicInGame(board, match, viewer, spectating);
             return;
         }
@@ -497,6 +508,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
     private void renderClassicInGame(Scoreboard board, GameMatch match, Player viewer,
                                      boolean spectating) {
         Map<String, String> tokens = commonTokens(match);
+        rankedTokens(viewer, match, tokens);
         ResourceGeneratorService.NextUpgrade next = generators.getNextUpgrade(match.getId());
         if (next == null) {
             tokens.put("next_upgrade_title", ChatColor.GRAY + "Geradores no maximo");
@@ -535,15 +547,19 @@ public final class MatchPresentationService implements ManagedService, Listener 
                 "{team_color}&l{team_initial} &f{team_name} {status}{own_marker}"), teamTokens));
         }
         tokens.put("spectating", spectating ? ChatColor.GRAY + "Espectando" : "");
-        List<String> lines = configuredLines("scoreboard.layouts.in-game",
+        String layout = match.getType() == MatchType.RANKED
+                && plugin.getConfig().getBoolean("scoreboard.ranked.enabled", false)
+            ? "scoreboard.layouts.ranked-in-game" : "scoreboard.layouts.in-game";
+        List<String> lines = configuredLines(layout,
             Arrays.asList("{date}  &8{arena_id}", "", "{next_upgrade_title}",
                 "{next_upgrade}", "", "{teams}", "{spectating}", "", "{footer}"),
             tokens, teamLines);
         renderLines(board, boardTitle(), lines);
     }
 
-    private void renderConfiguredLobby(Scoreboard board, GameMatch match) {
+    private void renderConfiguredLobby(Scoreboard board, GameMatch match, Player viewer) {
         Map<String, String> tokens = commonTokens(match);
+        rankedTokens(viewer, match, tokens);
         tokens.put("players", Integer.toString(onlineCount(match)));
         tokens.put("max", Integer.toString(match.getArena().getMaximumPlayers()));
         tokens.put("mode", gameMode(match));
@@ -553,7 +569,10 @@ public final class MatchPresentationService implements ManagedService, Listener 
             : lobbyCountdown != null ? "Comeca em..." : "Aguardando...");
         tokens.put("countdown", opening != null ? opening + "s"
             : lobbyCountdown != null ? lobbyCountdown + "s" : "");
-        List<String> lines = configuredLines("scoreboard.layouts.lobby",
+        String layout = match.getType() == MatchType.RANKED
+                && plugin.getConfig().getBoolean("scoreboard.ranked.enabled", false)
+            ? "scoreboard.layouts.ranked-waiting" : "scoreboard.layouts.lobby";
+        List<String> lines = configuredLines(layout,
             Arrays.asList("{date}  &8{arena_id}", "&7Mapa: &a{arena}",
                 "&7Jogadores: &a{players}&7/{max}", "", "&e{countdown_title}",
                 "&a{countdown}", "", "&7Modo: &a{mode}", "", "{footer}"),
@@ -590,15 +609,21 @@ public final class MatchPresentationService implements ManagedService, Listener 
     }
 
     private void renderEnding(Scoreboard board, GameMatch match, Player viewer) {
-        if ("CLASSIC".equalsIgnoreCase(plugin.getConfig().getString("scoreboard.preset", "CLASSIC"))) {
+        if (match.getType() == MatchType.RANKED
+                && plugin.getConfig().getBoolean("scoreboard.ranked.enabled", false)
+                || "CLASSIC".equalsIgnoreCase(plugin.getConfig().getString("scoreboard.preset", "CLASSIC"))) {
             Map<String, String> tokens = commonTokens(match);
+            rankedTokens(viewer, match, tokens);
             String winner = match.getWinnerTeamId();
             GameTeam team = winner == null ? null : match.getTeam(winner);
             tokens.put("winner", winner == null ? "Sem vencedores"
                 : trim(team == null ? winner : team.getDefinition().getDisplayName(), 16));
             tokens.put("result", winner == null ? "" : winner.equals(teamOf(match, viewer))
                 ? ChatColor.GREEN + "Vitoria" : ChatColor.RED + "Derrota");
-            renderLines(board, boardTitle(), configuredLines("scoreboard.layouts.ending",
+            String layout = match.getType() == MatchType.RANKED
+                    && plugin.getConfig().getBoolean("scoreboard.ranked.enabled", false)
+                ? "scoreboard.layouts.ranked-ending" : "scoreboard.layouts.ending";
+            renderLines(board, boardTitle(), configuredLines(layout,
                 Arrays.asList("{date}  &8{arena_id}", "", "&ePartida encerrada",
                     "&fVencedor: &a{winner}", "{result}", "", "{footer}"), tokens, null));
             return;
@@ -658,6 +683,16 @@ public final class MatchPresentationService implements ManagedService, Listener 
                 ChatColor.translateAlternateColorCodes('&', entry.getValue()));
         }
         return result;
+    }
+
+    private void rankedTokens(Player player, GameMatch match, Map<String, String> tokens) {
+        if (!(plugin instanceof StarfinBedWarsPlugin)) return;
+        com.starfinplugins.bedwars.domain.match.RankedService ranked =
+            ((StarfinBedWarsPlugin) plugin).getRanked();
+        if (ranked == null || ranked.getSettings() == null) return;
+        String mode = match == null ? "solo"
+            : com.starfinplugins.bedwars.stats.MatchMode.of(match.getArena());
+        tokens.putAll(ranked.presentation(player.getUniqueId(), mode));
     }
 
     private String teamOf(GameMatch match, Player player) {

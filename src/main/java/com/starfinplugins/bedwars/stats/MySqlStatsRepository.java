@@ -1,5 +1,7 @@
 package com.starfinplugins.bedwars.stats;
 
+import java.util.Map;
+
 import com.starfinplugins.bedwars.gameplay.ScopedProgress;
 import com.starfinplugins.bedwars.gameplay.ProgressionPurchaseGateway;
 import com.zaxxer.hikari.HikariConfig;
@@ -900,8 +902,34 @@ public final class MySqlStatsRepository implements AutoCloseable {
             statement.setString(3, uuid.toString());
             statement.setString(4, uuid.toString());
             statement.setString(5, titleId);
-            return statement.executeUpdate() == 1;
+            if (statement.executeUpdate() == 1) return true;
         }
+        try (Connection connection = pool.getConnection(); PreparedStatement claim = connection.prepareStatement(
+                "UPDATE sbw_player_preferences SET selected_title=?,"
+                + "updated_at=GREATEST(updated_at+1,?) WHERE uuid=? AND EXISTS"
+                + " (SELECT 1 FROM sbw_ranked_reward_grants WHERE player_uuid=?"
+                + " AND reward_id=? AND state='CLAIMED')")) {
+            claim.setString(1, titleId); claim.setLong(2, System.currentTimeMillis());
+            claim.setString(3, uuid.toString()); claim.setString(4, uuid.toString());
+            claim.setString(5, titleId); return claim.executeUpdate() == 1;
+        }
+    }
+
+    public Map<String, String> seasonTitles(UUID player, String language) throws SQLException {
+        Map<String, String> titles = new java.util.LinkedHashMap<String, String>();
+        String column = "en_US".equals(language) ? "title_en"
+            : "es_ES".equals(language) ? "title_es" : "title_pt";
+        try (Connection connection = pool.getConnection(); PreparedStatement query = connection.prepareStatement(
+                "SELECT DISTINCT r.reward_id,r." + column + " FROM sbw_ranked_reward_grants g"
+                + " JOIN sbw_ranked_season_rewards r ON r.season_id=g.season_id"
+                + " AND r.reward_id=g.reward_id WHERE g.player_uuid=? AND g.state='CLAIMED'"
+                + " ORDER BY r.reward_id")) {
+            query.setString(1, player.toString());
+            try (ResultSet row = query.executeQuery()) {
+                while (row.next()) titles.put(row.getString(1), row.getString(2));
+            }
+        }
+        return java.util.Collections.unmodifiableMap(titles);
     }
 
     public RankingPage ranking(RankingSpec spec, UUID viewerId) throws SQLException {

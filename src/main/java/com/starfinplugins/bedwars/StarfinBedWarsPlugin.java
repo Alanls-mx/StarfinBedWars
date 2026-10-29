@@ -30,6 +30,7 @@ import com.starfinplugins.bedwars.integration.BedWarsMinigameIntegration;
 import com.starfinplugins.bedwars.storage.StorageMigrationService;
 import com.starfinplugins.bedwars.menu.BedWarsMenuService;
 import com.starfinplugins.bedwars.menu.ProgressionMenuService;
+import com.starfinplugins.bedwars.menu.RankedMenuService;
 import com.starfinplugins.bedwars.menu.NextMatchService;
 import com.starfinplugins.bedwars.setup.ArenaSetupWizardService;
 import com.starfinplugins.bedwars.service.ServiceLifecycle;
@@ -65,6 +66,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private MatchPresentationService presentation;
     private BedWarsMenuService menus;
     private ProgressionMenuService progressionMenus;
+    private RankedMenuService rankedMenus;
     private NextMatchService nextMatch;
     private ArenaSetupWizardService setupWizard;
     private ReconnectService reconnect;
@@ -150,6 +152,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             antiAfk = new AntiAfkService(this, matchEngine, statistics, gameplay);
             generators.setGameplay(gameplay);
             progressionMenus = new ProgressionMenuService(this, statistics);
+            rankedMenus = new RankedMenuService(this);
             networkRegistry = new NetworkRegistryService(this, arenaService, matchEngine);
             storageMigration = new StorageMigrationService(this, arenaService);
             shops = new ShopService(this, arenaService, matchEngine, teamUpgrades);
@@ -163,6 +166,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services.add(statistics);
             services.add(networkRegistry);
             services.add(ranked);
+            services.add(rankedMenus);
             services.add(storageMigration);
             services.add(tntAutoIgnite);
             services.add(reconnect);
@@ -252,6 +256,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     public RankedService getRanked() { return ranked; }
     public GameplayService getGameplay() { return gameplay; }
     public ProgressionMenuService getProgressionMenus() { return progressionMenus; }
+    public RankedMenuService getRankedMenus() { return rankedMenus; }
     public NetworkRegistryService getNetworkRegistry() { return networkRegistry; }
     public StorageMigrationService getStorageMigration() { return storageMigration; }
 

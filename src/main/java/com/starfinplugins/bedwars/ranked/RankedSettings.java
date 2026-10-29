@@ -16,6 +16,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 /** Immutable, validated competitive rules. */
 public final class RankedSettings {
     public final boolean enabled, allowDraws, history, diagnostics, kits, abilities;
+    public final boolean promotionTitle, promotionSound;
     public final String context;
     public final int initial, minimum, kFactor, placements, maximumResults;
     public final boolean suspensionsEnabled;
@@ -40,6 +41,8 @@ public final class RankedSettings {
                 || maximumResults < 1 || maximumResults > 100)
             throw new IllegalArgumentException("Limites de ranked.yml invalidos");
         allowDraws = yaml.getBoolean("draws.allow-legitimate", true);
+        promotionTitle = yaml.getBoolean("notifications.promotion-title", true);
+        promotionSound = yaml.getBoolean("notifications.promotion-sound", true);
         history = yaml.getBoolean("history.enabled", true);
         diagnostics = yaml.getBoolean("diagnostics.enabled", false);
         kits = yaml.getBoolean("advantages.kits", false);

@@ -1,5 +1,9 @@
 # StarfinBedWars
 
+## Temporadas ranqueadas (Fase 6.3)
+
+Temporadas, Top competitivo, snapshots finais, títulos sazonais, resgate e menus `/sbw ranked` foram adicionados sobre as Fases 6.1/6.2. O MySQL define a temporada ativa para todos os backends e para o proxy; `seasons.yml` é apenas a proposta administrativa. Os recursos sazonais e os layouts opcionais permanecem desativados por padrão. Veja [RANKED_PHASE_6_3.md](RANKED_PHASE_6_3.md) para configuração, comandos, migração, testes e homologação pendente.
+
 ## Ranqueadas (Fase 6.2)
 
 O StarfinMinigames Bungee agora forma elencos por MMR e Party, e este plugin verifica a admissão no MySQL antes de autorizar uma partida competitiva. O recurso permanece desativado por padrão até a configuração conjunta do proxy, StarfinLogin e backends. Consulte [RANKED_PHASE_6_2.md](RANKED_PHASE_6_2.md) para configuração, persistência, testes e limites.

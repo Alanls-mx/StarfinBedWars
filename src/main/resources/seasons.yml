@@ -1,0 +1,28 @@
+# Temporadas sao criadas e controladas no MySQL. Este arquivo fornece a proposta
+# para /sbw ranked admin season create; nenhuma temporada inicia automaticamente.
+enabled: false
+display-timezone: America/Sao_Paulo
+ranking-cache-seconds: 20
+# Alerta operacional durante CLOSING; nao forca o fim de partidas ou resultados.
+closing-grace-minutes: 60
+current:
+  id: season-01
+  name: 'Temporada 1'
+  description: 'Primeira temporada competitiva'
+  starts-at: '2026-11-01T00:00:00Z'
+  ends-at: '2027-01-01T00:00:00Z'
+  modes:
+    solo: true
+    duo: true
+    trio: true
+    squad: true
+    custom: false
+  placement-required: 5
+  reset:
+    type: FRESH_START
+    source-season: ''
+    factor: 0.25
+  rewards:
+    enabled: false
+    minimum-games: 10
+    titles: []

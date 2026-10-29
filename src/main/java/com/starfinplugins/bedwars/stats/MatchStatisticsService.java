@@ -48,6 +48,8 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     private final Map<UUID, StatsProfile> profileCache = new ConcurrentHashMap<UUID, StatsProfile>();
     private final Map<UUID, PlayerPreferences> preferencesCache = new ConcurrentHashMap<UUID, PlayerPreferences>();
     private final Map<UUID, Set<String>> unlocksCache = new ConcurrentHashMap<UUID, Set<String>>();
+    private final Map<UUID, Map<String, String>> seasonTitlesCache =
+        new ConcurrentHashMap<UUID, Map<String, String>>();
     private final Map<UUID, Map<String, Integer>> abilityLevelsCache =
         new ConcurrentHashMap<UUID, Map<String, Integer>>();
     private final Map<UUID, ScopedProgress> scopedCache =
@@ -129,6 +131,7 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         profileCache.clear();
         preferencesCache.clear();
         unlocksCache.clear();
+        seasonTitlesCache.clear();
         abilityLevelsCache.clear();
         scopedCache.clear();
         scopedRevisions.clear();
@@ -163,6 +166,12 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     }
     public Set<String> getCachedUnlocks(UUID uuid) {
         return unlocksCache.getOrDefault(uuid, Collections.emptySet());
+    }
+    public Map<String, String> getSeasonTitles(UUID uuid) {
+        return seasonTitlesCache.getOrDefault(uuid, Collections.emptyMap());
+    }
+    public void requestSeasonTitleRefresh(UUID uuid) {
+        if (worker != null && !worker.isShutdown()) worker.execute(() -> refreshSeasonTitles(uuid));
     }
     public Map<String, Integer> getAbilityLevels(UUID uuid) {
         return abilityLevelsCache.getOrDefault(uuid, Collections.emptyMap());
@@ -350,8 +359,8 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         PlayerPreferences prefs = preferencesCache.get(uuid);
         if (prefs == null || prefs.selectedTitle == null) return "";
         RewardsCatalog.TitleReward title = rewards.title(prefs.selectedTitle);
-        return title == null || !getCachedUnlocks(uuid).contains(title.id)
-            ? "" : title.name(prefs.language);
+        if (title != null && getCachedUnlocks(uuid).contains(title.id)) return title.name(prefs.language);
+        return getSeasonTitles(uuid).getOrDefault(prefs.selectedTitle, "");
     }
     public String getLanguage(UUID uuid) {
         PlayerPreferences prefs = preferencesCache.get(uuid);
@@ -370,6 +379,7 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         worker.execute(() -> {
             flushPreferencesOutbox();
             refreshPreferences(id, null);
+            refreshSeasonTitles(id);
         });
     }
     public void setQuickBuy(UUID uuid, List<String> favorites) throws IOException {
@@ -420,6 +430,7 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         profileCache.remove(id);
         preferencesCache.remove(id);
         unlocksCache.remove(id);
+        seasonTitlesCache.remove(id);
         abilityLevelsCache.remove(id);
         scopedCache.remove(id);
         scopedRevisions.put(id, revisionCounter.incrementAndGet());
@@ -627,7 +638,17 @@ public final class MatchStatisticsService implements ManagedService, Listener {
         try {
             ensureOpen();
             unlocksCache.put(id, Collections.unmodifiableSet(repository.ensureRewards(id, rewards)));
+            refreshSeasonTitles(id);
         } catch (Exception error) { logDatabaseFailure(error); }
+    }
+    private void refreshSeasonTitles(UUID id) {
+        try {
+            ensureOpen();
+            seasonTitlesCache.put(id, repository.seasonTitles(id, getLanguage(id)));
+        } catch (Exception unavailable) {
+            // Ranked schema may not be installed when competitive play is disabled.
+            seasonTitlesCache.remove(id);
+        }
     }
 
     private void refreshRankPosition(UUID id) {
@@ -681,7 +702,8 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     }
 
     public void selectTitle(Player player, String titleId) {
-        if (!isEnabled() || rewards.title(titleId) == null) {
+        if (!isEnabled() || (rewards.title(titleId) == null
+                && !getSeasonTitles(player.getUniqueId()).containsKey(titleId))) {
             player.sendMessage(ChatColor.RED + Phase2Text.text(getLanguage(player.getUniqueId()), "unavailable"));
             return;
         }
@@ -703,7 +725,9 @@ public final class MatchStatisticsService implements ManagedService, Listener {
                 PlayerPreferences previous = preferencesCache.get(id);
                 if (previous != null) preferencesCache.put(id, previous.withSelectedTitle(titleId));
                 current.sendMessage(ChatColor.GREEN + Phase2Text.text(getLanguage(id), "title_selected") + ": "
-                    + rewards.title(titleId).name(getLanguage(id)));
+                    + (rewards.title(titleId) != null
+                        ? rewards.title(titleId).name(getLanguage(id))
+                        : getSeasonTitles(id).getOrDefault(titleId, titleId)));
             });
         });
     }

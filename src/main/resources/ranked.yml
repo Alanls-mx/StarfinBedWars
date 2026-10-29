@@ -1,5 +1,8 @@
 # Motor competitivo. A Fase 6.2 fornecerá a admissão pelo proxy.
 enabled: false
+notifications:
+  promotion-title: true
+  promotion-sound: true
 context: preseason-1
 authorized-plugins: [StarfinMinigames]
 arenas:

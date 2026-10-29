@@ -23,6 +23,26 @@ final class RankedCommand {
         RankedSettings settings = service == null ? null : service.getSettings();
         if (settings == null) { sender.sendMessage("§cConfiguracao competitiva invalida."); return; }
         if (args.length >= 3 && "admin".equalsIgnoreCase(args[1])) {
+            if ("season".equalsIgnoreCase(args[2])) {
+                RankedSeasonCommand.execute(plugin, sender, args); return;
+            }
+            if ("rewards".equalsIgnoreCase(args[2]) && args.length == 5
+                    && "inspect".equalsIgnoreCase(args[3])) {
+                if (!sender.hasPermission("starfinbedwars.ranked.admin.rewards.inspect")
+                        && !sender.hasPermission("starfinbedwars.ranked.admin")) {
+                    sender.sendMessage("§cSem permissao."); return;
+                }
+                service.seasonQuery(repo -> repo.auditRewards(args[4]))
+                    .whenComplete((lines, error) -> {
+                        if (!plugin.isEnabled()) return;
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            if (sender instanceof Player && !((Player) sender).isOnline()) return;
+                            if (error != null) sender.sendMessage("§cAuditoria indisponivel.");
+                            else for (String line : lines) sender.sendMessage("§7" + line);
+                        });
+                    });
+                return;
+            }
             if (!sender.hasPermission("starfinbedwars.ranked.admin")) {
                 sender.sendMessage("§cSem permissao."); return;
             }
@@ -30,7 +50,7 @@ final class RankedCommand {
                 send(sender, settings.message("admin-status", "&bCompetitivo: {enabled} | Banco: {database} | Contexto: {context}")
                     .replace("{enabled}", Boolean.toString(settings.enabled))
                     .replace("{database}", Boolean.toString(service.isDatabaseReady()))
-                    .replace("{context}", settings.context));
+                    .replace("{context}", service.contextForDisplay()));
                 return;
             }
             if ("inspect".equalsIgnoreCase(args[2]) && args.length == 4) {
@@ -40,11 +60,26 @@ final class RankedCommand {
             }
             sender.sendMessage("§eUse /sbw ranked admin <status|inspect jogador>."); return;
         }
+        if (args.length == 1 && sender instanceof Player) {
+            plugin.getRankedMenus().openMain((Player) sender); return;
+        }
+        if (args.length == 2 && sender instanceof Player) {
+            Player player = (Player) sender;
+            switch (args[1].toLowerCase(java.util.Locale.ROOT)) {
+                case "season": plugin.getRankedMenus().openSeason(player); return;
+                case "top": plugin.getRankedMenus().openTop(player); return;
+                case "rewards": plugin.getRankedMenus().openRewards(player); return;
+                case "history": plugin.getRankedMenus().openHistory(player); return;
+                case "matches": plugin.getRankedMenus().openMatchHistory(player); return;
+                case "divisions": plugin.getRankedMenus().openDivisions(player); return;
+                default: break;
+            }
+        }
         if (args.length >= 2 && "status".equalsIgnoreCase(args[1])) {
             send(sender, settings.message(settings.enabled ? "loading" : "disabled",
                 settings.enabled ? "&7Sistema competitivo configurado." : "&eRanqueadas ainda nao abertas."));
             sender.sendMessage("§7Banco: " + (service.isDatabaseReady() ? "§aonline" : "§cindisponivel")
-                + " §7| Contexto: §f" + settings.context);
+                + " §7| Contexto: §f" + service.contextForDisplay());
             if (sender instanceof Player) profile(plugin, sender, null, currentMode(plugin, (Player) sender));
             return;
         }
@@ -80,37 +115,51 @@ final class RankedCommand {
         java.util.concurrent.CompletableFuture<RankedProfile> lookup = identifier == null
             ? service.getCompetitiveProfile(((Player) sender).getUniqueId(), mode)
             : service.getCompetitiveProfile(identifier, mode);
-        lookup.whenComplete((value, error) -> {
+        lookup.thenCompose(value -> value == null
+            ? java.util.concurrent.CompletableFuture.completedFuture(null)
+            : service.seasonQuery(repo -> repo.division(value.context, value.rating, settings))
+                .thenApply(division -> new ProfileDisplay(value, division)))
+            .whenComplete((display, error) -> {
             if (!plugin.isEnabled()) return;
             Bukkit.getScheduler().runTask(plugin, () -> {
                 if (sender instanceof Player && !((Player) sender).isOnline()) return;
                 if (error != null) {
                     send(sender, settings.message("unavailable", "&cSistema competitivo indisponivel."));
-                } else if (value == null) {
+                } else if (display == null) {
                     send(sender, settings.message("no-player", "&cJogador nao encontrado."));
                 } else {
+                    RankedProfile value = display.profile;
                     String player = identifier == null ? sender.getName() : identifier;
-                    String division = value.isPlaced(settings.placements)
-                        ? settings.division(value.rating).color + settings.division(value.rating).name
+                    int required = service.placementRequired();
+                    String division = value.isPlaced(required)
+                        ? display.division.color + display.division.name
                         : "&eEm posicionamento";
                     String line = settings.message("profile", "&b{player} | {mode} | {rating} | {division}")
                         .replace("{player}", player).replace("{mode}", mode)
                         .replace("{rating}", Integer.toString(value.rating))
                         .replace("{division}", division)
-                        .replace("{placement}", Math.min(settings.placements, value.placementGames)
-                            + "/" + settings.placements)
+                        .replace("{placement}", Math.min(required, value.placementGames)
+                            + "/" + required)
                         .replace("{wins}", Integer.toString(value.wins))
                         .replace("{losses}", Integer.toString(value.losses))
                         .replace("{draws}", Integer.toString(value.draws));
                     send(sender, line);
                     String date = value.lastMatchAt == 0 ? "Nenhuma"
                         : DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
-                            .withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(value.lastMatchAt));
+                            .withZone(service.getSeasonSettings().displayZone)
+                            .format(Instant.ofEpochMilli(value.lastMatchAt));
                     send(sender, settings.message("last-match", "&7Ultima partida: &f{date}")
                         .replace("{date}", date));
                 }
             });
         });
+    }
+    private static final class ProfileDisplay {
+        final RankedProfile profile;
+        final RankedSettings.Division division;
+        ProfileDisplay(RankedProfile profile, RankedSettings.Division division) {
+            this.profile = profile; this.division = division;
+        }
     }
     private static void send(CommandSender sender, String value) {
         sender.sendMessage(ChatColor.translateAlternateColorCodes('&', value));

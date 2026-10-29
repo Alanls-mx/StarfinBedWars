@@ -110,6 +110,12 @@ public final class ProgressionMenuService implements ManagedService, Listener {
             inv.setItem(slot, rewardItem(reward, lang, unlocked));
             holder.rewardSlots[slot++] = reward.id;
         }
+        for (java.util.Map.Entry<String, String> title : stats.getSeasonTitles(player.getUniqueId()).entrySet()) {
+            if (slot >= 44) break;
+            inv.setItem(slot, item(Material.NAME_TAG, ChatColor.LIGHT_PURPLE + title.getValue(), 1,
+                ChatColor.AQUA + "Temporada competitiva", ChatColor.GREEN + "Clique para selecionar"));
+            holder.rewardSlots[slot++] = title.getKey();
+        }
         inv.setItem(49, item(Material.ARROW, ChatColor.GRAY + tr(lang, "close"), 1));
         player.openInventory(inv);
     }
@@ -180,7 +186,9 @@ public final class ProgressionMenuService implements ManagedService, Listener {
             if (slot == 49) Bukkit.getScheduler().runTask(plugin, player::closeInventory);
             else if (slot >= 0 && slot < holder.rewardSlots.length && holder.rewardSlots[slot] != null) {
                 String id = holder.rewardSlots[slot];
-                if (stats.getCachedUnlocks(player.getUniqueId()).contains(id)) stats.selectTitle(player, id);
+                if (stats.getCachedUnlocks(player.getUniqueId()).contains(id)
+                        || stats.getSeasonTitles(player.getUniqueId()).containsKey(id))
+                    stats.selectTitle(player, id);
                 else player.sendMessage(ChatColor.RED + tr(stats.getLanguage(player.getUniqueId()), "locked"));
             }
         } else if ("ranking".equals(holder.type)) {
