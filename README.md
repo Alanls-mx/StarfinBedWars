@@ -1,5 +1,9 @@
 # StarfinBedWars
 
+## Ranqueadas (Fase 6.2)
+
+O StarfinMinigames Bungee agora forma elencos por MMR e Party, e este plugin verifica a admissão no MySQL antes de autorizar uma partida competitiva. O recurso permanece desativado por padrão até a configuração conjunta do proxy, StarfinLogin e backends. Consulte [RANKED_PHASE_6_2.md](RANKED_PHASE_6_2.md) para configuração, persistência, testes e limites.
+
 ## Times de Party (4.4.1)
 
 Reservas persistidas no banco trazem a equipe escolhida sob bloqueio da arena.

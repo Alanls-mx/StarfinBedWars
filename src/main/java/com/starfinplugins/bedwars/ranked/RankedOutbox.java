@@ -3,10 +3,13 @@ package com.starfinplugins.bedwars.ranked;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -41,7 +44,13 @@ public final class RankedOutbox {
         Path target = directory.resolve(match.matchId + ".properties");
         Path temp = directory.resolve(match.matchId + "." + UUID.randomUUID() + ".tmp");
         try {
-            try (OutputStream stream = Files.newOutputStream(temp)) { p.store(stream, "Ranked result"); }
+            try (FileChannel channel = FileChannel.open(temp, StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE)) {
+                OutputStream stream = Channels.newOutputStream(channel);
+                p.store(stream, "Ranked result");
+                stream.flush();
+                channel.force(true);
+            }
             try { Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
             catch (AtomicMoveNotSupportedException fallback) {
                 Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);

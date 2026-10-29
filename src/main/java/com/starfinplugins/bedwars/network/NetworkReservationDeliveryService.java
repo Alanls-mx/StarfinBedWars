@@ -98,9 +98,30 @@ public final class NetworkReservationDeliveryService
             reject(player, reservation, "Reserva invalida ou ja em processamento.");
             return;
         }
+        if (reservation.isRanked()) {
+            if (plugin.getRanked() == null) {
+                reject(player, reservation, "Competitivo indisponivel."); return;
+            }
+            plugin.getRanked().inspectReservation(reservation, allocation -> {
+                if (allocation == null) {
+                    reject(Bukkit.getPlayer(playerId), reservation, "Alocacao ranqueada invalida.");
+                    return;
+                }
+                deliverVerified(playerId, reservation);
+            });
+            return;
+        }
+        deliverVerified(playerId, reservation);
+    }
+
+    private void deliverVerified(UUID playerId, ReservationSnapshot reservation) {
+        Player player = Bukkit.getPlayer(playerId);
+        if (player == null || !player.isOnline()) {
+            network.finishReservation(reservation.getId(), playerId, false); return;
+        }
         int graceSeconds = Math.max(5, Math.min(120,
             plugin.getConfig().getInt("party-matchmaking.arrival-grace-seconds", 20)));
-        if (reservation.getGroupId() != null && reservation.getGroupSize() > 1
+        if (!reservation.isRanked() && reservation.getGroupId() != null && reservation.getGroupSize() > 1
                 && reservation.getCreatedAtMillis() + graceSeconds * 1000L <= System.currentTimeMillis()) {
             reject(player, reservation, "A reserva da Party expirou.");
             return;
@@ -134,6 +155,8 @@ public final class NetworkReservationDeliveryService
         pending.remove(playerId);
         item.timeout.cancel();
         network.finishReservation(item.reservation.getId(), playerId, true);
+        if (item.reservation.isRanked() && plugin.getRanked() != null)
+            plugin.getRanked().onReservationAdmitted(item.reservation, event.getMatch());
     }
 
     @EventHandler public void onQuit(PlayerQuitEvent event) {

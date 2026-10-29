@@ -1,7 +1,9 @@
 # Motor competitivo. A Fase 6.2 fornecerá a admissão pelo proxy.
 enabled: false
 context: preseason-1
-authorized-plugins: []
+authorized-plugins: [StarfinMinigames]
+arenas:
+  allowed-groups: [ranked]
 rating:
   initial: 1000
   minimum: 0
@@ -17,6 +19,12 @@ modes:
 abandonment:
   # Um abandono definitivo recebe resultado de derrota mesmo se a equipe vencer.
   outcome: LOSS
+penalties:
+  suspensions:
+    enabled: true
+    abandons-threshold: 3
+    window-minutes: 1440
+    duration-minutes: 30
 draws:
   allow-legitimate: true
 history:

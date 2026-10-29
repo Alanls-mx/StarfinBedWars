@@ -24,7 +24,7 @@ public class RankedMySqlIntegrationTest {
     private static RankedMatchSnapshot match(UUID id, UUID winner, UUID loser,
                                              String mode, boolean abandoned) {
         return new RankedMatchSnapshot(id, mode, "arena", "server", "instance", "preseason-1",
-            "RED", 100, 200, false, Arrays.asList(
+            "RED", System.currentTimeMillis() - 1000L, System.currentTimeMillis(), false, Arrays.asList(
                 new RankedMatchSnapshot.Member(winner, "Winner", "RED", abandoned),
                 new RankedMatchSnapshot.Member(loser, "Loser", "BLUE", false)), 1000, 0, 24);
     }
@@ -89,6 +89,20 @@ public class RankedMySqlIntegrationTest {
             assertEquals("LOSS", abandonment.results.stream()
                 .filter(result -> result.playerId.equals(winner)).findFirst().get().outcome);
             assertEquals(8, first.profile(winner, "solo", rules.context, rules.initial).games);
+            RankedMatchSnapshot secondAbandon = match(UUID.randomUUID(), winner, loser, "solo", true);
+            RankedMatchSnapshot thirdAbandon = match(UUID.randomUUID(), winner, loser, "solo", true);
+            assertTrue(first.apply(secondAbandon, rules).newResult);
+            assertTrue(first.apply(thirdAbandon, rules).newResult);
+            assertFalse(second.apply(thirdAbandon, rules).newResult);
+            assertEquals(10, first.profile(winner, "solo", rules.context, rules.initial).games);
+            try (Connection connection = DriverManager.getConnection(url, user, password);
+                 java.sql.PreparedStatement query = connection.prepareStatement(
+                    "SELECT until_at FROM sbw_ranked_suspensions WHERE player_uuid=? AND context=?")) {
+                query.setString(1, winner.toString()); query.setString(2, rules.context);
+                try (ResultSet row = query.executeQuery()) {
+                    assertTrue(row.next()); assertTrue(row.getLong(1) > System.currentTimeMillis());
+                }
+            }
         }
         RankedMatchSnapshot failed = match(UUID.randomUUID(), winner, loser, "solo", false);
         try (RankedRepository broken = new RankedRepository()) {
@@ -97,13 +111,13 @@ public class RankedMySqlIntegrationTest {
                  Statement sql = connection.createStatement()) { sql.execute("DROP TABLE sbw_ranked_results"); }
             try { broken.apply(failed, rules); fail("Expected SQL failure"); }
             catch (java.sql.SQLException expected) { /* Entire match transaction rolled back. */ }
-            assertEquals(8, broken.profile(winner, "solo", rules.context, rules.initial).games);
+            assertEquals(10, broken.profile(winner, "solo", rules.context, rules.initial).games);
         }
         try (RankedRepository recovered = new RankedRepository()) {
             recovered.open(database);
             assertTrue(recovered.apply(failed, rules).newResult);
             assertFalse(recovered.apply(failed, rules).newResult);
-            assertEquals(9, recovered.profile(winner, "solo", rules.context, rules.initial).games);
+            assertEquals(11, recovered.profile(winner, "solo", rules.context, rules.initial).games);
         }
         try (Connection connection = DriverManager.getConnection(url, user, password);
              Statement sql = connection.createStatement();

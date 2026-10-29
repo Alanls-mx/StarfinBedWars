@@ -18,7 +18,10 @@ public final class RankedSettings {
     public final boolean enabled, allowDraws, history, diagnostics, kits, abilities;
     public final String context;
     public final int initial, minimum, kFactor, placements, maximumResults;
+    public final boolean suspensionsEnabled;
+    public final int suspensionThreshold, suspensionWindowMinutes, suspensionMinutes;
     public final Set<String> modes, authorizedPlugins;
+    public final Set<String> arenaGroups;
     public final List<Division> divisions;
     private final YamlConfiguration messages;
 
@@ -41,12 +44,26 @@ public final class RankedSettings {
         diagnostics = yaml.getBoolean("diagnostics.enabled", false);
         kits = yaml.getBoolean("advantages.kits", false);
         abilities = yaml.getBoolean("advantages.abilities", false);
+        suspensionsEnabled = yaml.getBoolean("penalties.suspensions.enabled", true);
+        suspensionThreshold = yaml.getInt("penalties.suspensions.abandons-threshold", 3);
+        suspensionWindowMinutes = yaml.getInt("penalties.suspensions.window-minutes", 1440);
+        suspensionMinutes = yaml.getInt("penalties.suspensions.duration-minutes", 30);
+        if (suspensionThreshold < 1 || suspensionThreshold > 100
+                || suspensionWindowMinutes < 1 || suspensionWindowMinutes > 43200
+                || suspensionMinutes < 1 || suspensionMinutes > 43200)
+            throw new IllegalArgumentException("Limites de suspensao competitiva invalidos");
         if (!"LOSS".equalsIgnoreCase(yaml.getString("abandonment.outcome", "LOSS")))
             throw new IllegalArgumentException("Politica de abandono invalida");
         Set<String> selected = new HashSet<String>();
         for (String mode : MatchMode.STANDARD)
             if (yaml.getBoolean("modes." + mode, !"custom".equals(mode))) selected.add(mode);
         modes = Collections.unmodifiableSet(selected);
+        Set<String> groups = new HashSet<String>(yaml.getStringList("arenas.allowed-groups"));
+        if (groups.isEmpty()) groups.add("ranked");
+        for (String group : groups)
+            if (group == null || !group.matches("[A-Za-z0-9_-]{1,32}"))
+                throw new IllegalArgumentException("Grupo de arena ranqueada invalido");
+        arenaGroups = Collections.unmodifiableSet(groups);
         Set<String> plugins = new HashSet<String>();
         for (String name : yaml.getStringList("authorized-plugins")) {
             if (name == null || !name.matches("[A-Za-z0-9_-]{1,64}"))

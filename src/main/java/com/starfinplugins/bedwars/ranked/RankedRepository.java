@@ -1,6 +1,7 @@
 package com.starfinplugins.bedwars.ranked;
 
 import com.starfinplugins.bedwars.stats.StatsSettings;
+import com.starfinplugins.minigames.api.ReservationSnapshot;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.nio.charset.StandardCharsets;
@@ -63,6 +64,20 @@ public final class RankedRepository implements AutoCloseable {
                 + "completed_at BIGINT NOT NULL,PRIMARY KEY(match_id,player_uuid),"
                 + "INDEX idx_sbw_ranked_results_player (player_uuid,completed_at))"
                 + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            sql.execute("CREATE TABLE IF NOT EXISTS sbw_ranked_policy ("
+                + "server_id VARCHAR(32) NOT NULL PRIMARY KEY,instance_id CHAR(36) NOT NULL,"
+                + "enabled TINYINT(1) NOT NULL,context VARCHAR(32) NOT NULL,"
+                + "initial_rating INT NOT NULL,updated_at BIGINT NOT NULL)"
+                + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            sql.execute("CREATE TABLE IF NOT EXISTS sbw_ranked_abandons ("
+                + "match_id CHAR(36) NOT NULL,player_uuid CHAR(36) NOT NULL,context VARCHAR(32) NOT NULL,"
+                + "created_at BIGINT NOT NULL,PRIMARY KEY(match_id,player_uuid),"
+                + "INDEX idx_sbw_ranked_abandon_window(player_uuid,context,created_at))"
+                + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            sql.execute("CREATE TABLE IF NOT EXISTS sbw_ranked_suspensions ("
+                + "player_uuid CHAR(36) NOT NULL,context VARCHAR(32) NOT NULL,until_at BIGINT NOT NULL,"
+                + "reason VARCHAR(32) NOT NULL,updated_at BIGINT NOT NULL,"
+                + "PRIMARY KEY(player_uuid,context)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             try (PreparedStatement mark = connection.prepareStatement(
                     "INSERT IGNORE INTO sbw_ranked_schema_migrations(migration_id,applied_at) VALUES(61,?)")) {
                 mark.setLong(1, System.currentTimeMillis()); mark.executeUpdate();
@@ -72,6 +87,132 @@ public final class RankedRepository implements AutoCloseable {
     }
 
     public boolean isOpen() { return pool != null && !pool.isClosed(); }
+
+    public void publishPolicy(String serverId, String instanceId, RankedSettings settings,
+                              boolean issuerAvailable)
+            throws SQLException {
+        try (Connection connection = pool.getConnection(); PreparedStatement update = connection.prepareStatement(
+                "INSERT INTO sbw_ranked_policy(server_id,instance_id,enabled,context,initial_rating,updated_at)"
+                + " VALUES(?,?,?,?,?,?) ON DUPLICATE KEY UPDATE instance_id=VALUES(instance_id),"
+                + "enabled=VALUES(enabled),context=VALUES(context),"
+                + "initial_rating=VALUES(initial_rating),updated_at=VALUES(updated_at)")) {
+            update.setString(1, serverId); update.setString(2, instanceId);
+            update.setBoolean(3, settings.enabled && issuerAvailable);
+            update.setString(4, settings.context);
+            update.setInt(5, settings.initial); update.setLong(6, System.currentTimeMillis());
+            update.executeUpdate();
+        }
+    }
+
+    public RankedAllocation inspectAllocation(ReservationSnapshot reservation,
+                                                String serverId, String instanceId)
+            throws SQLException {
+        if (reservation == null || !reservation.isRanked()
+                || !serverId.equals(reservation.getServerId())
+                || !instanceId.equals(reservation.getServerInstance().toString())) return null;
+        long now = System.currentTimeMillis();
+        try (Connection c = pool.getConnection(); PreparedStatement query = c.prepareStatement(
+                "SELECT server_id,server_instance,arena_id,mode,context,state,expected_players,expires_at"
+                + " FROM sm_ranked_allocations WHERE allocation_id=?")) {
+            query.setString(1, reservation.getRankedAllocationId().toString());
+            try (ResultSet row = query.executeQuery()) {
+                if (!row.next() || !serverId.equals(row.getString(1))
+                        || !instanceId.equals(row.getString(2))
+                        || !reservation.getArenaId().equals(row.getString(3))
+                        || !reservation.getMode().equals(row.getString(4))
+                        || !reservation.getCompetitiveContext().equals(row.getString(5))
+                        || !("RESERVED".equals(row.getString(6))
+                            || "TRANSFERRING".equals(row.getString(6)))
+                        || row.getLong(8) <= now) return null;
+                int expected = row.getInt(7);
+                long expiry = row.getLong(8);
+                Map<UUID, String> teams = new java.util.LinkedHashMap<UUID, String>();
+                boolean found = false;
+                try (PreparedStatement members = c.prepareStatement(
+                        "SELECT m.player_uuid,m.reservation_id,m.team_id,r.state,r.ranked_allocation_id,"
+                        + "r.expires_at FROM sm_ranked_allocation_members m"
+                        + " JOIN sm_network_reservations r ON r.reservation_id=m.reservation_id"
+                        + " WHERE m.allocation_id=?")) {
+                    members.setString(1, reservation.getRankedAllocationId().toString());
+                    try (ResultSet member = members.executeQuery()) {
+                        while (member.next()) {
+                            UUID id = UUID.fromString(member.getString(1));
+                            String state = member.getString(4);
+                            if (!("PENDING".equals(state) || "CLAIMED".equals(state)
+                                    || "CONFIRMED".equals(state)) || member.getLong(6) <= now
+                                    || !reservation.getRankedAllocationId().toString().equals(member.getString(5)))
+                                return null;
+                            teams.put(id, member.getString(3));
+                            if (reservation.getPlayerId().equals(id))
+                                found = reservation.getId().toString().equals(member.getString(2))
+                                    && reservation.getTeamId().equals(member.getString(3));
+                        }
+                    }
+                }
+                if (!found || teams.size() != expected || new java.util.HashSet<String>(teams.values()).size() < 2)
+                    return null;
+                return new RankedAllocation(reservation.getRankedAllocationId(),
+                    reservation.getArenaId(), reservation.getMode(),
+                    reservation.getCompetitiveContext(), expiry, teams);
+            }
+        }
+    }
+
+    public boolean markAdmitted(UUID allocationId, UUID reservationId, UUID playerId)
+            throws SQLException {
+        try (Connection c = pool.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                try (PreparedStatement update = c.prepareStatement(
+                        "UPDATE sm_ranked_allocation_members SET state='ADMITTED'"
+                        + " WHERE allocation_id=? AND reservation_id=? AND player_uuid=?"
+                        + " AND state IN ('RESERVED','ADMITTED')")) {
+                    update.setString(1, allocationId.toString());
+                    update.setString(2, reservationId.toString()); update.setString(3, playerId.toString());
+                    if (update.executeUpdate() == 0) { c.rollback(); return false; }
+                }
+                int expected;
+                try (PreparedStatement allocation = c.prepareStatement(
+                        "SELECT expected_players,state,expires_at FROM sm_ranked_allocations"
+                        + " WHERE allocation_id=? FOR UPDATE")) {
+                    allocation.setString(1, allocationId.toString());
+                    try (ResultSet row = allocation.executeQuery()) {
+                        if (!row.next() || row.getLong(3) <= System.currentTimeMillis()
+                                || !("RESERVED".equals(row.getString(2))
+                                    || "TRANSFERRING".equals(row.getString(2)))) {
+                            c.rollback(); return false;
+                        }
+                        expected = row.getInt(1);
+                    }
+                }
+                int actual;
+                try (PreparedStatement count = c.prepareStatement(
+                        "SELECT COUNT(*) FROM sm_ranked_allocation_members"
+                        + " WHERE allocation_id=? AND state='ADMITTED'")) {
+                    count.setString(1, allocationId.toString());
+                    try (ResultSet row = count.executeQuery()) { row.next(); actual = row.getInt(1); }
+                }
+                if (actual == expected) {
+                    try (PreparedStatement done = c.prepareStatement(
+                            "UPDATE sm_ranked_allocations SET state='ADMITTED' WHERE allocation_id=?")) {
+                        done.setString(1, allocationId.toString()); done.executeUpdate();
+                    }
+                    try (PreparedStatement done = c.prepareStatement(
+                            "UPDATE sm_ranked_queue_entries SET state='ADMITTED'"
+                            + " WHERE allocation_id=? AND state IN ('RESERVED','TRANSFERRING')")) {
+                        done.setString(1, allocationId.toString()); done.executeUpdate();
+                    }
+                    try (PreparedStatement release = c.prepareStatement(
+                            "DELETE FROM sm_ranked_queue_members WHERE entry_id IN"
+                            + " (SELECT entry_id FROM sm_ranked_queue_entries WHERE allocation_id=?)")) {
+                        release.setString(1, allocationId.toString()); release.executeUpdate();
+                    }
+                }
+                c.commit(); return actual == expected;
+            } catch (SQLException | RuntimeException error) { c.rollback(); throw error; }
+            finally { c.setAutoCommit(true); }
+        }
+    }
 
     /** A successful pool initialization does not guarantee the database is still reachable. */
     public void ping() throws SQLException {
@@ -224,6 +365,7 @@ public final class RankedRepository implements AutoCloseable {
                     }
                     results.add(new RankedResult(match.matchId, member.playerId, member.teamId,
                         outcome, old.rating, next - old.rating, next, match.endedAt));
+                    if (member.abandoned) recordAbandonment(connection, match, member, settings);
                 }
                 connection.commit();
                 return new Applied(true, Collections.unmodifiableList(results),
@@ -231,6 +373,40 @@ public final class RankedRepository implements AutoCloseable {
             } catch (SQLException | RuntimeException error) {
                 connection.rollback(); throw error;
             } finally { connection.setAutoCommit(true); }
+        }
+    }
+
+    private static void recordAbandonment(Connection connection, RankedMatchSnapshot match,
+                                          RankedMatchSnapshot.Member member, RankedSettings settings)
+            throws SQLException {
+        try (PreparedStatement event = connection.prepareStatement(
+                "INSERT INTO sbw_ranked_abandons(match_id,player_uuid,context,created_at)"
+                + " VALUES(?,?,?,?)")) {
+            event.setString(1, match.matchId.toString());
+            event.setString(2, member.playerId.toString());
+            event.setString(3, match.context); event.setLong(4, match.endedAt);
+            event.executeUpdate();
+        }
+        if (!settings.suspensionsEnabled) return;
+        int count;
+        try (PreparedStatement recent = connection.prepareStatement(
+                "SELECT COUNT(*) FROM sbw_ranked_abandons WHERE player_uuid=? AND context=?"
+                + " AND created_at>=?")) {
+            recent.setString(1, member.playerId.toString()); recent.setString(2, match.context);
+            recent.setLong(3, match.endedAt - settings.suspensionWindowMinutes * 60000L);
+            try (ResultSet row = recent.executeQuery()) { row.next(); count = row.getInt(1); }
+        }
+        if (count < settings.suspensionThreshold) return;
+        long until = match.endedAt + settings.suspensionMinutes * 60000L;
+        try (PreparedStatement suspension = connection.prepareStatement(
+                "INSERT INTO sbw_ranked_suspensions(player_uuid,context,until_at,reason,updated_at)"
+                + " VALUES(?,? ,?,'REPEATED_ABANDONMENT',?) ON DUPLICATE KEY UPDATE"
+                + " until_at=GREATEST(until_at,VALUES(until_at)),reason=VALUES(reason),"
+                + " updated_at=VALUES(updated_at)")) {
+            suspension.setString(1, member.playerId.toString());
+            suspension.setString(2, match.context);
+            suspension.setLong(3, until); suspension.setLong(4, match.endedAt);
+            suspension.executeUpdate();
         }
     }
 

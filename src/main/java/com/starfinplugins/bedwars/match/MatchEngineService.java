@@ -352,6 +352,10 @@ public final class MatchEngineService implements ManagedService, Listener {
         if (arenas.isEditing(arena.getId())) {
             throw new IllegalStateException("Arena temporariamente indisponivel durante o modo de edicao.");
         }
+        ReservationSnapshot admission = assignedReservations.get(player.getUniqueId());
+        boolean rankedArena = ranked != null && ranked.isRankedArena(arena.getGroup());
+        if (rankedArena != (admission != null && admission.isRanked()))
+            throw new IllegalStateException("Esta arena exige a reserva do contexto correto.");
         GameMatch match = byArena.get(arena.getId());
         if (match == null && isPreparingArena(arena.getId())) {
             java.util.LinkedHashSet<UUID> queued = queuedDuringLoading.computeIfAbsent(
@@ -477,9 +481,10 @@ public final class MatchEngineService implements ManagedService, Listener {
     private void addPlayer(final GameMatch match, final Player player) {
         boolean openingSpawns = isOpeningSpawns(match.getArena().getId());
         ReservationSnapshot reservation = assignedReservations.get(player.getUniqueId());
-        long groupExpiry = reservation == null ? 0L : Math.min(reservation.getExpiresAtMillis(),
-            reservation.getCreatedAtMillis() + Math.max(5, Math.min(120,
-                plugin.getConfig().getInt("party-matchmaking.arrival-grace-seconds", 20))) * 1000L);
+        long groupExpiry = reservation == null ? 0L : reservation.isRanked()
+            ? reservation.getExpiresAtMillis() : Math.min(reservation.getExpiresAtMillis(),
+                reservation.getCreatedAtMillis() + Math.max(5, Math.min(120,
+                    plugin.getConfig().getInt("party-matchmaking.arrival-grace-seconds", 20))) * 1000L);
         if (!(reservation == null ? match.addParticipant(player.getUniqueId())
                 : match.addParticipant(player.getUniqueId(), reservation.getTeamId(),
                     reservation.getGroupId(), reservation.getGroupSize(), groupExpiry,
@@ -520,6 +525,8 @@ public final class MatchEngineService implements ManagedService, Listener {
 
     private void updateCountdown(final GameMatch match) {
         String id = match.getArena().getId();
+        if (ranked != null && ranked.isRankedArena(match.getArena().getGroup())
+                && match.getType() != com.starfinplugins.bedwars.domain.match.MatchType.RANKED) return;
         int ready = 0;
         for (GameParticipant participant : match.getParticipantList()) {
             if (participant.getState() != ParticipantState.ELIMINATED
@@ -577,6 +584,19 @@ public final class MatchEngineService implements ManagedService, Listener {
                 countdownValues.put(match.getArena().getId(), remaining - 1);
             }
         }, 0L, 20L));
+    }
+
+    /** Called after the authorized Spigot issuer closes and validates the competitive roster. */
+    public void rankedAuthorized(GameMatch match) {
+        if (match == null || match.getType() != com.starfinplugins.bedwars.domain.match.MatchType.RANKED)
+            throw new IllegalArgumentException("Partida ranqueada ausente");
+        updateCountdown(match);
+    }
+
+    public void cancelRankedFormation(GameMatch match) {
+        if (match != null && match.getState() != MatchState.IN_GAME
+                && ranked != null && ranked.isRankedArena(match.getArena().getGroup()))
+            finish(match, MatchEndReason.CANCELLED, null);
     }
 
     private void beginSpawnOpening(final GameMatch match) {
@@ -2276,9 +2296,10 @@ public final class MatchEngineService implements ManagedService, Listener {
                         && arena.getTeams().get(reservation.getTeamId()) != null
                         && arena.getTeams().get(reservation.getTeamId()).getCapacity() > 1)
                     match.holdGroup(reservation.getGroupId(), reservation.getTeamId(),
-                        reservation.getGroupSize(), Math.min(reservation.getExpiresAtMillis(),
-                            reservation.getCreatedAtMillis() + Math.max(5, Math.min(120,
-                                plugin.getConfig().getInt("party-matchmaking.arrival-grace-seconds", 20))) * 1000L));
+                        reservation.getGroupSize(), reservation.isRanked()
+                            ? reservation.getExpiresAtMillis() : Math.min(reservation.getExpiresAtMillis(),
+                                reservation.getCreatedAtMillis() + Math.max(5, Math.min(120,
+                                    plugin.getConfig().getInt("party-matchmaking.arrival-grace-seconds", 20))) * 1000L));
             }
             byArena.put(arena.getId(), match);
             matchWorlds.put(match.getId(), world);
