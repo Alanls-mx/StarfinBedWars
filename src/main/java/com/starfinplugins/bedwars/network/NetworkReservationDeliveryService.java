@@ -111,6 +111,19 @@ public final class NetworkReservationDeliveryService
             });
             return;
         }
+        if (reservation.isTournament()) {
+            if (plugin.getTournaments() == null) {
+                reject(player, reservation, "Torneios indisponiveis."); return;
+            }
+            plugin.getTournaments().inspectReservation(reservation, admission -> {
+                if (admission == null) {
+                    reject(Bukkit.getPlayer(playerId), reservation,
+                        "Reserva de torneio invalida."); return;
+                }
+                deliverVerified(playerId, reservation);
+            });
+            return;
+        }
         deliverVerified(playerId, reservation);
     }
 
@@ -121,7 +134,8 @@ public final class NetworkReservationDeliveryService
         }
         int graceSeconds = Math.max(5, Math.min(120,
             plugin.getConfig().getInt("party-matchmaking.arrival-grace-seconds", 20)));
-        if (!reservation.isRanked() && reservation.getGroupId() != null && reservation.getGroupSize() > 1
+        if (!reservation.isRanked() && !reservation.isTournament()
+                && reservation.getGroupId() != null && reservation.getGroupSize() > 1
                 && reservation.getCreatedAtMillis() + graceSeconds * 1000L <= System.currentTimeMillis()) {
             reject(player, reservation, "A reserva da Party expirou.");
             return;
@@ -157,6 +171,8 @@ public final class NetworkReservationDeliveryService
         network.finishReservation(item.reservation.getId(), playerId, true);
         if (item.reservation.isRanked() && plugin.getRanked() != null)
             plugin.getRanked().onReservationAdmitted(item.reservation, event.getMatch());
+        if (item.reservation.isTournament() && plugin.getTournaments() != null)
+            plugin.getTournaments().onReservationAdmitted(item.reservation, event.getMatch());
     }
 
     @EventHandler public void onQuit(PlayerQuitEvent event) {

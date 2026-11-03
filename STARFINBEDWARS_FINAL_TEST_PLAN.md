@@ -1,0 +1,41 @@
+# Homologação conjunta — Fases 6.1 a 7.1
+
+Esta lista é para uma sessão posterior com Minecraft 1.8.8, proxy, StarfinSocial, StarfinMinigames, StarfinBedWars e MySQL de **teste**. Nenhum item abaixo foi executado nesta implementação. Registrar data, JAR/commit, arena, jogadores, evidência visual, logs e estado do banco para cada caso. Não ativar torneios em produção antes de concluir a sessão.
+
+## Preparação
+
+- Conferir backup, `stats.yml`, o mesmo banco no proxy e no backend, e `tournaments.enabled: true` nos dois plugins de teste.
+- Criar arenas exclusivas no grupo `tournament`, com dois times e vagas conforme a modalidade; manter ao menos uma arena casual e uma ranqueada para regressão.
+- Ter clientes Minecraft 1.8.8 suficientes para duas equipes, um espectador e um árbitro; usar uma Party do StarfinSocial para modalidade Dupla.
+- Preparar torneios descartáveis MD1 e MD3, e um terceiro MD5 para série longa. As datas e grupos precisam coincidir entre proxy e backend.
+
+## Roteiro
+
+1. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Criar torneio no wizard; revisar todos os campos e confirmar. Reiniciar o backend e conferir que o rascunho persiste.
+2. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Alterar regras de modo, datas, tamanho, mínimo/máximo, série, check-in, espectadores e títulos; rejeitar configuração inválida antes da publicação.
+3. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Abrir inscrições e registrar equipe solo; verificar limite de equipes e jogador já inscrito.
+4. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Registrar equipe Dupla pela Party; confirmar o segundo integrante; mudar/desfazer Party e verificar que o elenco oficial permanece.
+5. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Fechar inscrições; verificar bloqueio de novas entradas e retirada.
+6. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Gerar chave com número não potência de dois; inspecionar BYEs, seeds e emparelhamentos em menu e MySQL.
+7. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Programar confronto, realizar check-in de todos e iniciar o campeonato; jogo não pode abrir antes da hora nem com elenco incompleto.
+8. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Iniciar confronto MD1 com duas equipes distintas; jogadores recebem apenas seus times e inventário de partida.
+9. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Iniciar série MD3; conferir placar após cada jogo, replay em empate e vitória após duas vitórias legítimas.
+10. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Repetir série MD5 até três vitórias; conferir que não há jogo extra após o resultado decisivo.
+11. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Transferir a Party inteira pela reserva em lote, inclusive quando jogadores já estão no backend BedWars; impedir jogador externo e time incorreto.
+12. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Assistir como espectador público, privado e árbitro; conferir limite, isolamento, inventário e retorno ao lobby.
+13. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Concluir jogo por vitória real; verificar journal, linha do jogo, série e ausência de atualização casual/MMR.
+14. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Avançar vencedor da primeira rodada sem trocar elencos nem cores das equipes erroneamente.
+15. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Concluir semifinais com jogos simultâneos e arenas distintas; conferir que uma arena não é alocada duas vezes.
+16. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Concluir final; confirmar campeão e finalista somente após o último resultado legítimo.
+17. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Finalizar campeonato e resgatar títulos; repetir os comandos e garantir que não há prêmio duplicado.
+18. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Reiniciar backend/proxy durante inscrição, alocação e jogo; conferir retomada, journal pendente e estado `REVIEW` quando o resultado é incerto.
+19. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Consultar menus de lista, equipe, chave paginada, partidas, histórico e prêmios depois de reiniciar; não retirar ícones dos menus.
+20. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Rodar fila casual e ranqueada nas arenas próprias durante um torneio; conferir TAB, scoreboard, estatísticas, MMR, inventário e retorno ao lobby sem regressão.
+
+## Falhas dirigidas
+
+21. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Derrubar MySQL antes de um resultado, restaurar e confirmar aplicação única do journal.
+22. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Desconectar um jogador antes da transferência; não atribuir walkover automático.
+23. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Repetir reserva e resultado; garantir idempotência e revisão para dados conflitantes.
+24. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Substituir integrante autorizado fora de série ativa; exigir confirmação do substituto. Recusar substituição durante jogo ou série em andamento.
+25. **NÃO EXECUTADO — HOMOLOGAÇÃO MANUAL PENDENTE** — Pausar torneio, reiniciar servidor e retomar; nenhum jogo novo deve começar durante a pausa.

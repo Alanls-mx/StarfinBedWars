@@ -468,6 +468,7 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     @EventHandler public void onLifecycle(MatchLifecycleEvent event) {
         if (!isEnabled()) return;
         GameMatch match = event.getMatch();
+        if (match.getType() == com.starfinplugins.bedwars.domain.match.MatchType.TOURNAMENT) return;
         switch (event.getType()) {
             case STARTED:
                 MatchStatsTracker tracker = new MatchStatsTracker(match.getId(), settings.awards,

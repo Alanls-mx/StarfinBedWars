@@ -11,6 +11,7 @@ import com.starfinplugins.bedwars.reconnect.ReconnectService;
 import com.starfinplugins.bedwars.reconnect.ReconnectSettings;
 import com.starfinplugins.bedwars.match.MatchEngineService;
 import com.starfinplugins.bedwars.domain.match.RankedService;
+import com.starfinplugins.bedwars.domain.match.TournamentService;
 import com.starfinplugins.bedwars.match.TeamSelectorService;
 import com.starfinplugins.bedwars.match.TntAutoIgniteService;
 import com.starfinplugins.bedwars.match.ParticipantInventoryService;
@@ -31,6 +32,7 @@ import com.starfinplugins.bedwars.storage.StorageMigrationService;
 import com.starfinplugins.bedwars.menu.BedWarsMenuService;
 import com.starfinplugins.bedwars.menu.ProgressionMenuService;
 import com.starfinplugins.bedwars.menu.RankedMenuService;
+import com.starfinplugins.bedwars.menu.TournamentMenuService;
 import com.starfinplugins.bedwars.menu.NextMatchService;
 import com.starfinplugins.bedwars.setup.ArenaSetupWizardService;
 import com.starfinplugins.bedwars.service.ServiceLifecycle;
@@ -67,6 +69,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private BedWarsMenuService menus;
     private ProgressionMenuService progressionMenus;
     private RankedMenuService rankedMenus;
+    private TournamentMenuService tournamentMenus;
     private NextMatchService nextMatch;
     private ArenaSetupWizardService setupWizard;
     private ReconnectService reconnect;
@@ -79,6 +82,7 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     private BedHologramService bedHolograms;
     private MatchStatisticsService statistics;
     private RankedService ranked;
+    private TournamentService tournaments;
     private GameplayService gameplay;
     private AntiAfkService antiAfk;
     private NetworkRegistryService networkRegistry;
@@ -147,12 +151,15 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             statistics = new MatchStatisticsService(this);
             ranked = new RankedService(this);
             matchEngine.setRanked(ranked);
+            tournaments = new TournamentService(this);
+            matchEngine.setTournaments(tournaments);
             gameplay = new GameplayService(this, matchEngine, statistics, equipment);
             TeamSelectorService teamSelector = new TeamSelectorService(this, matchEngine);
             antiAfk = new AntiAfkService(this, matchEngine, statistics, gameplay);
             generators.setGameplay(gameplay);
             progressionMenus = new ProgressionMenuService(this, statistics);
             rankedMenus = new RankedMenuService(this);
+            tournamentMenus = new TournamentMenuService(this);
             networkRegistry = new NetworkRegistryService(this, arenaService, matchEngine);
             storageMigration = new StorageMigrationService(this, arenaService);
             shops = new ShopService(this, arenaService, matchEngine, teamUpgrades);
@@ -166,7 +173,9 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
             services.add(statistics);
             services.add(networkRegistry);
             services.add(ranked);
+            services.add(tournaments);
             services.add(rankedMenus);
+            services.add(tournamentMenus);
             services.add(storageMigration);
             services.add(tntAutoIgnite);
             services.add(reconnect);
@@ -254,9 +263,11 @@ public final class StarfinBedWarsPlugin extends JavaPlugin {
     public MatchChatService getMatchChat() { return matchChat; }
     public MatchStatisticsService getStatistics() { return statistics; }
     public RankedService getRanked() { return ranked; }
+    public TournamentService getTournaments() { return tournaments; }
     public GameplayService getGameplay() { return gameplay; }
     public ProgressionMenuService getProgressionMenus() { return progressionMenus; }
     public RankedMenuService getRankedMenus() { return rankedMenus; }
+    public TournamentMenuService getTournamentMenus() { return tournamentMenus; }
     public NetworkRegistryService getNetworkRegistry() { return networkRegistry; }
     public StorageMigrationService getStorageMigration() { return storageMigration; }
 

@@ -2,6 +2,7 @@ package com.starfinplugins.bedwars.domain.match;
 
 import com.starfinplugins.bedwars.domain.arena.ArenaDefinition;
 import com.starfinplugins.bedwars.domain.arena.TeamDefinition;
+import com.starfinplugins.bedwars.tournament.TournamentAdmission;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -27,6 +28,7 @@ public final class GameMatch {
     private Instant endedAt;
     private MatchType type = MatchType.CASUAL;
     private String competitiveContext;
+    private TournamentAdmission tournamentAdmission;
 
     public GameMatch(ArenaDefinition arena) {
         if (arena == null) {
@@ -47,6 +49,7 @@ public final class GameMatch {
     public Instant getEndedAt() { return endedAt; }
     public MatchType getType() { return type; }
     public String getCompetitiveContext() { return competitiveContext; }
+    public TournamentAdmission getTournamentAdmission() { return tournamentAdmission; }
     /** Called only by the authorized ranked admission service before the opening starts. */
     void authorizeRanked(String context) {
         if ((state != MatchState.WAITING && state != MatchState.STARTING)
@@ -55,6 +58,18 @@ public final class GameMatch {
             throw new IllegalStateException("Contexto competitivo invalido ou tardio");
         type = MatchType.RANKED;
         competitiveContext = context;
+    }
+    void authorizeTournament(TournamentAdmission admission) {
+        if ((state != MatchState.WAITING && state != MatchState.STARTING)
+                || startedAt != null || type != MatchType.CASUAL || admission == null
+                || !admission.game.arenaId.equals(arena.getId())
+                || !participants.keySet().equals(admission.roster.keySet()))
+            throw new IllegalStateException("Elenco de torneio invalido ou tardio");
+        for (GameParticipant participant : participants.values())
+            if (!participant.getTeamId().equals(admission.roster.get(participant.getPlayerId())))
+                throw new IllegalStateException("Time de torneio divergente");
+        type = MatchType.TOURNAMENT;
+        tournamentAdmission = admission;
     }
     public Map<String, GameTeam> getTeams() { return Collections.unmodifiableMap(teams); }
     public Map<UUID, GameParticipant> getParticipants() { return Collections.unmodifiableMap(participants); }
@@ -86,7 +101,7 @@ public final class GameMatch {
 
     public boolean addParticipant(UUID player, String teamId, UUID groupId,
                                   int groupSize, long groupExpiresAt, UUID leaderId) {
-        if (type == MatchType.RANKED
+        if (type != MatchType.CASUAL
                 || (state != MatchState.WAITING && state != MatchState.STARTING) || participants.containsKey(player)
                 || participants.size() >= arena.getMaximumPlayers()) {
             return false;
@@ -138,7 +153,7 @@ public final class GameMatch {
 
     /** Move every admitted member of a Party together, while still in the lobby. */
     public TeamChoice chooseTeam(UUID player, String targetId) {
-        if (type == MatchType.RANKED
+        if (type != MatchType.CASUAL
                 || (state != MatchState.WAITING && state != MatchState.STARTING)
                 || !participants.containsKey(player)) return TeamChoice.UNAVAILABLE;
         GameTeam target = teams.get(targetId);

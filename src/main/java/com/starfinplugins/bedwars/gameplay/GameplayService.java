@@ -174,6 +174,22 @@ public final class GameplayService implements ManagedService, Listener {
             evolved.minimumRespawnTicks);
     }
 
+    private boolean kitsAllowed(GameMatch match) {
+        if (match.getType() == com.starfinplugins.bedwars.domain.match.MatchType.TOURNAMENT)
+            return plugin.getTournaments() != null && plugin.getTournaments().settings() != null
+                && plugin.getTournaments().settings().kits;
+        return match.getType() != com.starfinplugins.bedwars.domain.match.MatchType.RANKED
+            || (plugin.getRanked() != null && plugin.getRanked().getSettings() != null
+                && plugin.getRanked().getSettings().kits);
+    }
+    private boolean abilitiesAllowed(GameMatch match) {
+        if (match.getType() == com.starfinplugins.bedwars.domain.match.MatchType.TOURNAMENT)
+            return plugin.getTournaments() != null && plugin.getTournaments().settings() != null
+                && plugin.getTournaments().settings().abilities;
+        return match.getType() != com.starfinplugins.bedwars.domain.match.MatchType.RANKED
+            || (plugin.getRanked() != null && plugin.getRanked().getSettings() != null
+                && plugin.getRanked().getSettings().abilities);
+    }
     @EventHandler(priority = EventPriority.HIGH) public void onLifecycle(MatchLifecycleEvent event) {
         GameMatch match = event.getMatch();
         switch (event.getType()) {
@@ -195,13 +211,9 @@ public final class GameplayService implements ManagedService, Listener {
                     Player player = Bukkit.getPlayer(participant.getPlayerId());
                     if (player == null || participant.getState() != ParticipantState.CONNECTED) continue;
                     removeSelectors(player);
-                    if (match.getType() != com.starfinplugins.bedwars.domain.match.MatchType.RANKED
-                            || (plugin.getRanked() != null && plugin.getRanked().getSettings() != null
-                                && plugin.getRanked().getSettings().kits))
+                    if (kitsAllowed(match))
                         startKit(player, match, participant, choices);
-                    if (match.getType() != com.starfinplugins.bedwars.domain.match.MatchType.RANKED
-                            || (plugin.getRanked() != null && plugin.getRanked().getSettings() != null
-                                && plugin.getRanked().getSettings().abilities))
+                    if (abilitiesAllowed(match))
                         choices.abilities.put(player.getUniqueId(), resolvedAbilityState(player, match));
                 }
                 break;
@@ -227,13 +239,9 @@ public final class GameplayService implements ManagedService, Listener {
                         removeSelectors(player);
                         MatchChoices resumed = active.get(match.getId());
                         if (resumed != null && !resumed.kits.containsKey(player.getUniqueId())) {
-                            if (match.getType() != com.starfinplugins.bedwars.domain.match.MatchType.RANKED
-                                    || (plugin.getRanked() != null && plugin.getRanked().getSettings() != null
-                                        && plugin.getRanked().getSettings().kits))
+                            if (kitsAllowed(match))
                                 startKit(player, match, event.getParticipant(), resumed);
-                            if (match.getType() != com.starfinplugins.bedwars.domain.match.MatchType.RANKED
-                                    || (plugin.getRanked() != null && plugin.getRanked().getSettings() != null
-                                        && plugin.getRanked().getSettings().abilities))
+                            if (abilitiesAllowed(match))
                                 resumed.abilities.put(player.getUniqueId(), resolvedAbilityState(player, match));
                         }
                         reconcileEffect(player);

@@ -138,6 +138,11 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
             RankedCommand.execute(plugin, sender, args);
             return true;
         }
+        if ("tournament".equalsIgnoreCase(args[0])
+                || "torneio".equalsIgnoreCase(args[0])) {
+            TournamentCommand.execute(plugin, sender, args);
+            return true;
+        }
         if ("migrate".equalsIgnoreCase(args[0])) {
             if (!sender.hasPermission("starfinbedwars.admin")) {
                 sender.sendMessage(PREFIX + ChatColor.RED + "Migracao SQL exige starfinbedwars.admin.");

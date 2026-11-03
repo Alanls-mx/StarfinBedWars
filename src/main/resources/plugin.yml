@@ -13,7 +13,7 @@ softdepend:
 commands:
   starfinbedwars:
     description: StarfinBedWars administration and status
-    usage: /starfinbedwars <help|version|status|menu|arena|world|always|join|spectate|leave|chat|stats|profile|progress|rewards|top|ranked|kit|ability|scope|gameplay|matchpoint|migrate>
+    usage: /starfinbedwars <help|version|status|menu|arena|world|always|join|spectate|leave|chat|stats|profile|progress|rewards|top|ranked|tournament|kit|ability|scope|gameplay|matchpoint|migrate>
     aliases:
       - sbw
   reconnect:
@@ -43,6 +43,35 @@ permissions:
       starfinbedwars.command.gameplay.admin: true
       starfinbedwars.command.always: true
       starfinbedwars.ranked.admin: true
+      starfinbedwars.tournament.admin: true
+      starfinbedwars.tournament.referee: true
+  starfinbedwars.tournament.consult: {default: true}
+  starfinbedwars.tournament.register: {default: true}
+  starfinbedwars.tournament.spectate: {default: true}
+  starfinbedwars.tournament.rewards: {default: true}
+  starfinbedwars.tournament.referee:
+    description: Assistir jogos privados de torneio
+    default: op
+  starfinbedwars.tournament.admin:
+    description: Administrar torneios
+    default: op
+    children:
+      starfinbedwars.tournament.admin.consult: true
+      starfinbedwars.tournament.admin.create: true
+      starfinbedwars.tournament.admin.configure: true
+      starfinbedwars.tournament.admin.start: true
+      starfinbedwars.tournament.admin.pause: true
+      starfinbedwars.tournament.admin.cancel: true
+      starfinbedwars.tournament.admin.resolve: true
+      starfinbedwars.tournament.admin.finalize: true
+  starfinbedwars.tournament.admin.consult: {default: op}
+  starfinbedwars.tournament.admin.create: {default: op}
+  starfinbedwars.tournament.admin.configure: {default: op}
+  starfinbedwars.tournament.admin.start: {default: op}
+  starfinbedwars.tournament.admin.pause: {default: op}
+  starfinbedwars.tournament.admin.cancel: {default: op}
+  starfinbedwars.tournament.admin.resolve: {default: op}
+  starfinbedwars.tournament.admin.finalize: {default: op}
   starfinbedwars.ranked.admin:
     description: Inspecionar o sistema competitivo
     default: op

@@ -14,7 +14,7 @@ public final class StatsSettings {
     public final boolean rankingsEnabled, rankingsUpdateAfterMatch;
     public final int rankingsCacheSeconds, rankingsDefaultPageSize, rankingsMaximumPageSize;
 
-    StatsSettings(FileConfiguration yml) {
+    public StatsSettings(FileConfiguration yml) {
         enabled = yml.getBoolean("enabled", false);
         host = yml.getString("mysql.host", "127.0.0.1").trim();
         port = yml.getInt("mysql.port", 3306);

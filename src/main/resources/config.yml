@@ -178,6 +178,10 @@ match-chat:
 
 tab:
   enabled: true
+  tournament:
+    enabled: false
+    header: '&b&l{tournament_name}\n&7Rodada {tournament_round} &8| &fJogo {tournament_game}'
+    footer: '&f{tournament_team_a} &b{tournament_score} &f{tournament_team_b}'
   ranked:
     enabled: false
     header: '&b&lSTARFIN RANQUEADAS\n&7{ranked_season} &8| &f{ranked_mode}'
@@ -201,6 +205,8 @@ tab:
 
 scoreboard:
   enabled: true
+  tournament:
+    enabled: false
   ranked:
     enabled: false # Layouts de espera, partida e resultado ranqueados.
     lobby-enabled: false # Sidebar do lobby principal com dados competitivos.
@@ -269,6 +275,29 @@ scoreboard:
   # {footer} usa scoreboard.footer. Para um dominio proprio, altere scoreboard.footer,
   # ou substitua {footer} por um texto literal em cada layout.
   layouts:
+    tournament-waiting:
+      - '&b{tournament_name}'
+      - '&7Rodada {tournament_round} &8| &fJogo {tournament_game}'
+      - '&f{tournament_team_a} &8x &f{tournament_team_b}'
+      - '&fSerie: &b{tournament_score}'
+      - ''
+      - '&e{countdown_title} &a{countdown}'
+      - ''
+      - '{footer}'
+    tournament-in-game:
+      - '&b{tournament_name}'
+      - '&7Rodada {tournament_round} &8| &fJogo {tournament_game}'
+      - '&f{tournament_team_a} &b{tournament_score} &f{tournament_team_b}'
+      - ''
+      - '{teams}'
+      - '{footer}'
+    tournament-ending:
+      - '&b{tournament_name}'
+      - '&7Rodada {tournament_round} &8| &fJogo {tournament_game}'
+      - '&fVencedor: &a{winner}'
+      - '&fSerie: &b{tournament_score}'
+      - '{result}'
+      - '{footer}'
     ranked-lobby:
       - '&b{ranked_season}'
       - ''
