@@ -2,15 +2,15 @@
 
 ## Escopo e estado
 
-Base auditada: StarfinBedWars `580e36f` e StarfinMinigames `f92b907`, ambos em `codex/tournament-phase-7-1`; StarfinSocial API em `codex/party-phase-4-1`. Trabalho nas branches `codex/validation-phase-7-2`, sem merge na `main` e sem instalar JAR em servidor. Arena casual, ranqueada e de torneio continuam desativadas/inalteradas nesta fase. Os 25 cenários Minecraft do [roteiro](STARFINBEDWARS_FINAL_TEST_PLAN.md) continuam `NOT_RUN`.
+Base auditada: StarfinBedWars `580e36f` e StarfinMinigames `f92b907`, ambos em `codex/tournament-phase-7-1`; StarfinSocial API em `codex/party-phase-4-1`. Validação publicada como BedWars `5c51974` e Minigames `02fec6c` nas branches `codex/validation-phase-7-2`, sem merge na `main` e sem instalar JAR em servidor. Arena casual, ranqueada e de torneio continuam desativadas/inalteradas nesta fase. Os 25 cenários Minecraft do [roteiro](STARFINBEDWARS_FINAL_TEST_PLAN.md) continuam `NOT_RUN`.
 
 | Gate | Status | Evidência |
 | --- | --- | --- |
 | MySQL local 8.0.46, Java 8, BedWars | PASS | `mvn -B -q clean verify -DrequireIntegrationTests=true`: 268 testes, 0 falhas, 0 erros, 0 skips; `python ci/verify_build.py bedwars` PASS. |
 | MySQL local 8.0.46, Java 8, Minigames | PASS | `mvn -B -q clean verify -DrequireIntegrationTests=true`: 25 testes, 0 falhas, 0 erros, 0 skips; `python ci/verify_build.py minigames` PASS. |
 | StarfinSocial API | PASS | `mvn -B -pl starfinsocial-api -am clean install` em Java 8. A suíte completa do Social não integra o gate 7.2; uma execução exploratória encontrou 5 testes, 2 ignorados por ausência de `SOCIAL_TEST_JDBC`. |
-| GitHub Actions BedWars | NOT_RUN | Verificar execução da branch após publicação. |
-| GitHub Actions Minigames | NOT_RUN | Verificar execução da branch após publicação. |
+| GitHub Actions BedWars | PASS | [Execução 41753452870](https://github.com/Alanls-mx/StarfinBedWars/actions/runs/41753452870): 268 testes BedWars + 25 Minigames, zero falhas/erros/skips, verificador de JAR/Java 8 aprovado, artifact `phase-7-2-validation` publicado. |
+| GitHub Actions Minigames | PASS | [Execução 41753440045](https://github.com/Alanls-mx/StarfinMinigames/actions/runs/41753440045): 25 testes, zero falhas/erros/skips, verificador de JAR/Java 8 aprovado, artifact `phase-7-2-validation` publicado. |
 | Minecraft 1.8.8 / transporte Bungee / desempenho | NOT_RUN | Roteiro manual, sem simulação nesta fase. |
 
 ## Auditoria dos skips iniciais
@@ -29,8 +29,12 @@ BedWars: 267 testes, 8 skips por falta das variáveis/banco descartável: `Phase
 
 Os dois workflows em `.github/workflows/mysql-validation.yml` usam checkout de StarfinSocial API, Minigames e BedWars na ordem necessária, Java 8, Maven, BuildTools oficial para Spigot 1.8.8, serviço MySQL 8 com health check, nove schemas descartáveis marcados, `-DrequireIntegrationTests=true`, parser Surefire, inspeção de JAR/bytecode e upload de XML/log/JAR mesmo em falha. O Minigames usa três schemas. O CI não depende do Docker local e não publica JAR do Spigot. Dependências `provided` (Spigot, Vault, StarfinCore e API Minigames no backend) mantêm o escopo original; HikariCP e Connector/J permanecem relocados apenas no proxy.
 
+A primeira execução remota falhou ao resolver `bungeecord-api:1.8-SNAPSHOT` pelo repositório Spigot de snapshots. A versão legada foi mantida e os dois POMs passaram a consultar também o [repositório público oficial do Spigot](https://hub.spigotmc.org/nexus/service/rest/repository/browse/public/net/md-5/bungeecord-api/1.8-SNAPSHOT/). As execuções citadas acima são as posteriores à correção. Nenhuma falha de concorrência ou idempotência permaneceu nos cenários automatizados executados.
+
 JARs locais verificados: `StarfinBedWars-1.0.0-SNAPSHOT.jar` (SHA-256 `2498EF68ED27DEA57B1FB28FE0C74C14D6C36C01F26FE3961014664BB6B0E125`), `StarfinMinigames-Bungee.jar` (SHA-256 `77F70F095230039FFB876DA69F8EE248193F87BF38E1625AE79F97139D46FC27`). Os hashes mudam se a JAR for reconstruída. Relatórios locais: `target/surefire-reports/` e `starfinminigames-*/target/surefire-reports/`.
 
 ## Limites e homologação manual
 
-Os testes com duas conexões JDBC comprovam persistência transacional, não transporte real entre múltiplos proxies. A falha simulada após escrita do journal usa fechamento do repositório antes do commit; queda abrupta do processo e corrupção do arquivo precisam do teste isolado 21. O teste de concorrência não é uma medição de throughput. Nenhum cliente Minecraft ou Pterodactyl foi modificado. Para homologação manual, preparar proxy BungeeCord com StarfinLogin, StarfinSocial e StarfinMinigames; backends Spigot/PaperSpigot 1.8.8 com StarfinCore, Vault/provedor de economia, StarfinMinigames e StarfinBedWars; MySQL **de teste** compartilhado; arenas separadas nos grupos casual, ranked e tournament. Usar credenciais apenas nos YAML privados, `tournaments.enabled: true` somente nos nós de teste, e registrar os 25 cenários. A liberação depende dos gates de CI remotos e da ausência de falhas críticas de persistência.
+Os testes com duas conexões JDBC comprovam persistência transacional, não transporte real entre múltiplos proxies. A falha simulada após escrita do journal usa fechamento do repositório antes do commit; queda abrupta do processo e corrupção do arquivo precisam do teste isolado 21. O teste de concorrência não é uma medição de throughput. Nenhum cliente Minecraft ou Pterodactyl foi modificado. Para homologação manual, preparar proxy BungeeCord com StarfinLogin, StarfinSocial e StarfinMinigames; backends Spigot/PaperSpigot 1.8.8 com StarfinCore, Vault/provedor de economia, StarfinMinigames e StarfinBedWars; MySQL **de teste** compartilhado; arenas separadas nos grupos casual, ranked e tournament. Usar credenciais apenas nos YAML privados, `tournaments.enabled: true` somente nos nós de teste, e registrar os 25 cenários.
+
+**Status da homologação automatizada: PASS.** A homologação manual de Minecraft, o transporte Bungee real, falhas por crash abrupto e métricas de desempenho permanecem `NOT_RUN`; não são cobertos pelo PASS automatizado.
