@@ -1,5 +1,37 @@
 # Homologação conjunta — Fases 6.1 a 7.1
 
+## Fase 7.3: laboratório preparado, execução manual pendente
+
+Em 2026-11-04 foi preparado um laboratório isolado com proxy, lobby, dois BedWars e MySQL 8. Veja [ambiente](HOMOLOGATION_ENVIRONMENT.md), [roteiro A–H e matrizes](HOMOLOGATION_PHASE_7_3.md), [resultados](HOMOLOGATION_RESULTS.md) e [bloqueadores](HOMOLOGATION_BUGS.md). Os testes automáticos locais passaram, porém **os 25 cenários H7.2-01 a H7.2-25 abaixo permanecem individualmente `NOT_RUN`**. Torneios só podem começar após criar arenas reais do grupo `tournament` e reunir clientes suficientes. Para cada execução, use [modelo de registro](homologation/phase-7-3/TEST_RECORD_TEMPLATE.md), manifesto das JARs, captura e IDs de jogo/reserva.
+
+| ID | Roteiro original | Estado |
+| --- | --- | --- |
+| H7.2-01 | item 1 | NOT_RUN |
+| H7.2-02 | item 2 | NOT_RUN |
+| H7.2-03 | item 3 | NOT_RUN |
+| H7.2-04 | item 4 | NOT_RUN |
+| H7.2-05 | item 5 | NOT_RUN |
+| H7.2-06 | item 6 | NOT_RUN |
+| H7.2-07 | item 7 | NOT_RUN |
+| H7.2-08 | item 8 | NOT_RUN |
+| H7.2-09 | item 9 | NOT_RUN |
+| H7.2-10 | item 10 | NOT_RUN |
+| H7.2-11 | item 11 | NOT_RUN |
+| H7.2-12 | item 12 | NOT_RUN |
+| H7.2-13 | item 13 | NOT_RUN |
+| H7.2-14 | item 14 | NOT_RUN |
+| H7.2-15 | item 15 | NOT_RUN |
+| H7.2-16 | item 16 | NOT_RUN |
+| H7.2-17 | item 17 | NOT_RUN |
+| H7.2-18 | item 18 | NOT_RUN |
+| H7.2-19 | item 19 | NOT_RUN |
+| H7.2-20 | item 20 | NOT_RUN |
+| H7.2-21 | item 21 | NOT_RUN |
+| H7.2-22 | item 22 | NOT_RUN |
+| H7.2-23 | item 23 | NOT_RUN |
+| H7.2-24 | item 24 | NOT_RUN |
+| H7.2-25 | item 25 | NOT_RUN |
+
 Esta lista é para uma sessão posterior com Minecraft 1.8.8, proxy, StarfinSocial, StarfinMinigames, StarfinBedWars e MySQL de **teste**. Nenhum item abaixo foi executado nesta implementação. Registrar data, JAR/commit, arena, jogadores, evidência visual, logs e estado do banco para cada caso. Não ativar torneios em produção antes de concluir a sessão.
 
 ## Registro obrigatório por cenário 01–25

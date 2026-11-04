@@ -34,3 +34,4 @@ bin/
 ### Maven and local validation ###
 /target/
 /src/Main.java
+__pycache__/
