@@ -14,7 +14,8 @@ foreach ($port in @(45577, 33308)) {
 }
 Write-Host 'Ultimas mensagens de erro dos nos:'
 foreach ($node in @('proxy','lobby','bedwars-01','bedwars-02')) {
-    $log = Join-Path $lab "$node/logs/latest.log"
+    $log = if ($node -eq 'proxy') { Join-Path $lab 'proxy/proxy.log.0' }
+           else { Join-Path $lab "$node/logs/latest.log" }
     if (-not (Test-Path -LiteralPath $log)) { Write-Host "  $node`: log ausente"; continue }
     $matches = Select-String -LiteralPath $log -Pattern '(?i)(exception|error|severe|failed|disabled|unavailable)' | Select-Object -Last 12
     Write-Host "  $node`: $($matches.Count) mensagens recentes relevantes"
