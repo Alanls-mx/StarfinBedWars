@@ -1,6 +1,7 @@
 package com.starfinplugins.bedwars.stats;
 
 import com.starfinplugins.bedwars.StarfinBedWarsPlugin;
+import com.starfinplugins.bedwars.config.MessagePrefix;
 import com.starfinplugins.bedwars.domain.match.GameMatch;
 import com.starfinplugins.bedwars.domain.match.GameParticipant;
 import com.starfinplugins.bedwars.domain.match.MatchEndReason;
@@ -41,7 +42,7 @@ import org.bukkit.scheduler.BukkitTask;
 
 /** Main thread accumulates match events, one I/O worker owns JDBC and the durable outbox. */
 public final class MatchStatisticsService implements ManagedService, Listener {
-    private static final String PREFIX = ChatColor.AQUA + "[StarfinBedWars] " + ChatColor.RESET;
+    private final String PREFIX;
     private final StarfinBedWarsPlugin plugin;
     private final Map<UUID, MatchStatsTracker> matches = new HashMap<UUID, MatchStatsTracker>();
     /** Immutable snapshots; safe to read from the 1-second lobby scoreboard refresh. */
@@ -69,7 +70,10 @@ public final class MatchStatisticsService implements ManagedService, Listener {
     private MySqlStatsRepository repository;
     private BukkitTask retryTask;
 
-    public MatchStatisticsService(StarfinBedWarsPlugin plugin) { this.plugin = plugin; }
+    public MatchStatisticsService(StarfinBedWarsPlugin plugin) {
+        this.plugin = plugin;
+        this.PREFIX = MessagePrefix.value(plugin);
+    }
     @Override public String getName() { return "Estatisticas persistentes"; }
 
     @Override public void start() {

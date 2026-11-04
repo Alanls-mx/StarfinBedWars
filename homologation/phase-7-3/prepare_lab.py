@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 
 
@@ -60,6 +61,7 @@ def sha256(path: Path) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lab", required=True, type=Path, help="Existing isolated lab with inputs/ and .secrets/")
+    parser.add_argument("--operator", default="", help="Minecraft nickname granted lab-only diagnostic/admin permissions")
     args = parser.parse_args()
     lab = args.lab.resolve()
     if lab == ROOT or ROOT in lab.parents or lab == PLUGINS or PLUGINS in lab.parents:
@@ -75,6 +77,8 @@ def main() -> None:
     password = password_file.read_text(encoding="utf-8").strip()
     if len(password) < 32 or "'" in password:
         parser.error("lab MySQL password has invalid format")
+    if args.operator and not re.fullmatch(r"[A-Za-z0-9_]{3,16}", args.operator):
+        parser.error("operator must be a valid Minecraft Java nickname")
     inputs = lab / "inputs"
     login = PLUGINS / "StarfinLogin"
     minigames = PLUGINS / "StarfinMinigames"
@@ -89,6 +93,8 @@ def main() -> None:
         (social / "starfinsocial-bungee/target/StarfinSocial-Bungee.jar", "StarfinSocial-Bungee.jar"),
     ):
         copy(source, proxy / "plugins" / filename)
+    operator_groups = "groups:\n  {}:\n  - phase73-operator\n".format(args.operator) if args.operator else "groups: {}\n"
+    operator_permissions = "  phase73-operator:\n  - starfinminigames.admin\n  - starfinminigames.ranked.admin\n" if args.operator else ""
     put(proxy / "config.yml", """network_compression_threshold: 256
 remote_ping_timeout: 5000
 online_mode: false
@@ -111,7 +117,7 @@ disabled_commands: []
 player_limit: -1
 log_commands: false
 connection_throttle: -1
-groups: {}
+{operator_groups}PLACEHOLDER
 servers:
   lobby:
     motd: 'Authentication lobby'
@@ -127,8 +133,10 @@ servers:
     restricted: false
 permissions:
   default: []
+{operator_permissions}PLACEHOLDER
 ip_forward: true
-""")
+""".replace("{operator_groups}PLACEHOLDER", operator_groups.rstrip("\n"))
+       .replace("{operator_permissions}PLACEHOLDER", operator_permissions.rstrip("\n")))
     put(proxy / "modules.yml", "modules: []\n")
     def mapping(index: int) -> str:
         return "\n".join("  {}: '{}'".format(name, pair[index]) for name, pair in keys.items())
@@ -191,6 +199,11 @@ backend-secrets:
             network = replace_once(network, "lobby-server: 'auth'", "lobby-server: 'lobby'")
             put(node / "plugins/StarfinBedWars/network.yml", network)
         put(node / "eula.txt", "eula=true\n")
+        if args.operator:
+            digest = hashlib.md5(("OfflinePlayer:" + args.operator).encode("utf-8")).digest()
+            operator_id = str(uuid.UUID(bytes=digest, version=3))
+            put(node / "ops.json", json.dumps([{"uuid": operator_id, "name": args.operator,
+                                               "level": 4, "bypassesPlayerLimit": True}]) + "\n")
         put(node / "server.properties", "server-port=25565\nserver-ip=127.0.0.1\nonline-mode=false\nmax-players=20\nallow-nether=false\ngenerate-structures=false\nspawn-monsters=false\nspawn-animals=false\nlevel-name={}\nmotd=Starfin Phase 7.3 {}\n".format("world" if name == "lobby" else "Speedway", name))
         spigot = (inputs / "spigot.yml").read_text(encoding="utf-8")
         spigot = re.sub(r"bungeecord: (true|false)", "bungeecord: true", spigot)
@@ -250,6 +263,11 @@ network:
     put(lab / "compose.yml", """services:
   mysql:
     image: mysql:8.0
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     environment:
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root
     volumes:
@@ -267,7 +285,15 @@ network:
     command: ["java", "-Xmx512M", "-jar", "BungeeCord.jar"]
     volumes: ["./proxy:/srv"]
     ports: ["127.0.0.1:45577:25577"]
-    depends_on: [mysql, lobby, bedwars-01, bedwars-02]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      lobby:
+        condition: service_healthy
+      bedwars-01:
+        condition: service_healthy
+      bedwars-02:
+        condition: service_healthy
     networks:
       edge:
         ipv4_address: 172.28.30.2
@@ -275,28 +301,49 @@ network:
         ipv4_address: 172.28.31.2
   lobby:
     image: eclipse-temurin:8-jre
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q 'Done (' /srv/logs/latest.log && bash -c '</dev/tcp/127.0.0.1/27881'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     working_dir: /srv
-    command: ["java", "-Xmx768M", "-jar", "server.jar", "nogui"]
+    command: ["java", "-Xmx768M", "-jar", "server.jar", "nogui", "--nojline", "--noconsole"]
     volumes: ["./lobby:/srv"]
-    depends_on: [mysql]
+    depends_on:
+      mysql:
+        condition: service_healthy
     networks:
       backend:
         ipv4_address: 172.28.31.3
   bedwars-01:
     image: eclipse-temurin:8-jre
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q 'Done (' /srv/logs/latest.log && bash -c '</dev/tcp/127.0.0.1/27881'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     working_dir: /srv
-    command: ["java", "-Xmx1536M", "-jar", "server.jar", "nogui"]
+    command: ["java", "-Xmx1536M", "-jar", "server.jar", "nogui", "--nojline", "--noconsole"]
     volumes: ["./bedwars-01:/srv"]
-    depends_on: [mysql]
+    depends_on:
+      mysql:
+        condition: service_healthy
     networks:
       backend:
         ipv4_address: 172.28.31.4
   bedwars-02:
     image: eclipse-temurin:8-jre
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q 'Done (' /srv/logs/latest.log && bash -c '</dev/tcp/127.0.0.1/27881'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     working_dir: /srv
-    command: ["java", "-Xmx1536M", "-jar", "server.jar", "nogui"]
+    command: ["java", "-Xmx1536M", "-jar", "server.jar", "nogui", "--nojline", "--noconsole"]
     volumes: ["./bedwars-02:/srv"]
-    depends_on: [mysql]
+    depends_on:
+      mysql:
+        condition: service_healthy
     networks:
       backend:
         ipv4_address: 172.28.31.5
@@ -324,6 +371,7 @@ networks:
         "jars": {str(p.relative_to(lab)).replace("\\", "/"): sha256(p) for p in files},
         "host_port": "127.0.0.1:45577", "mysql_host_port": "127.0.0.1:33308",
         "schema": "starfin_phase73", "arenas": ["1: casual/solo (duplicated independently)"],
+        "operator": args.operator or None,
         "enabled": ["login", "social", "casual matchmaking", "mysql"],
         "deferred": ["ranked arena/group", "tournament arena/group", "real Minecraft client checks"],
     }

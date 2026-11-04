@@ -1,6 +1,7 @@
 package com.starfinplugins.bedwars.command;
 
 import com.starfinplugins.bedwars.StarfinBedWarsPlugin;
+import com.starfinplugins.bedwars.config.MessagePrefix;
 import com.starfinplugins.bedwars.tournament.TournamentSettings;
 import java.io.File;
 import java.io.IOException;
@@ -70,7 +71,7 @@ final class TournamentWizard {
                     return;
                 } else throw new IllegalArgumentException("Use set, next, back ou confirm.");
             }
-            show(player, draft, step);
+            show(plugin, player, draft, step);
         } catch (IOException | IllegalArgumentException error) {
             player.sendMessage("§cAssistente: " + error.getMessage());
         }
@@ -127,7 +128,7 @@ final class TournamentWizard {
             default: throw new IllegalArgumentException("Etapa de revisao; use next ou back.");
         }
     }
-    private static void show(Player player, YamlConfiguration draft, int step) {
+    private static void show(StarfinBedWarsPlugin plugin, Player player, YamlConfiguration draft, int step) {
         String[] instructions = {
             "", "Identificacao: set <id>|<nome>",
             "Modalidade: set <modo>|<tamanho>",
@@ -143,7 +144,7 @@ final class TournamentWizard {
             "Revisao: use next apos conferir os valores",
             "Confirmacao: use confirm CONFIRM"
         };
-        player.sendMessage("§b[Torneio] Assistente §f" + step + "/13 §7— " + instructions[step]);
+        player.sendMessage(MessagePrefix.value(plugin) + "§bAssistente §f" + step + "/13 §7— " + instructions[step]);
         player.sendMessage("§7ID §f" + draft.getString("proposal.id") + " §7Nome §f"
             + draft.getString("proposal.name") + " §7Modo §f" + draft.getString("proposal.mode")
             + " §7Equipe §f" + draft.getInt("proposal.team-size"));

@@ -12,7 +12,7 @@ public final class PlayerFeedback {
     public static void send(Plugin plugin, Player player, String path,
                             String fallback, String... tokens) {
         String template = plugin.getConfig().getString(path, fallback);
-        player.sendMessage(render(template, tokens));
+        player.sendMessage(MessagePrefix.apply(plugin, render(template, tokens)));
     }
 
     public static String render(String template, String... tokens) {

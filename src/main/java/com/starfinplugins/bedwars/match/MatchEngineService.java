@@ -1,5 +1,6 @@
 package com.starfinplugins.bedwars.match;
 
+import com.starfinplugins.bedwars.config.MessagePrefix;
 import com.starfinplugins.bedwars.StarfinBedWarsPlugin;
 import com.starfinplugins.bedwars.arena.ArenaService;
 import com.starfinplugins.bedwars.domain.arena.ArenaDefinition;
@@ -25,6 +26,7 @@ import com.starfinplugins.bedwars.setup.SpawnPlatformLayout;
 import com.starfinplugins.bedwars.world.SafeLocationResolver;
 import com.starfinplugins.minigames.api.ReservationSnapshot;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -94,6 +96,9 @@ public final class MatchEngineService implements ManagedService, Listener {
     private final Map<String, BukkitTask> spawnOpeningTasks = new HashMap<String, BukkitTask>();
     private final Map<String, Integer> spawnOpeningValues = new HashMap<String, Integer>();
     private final Map<String, Boolean> loading = new HashMap<String, Boolean>();
+    private final Map<String, WarmWorld> warmWorlds = new java.util.LinkedHashMap<String, WarmWorld>();
+    private final Set<String> warmingWorlds = new HashSet<String>();
+    private BukkitTask warmupTask;
     private final Map<String, java.util.LinkedHashSet<UUID>> queuedDuringLoading =
         new HashMap<String, java.util.LinkedHashSet<UUID>>();
     private final Map<UUID, ReservationSnapshot> assignedReservations = new HashMap<UUID, ReservationSnapshot>();
@@ -167,11 +172,21 @@ public final class MatchEngineService implements ManagedService, Listener {
     public void start() {
         Bukkit.getPluginManager().registerEvents(this, plugin);
         started = true;
+        if (warmLimit() > 0) {
+            warmupTask = Bukkit.getScheduler().runTaskLater(plugin,
+                () -> warmAvailableArenas(), 20L);
+        }
     }
 
     @Override
     public void stop() {
         started = false;
+        if (warmupTask != null) warmupTask.cancel();
+        warmupTask = null;
+        warmingWorlds.clear();
+        for (WarmWorld warm : new ArrayList<WarmWorld>(warmWorlds.values()))
+            disposeWarmWorld(warm.world);
+        warmWorlds.clear();
         for (BukkitTask task : countdowns.values()) task.cancel();
         for (BukkitTask task : spawnOpeningTasks.values()) task.cancel();
         for (BukkitTask task : respawnTasks.values()) task.cancel();
@@ -387,7 +402,14 @@ public final class MatchEngineService implements ManagedService, Listener {
         queuedDuringLoading.remove(arena.getId());
         refreshNetworkCatalog();
         try {
-            arenas.getWorlds().createInstance(arena, new ArenaServiceWorldCallback(arena, player));
+            WarmWorld warm = warmWorlds.remove(arena.getId());
+            if (warm != null && warm.revision == templateRevision(arena)) {
+                plugin.getLogger().info("Arena " + arena.getId() + " pronta para entrada imediata.");
+                new ArenaServiceWorldCallback(arena, player).complete(warm.world, null);
+            } else {
+                if (warm != null) disposeWarmWorld(warm.world);
+                arenas.getWorlds().createInstance(arena, new ArenaServiceWorldCallback(arena, player));
+            }
         } catch (RuntimeException failure) {
             loading.remove(arena.getId());
             queuedDuringLoading.remove(arena.getId());
@@ -410,6 +432,89 @@ public final class MatchEngineService implements ManagedService, Listener {
 
     public boolean isOpeningSpawns(String arenaId) {
         return arenaId != null && spawnOpeningTasks.containsKey(arenaId);
+    }
+
+    private int warmLimit() {
+        if (!plugin.getConfig().getBoolean("world-instances.prewarm.enabled", true)) return 0;
+        return Math.max(0, Math.min(4,
+            plugin.getConfig().getInt("world-instances.prewarm.max-ready-worlds", 2)));
+    }
+
+    private long templateRevision(ArenaDefinition arena) {
+        try {
+            return Files.getLastModifiedTime(
+                arenas.getWorlds().resolveTemplate(arena.getId())).toMillis();
+        } catch (IOException error) {
+            plugin.getLogger().warning("Nao foi possivel conferir o template da arena "
+                + arena.getId() + ": " + error.getMessage());
+            return -1L;
+        }
+    }
+
+    private void warmAvailableArenas() {
+        List<ArenaDefinition> available = new ArrayList<ArenaDefinition>(arenas.getArenas());
+        available.sort((left, right) -> left.getId().compareTo(right.getId()));
+        for (ArenaDefinition arena : available) {
+            if (warmWorlds.size() + warmingWorlds.size() >= warmLimit()) break;
+            prewarmIdle(arena.getId());
+        }
+    }
+
+    /** Prepares a disposable copy while an arena is idle; never admits a player to it yet. */
+    public void prewarmIdle(String arenaId) {
+        ArenaDefinition arena = arenas.getArena(arenaId);
+        if (!started || arena == null || !arena.isEnabled() || arenas.isEditing(arenaId)
+                || byArena.containsKey(arenaId) || isPreparingArena(arenaId)
+                || warmWorlds.containsKey(arenaId) || warmingWorlds.contains(arenaId)
+                || warmLimit() == 0) return;
+        if (warmWorlds.size() + warmingWorlds.size() >= warmLimit()) {
+            if (warmWorlds.isEmpty()) return;
+            String oldest = warmWorlds.keySet().iterator().next();
+            discardPrewarmed(oldest);
+        }
+        final long revision = templateRevision(arena);
+        if (revision < 0) return;
+        warmingWorlds.add(arenaId);
+        final long began = System.currentTimeMillis();
+        arenas.getWorlds().createInstance(arena, (world, error) -> {
+            warmingWorlds.remove(arenaId);
+            if (error != null || world == null) {
+                plugin.getLogger().warning("Preparo antecipado da arena " + arenaId + " falhou: "
+                    + (error == null ? "mundo indisponivel" : error.getMessage()));
+                return;
+            }
+            if (!started || !arena.isEnabled() || arenas.isEditing(arenaId)
+                    || arenas.getArena(arenaId) != arena || byArena.containsKey(arenaId)
+                    || revision != templateRevision(arena) || warmWorlds.containsKey(arenaId)) {
+                disposeWarmWorld(world);
+                return;
+            }
+            warmWorlds.put(arenaId, new WarmWorld(world, revision));
+            plugin.getLogger().info("Arena " + arenaId + " preparada em "
+                + (System.currentTimeMillis() - began) + " ms para entrada rapida.");
+        });
+    }
+
+    public void discardPrewarmed(String arenaId) {
+        WarmWorld warm = warmWorlds.remove(arenaId);
+        if (warm != null) disposeWarmWorld(warm.world);
+    }
+
+    private void disposeWarmWorld(World world) {
+        try { arenas.getWorlds().removeInstance(world); }
+        catch (IOException error) {
+            plugin.getLogger().warning("Copia antecipada preservada para diagnostico: "
+                + world.getName() + " (" + error.getMessage() + ")");
+        }
+    }
+
+    private static final class WarmWorld {
+        private final World world;
+        private final long revision;
+        private WarmWorld(World world, long revision) {
+            this.world = world;
+            this.revision = revision;
+        }
     }
 
     public Set<UUID> getDirectSpectators(GameMatch match) {
@@ -1010,6 +1115,7 @@ public final class MatchEngineService implements ManagedService, Listener {
             byArena.remove(match.getArena().getId());
             matchWorlds.remove(match.getId());
             fire(MatchLifecycleEvent.Type.INSTANCE_REMOVED, match, null, null);
+            prewarmIdle(match.getArena().getId());
         } catch (IOException error) {
             match.transition(MatchState.ERROR);
             plugin.getLogger().severe("Falha ao restaurar arena " + match.getArena().getId()
@@ -1101,8 +1207,7 @@ public final class MatchEngineService implements ManagedService, Listener {
     private void broadcast(GameMatch match, String message) {
         for (GameParticipant participant : match.getParticipantList()) {
             Player player = Bukkit.getPlayer(participant.getPlayerId());
-            if (player != null) player.sendMessage(org.bukkit.ChatColor.AQUA + "[BedWars] "
-                + org.bukkit.ChatColor.YELLOW + message);
+            if (player != null) player.sendMessage(MessagePrefix.apply(plugin, message));
         }
     }
 
@@ -1322,16 +1427,16 @@ public final class MatchEngineService implements ManagedService, Listener {
         GameTeam team = match.getTeam(participant.getTeamId());
         if (!team.isBedAlive()) {
             match.setParticipantState(player.getUniqueId(), ParticipantState.ELIMINATED);
-            player.sendMessage(message("messages.you-eliminated",
-                "&cVoce foi eliminado! Sua cama ja foi destruida."));
+            player.sendMessage(MessagePrefix.apply(plugin, message("messages.you-eliminated",
+                "&cVoce foi eliminado! Sua cama ja foi destruida.")));
             fire(MatchLifecycleEvent.Type.PLAYER_ELIMINATED, match, participant, participant.getTeamId());
             resolveWinnerLater(match);
         } else {
             match.setParticipantState(player.getUniqueId(), ParticipantState.RESPAWNING);
             cancel(respawnTasks.remove(player.getUniqueId()));
-            player.sendMessage(message("messages.respawn-countdown",
+            player.sendMessage(MessagePrefix.apply(plugin, message("messages.respawn-countdown",
                 "&eVoce renascera em &c{time} &esegundos.",
-                "time", Integer.toString((respawnDelayTicks(match, player.getUniqueId()) + 19) / 20)));
+                "time", Integer.toString((respawnDelayTicks(match, player.getUniqueId()) + 19) / 20))));
             fire(MatchLifecycleEvent.Type.PLAYER_DIED, match, participant, participant.getTeamId());
         }
         // Evita a tela de morte e inicia imediatamente o periodo de espectador.
@@ -1484,7 +1589,8 @@ public final class MatchEngineService implements ManagedService, Listener {
                                 match.setParticipantState(player.getUniqueId(), ParticipantState.CONNECTED);
                                 fire(MatchLifecycleEvent.Type.PLAYER_RESPAWNED, match, current,
                                     current.getTeamId());
-                                player.sendMessage(message("messages.respawned", "&aVoce renasceu!"));
+                                player.sendMessage(MessagePrefix.apply(plugin,
+                                    message("messages.respawned", "&aVoce renasceu!")));
                             }
                         }
                         respawnTasks.remove(player.getUniqueId());
@@ -1545,8 +1651,8 @@ public final class MatchEngineService implements ManagedService, Listener {
             return;
         }
         if (participant.getTeamId().equals(bedTeam.getDefinition().getId())) {
-            player.sendMessage(message("messages.own-bed",
-                "&cVocê não pode destruir sua própria cama!"));
+            player.sendMessage(MessagePrefix.apply(plugin, message("messages.own-bed",
+                "&cVocê não pode destruir sua própria cama!")));
             return;
         }
         if (!bedTeam.isBedAlive()) return;
@@ -1989,7 +2095,7 @@ public final class MatchEngineService implements ManagedService, Listener {
             plugin.getConfig().getInt("messages.boundary-warning-cooldown-seconds", 4)));
         if (boundaryWarnings.shouldWarn(player.getUniqueId(), type,
                 System.currentTimeMillis(), seconds * 1000L)) {
-            player.sendMessage(message(path, defaultMessage));
+            player.sendMessage(MessagePrefix.apply(plugin, message(path, defaultMessage)));
         }
     }
 

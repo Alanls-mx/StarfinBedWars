@@ -157,10 +157,12 @@ public final class ArenaService implements ManagedService {
                 || !editingArenas.add(arena.getId())) {
             throw new IllegalStateException("Arena ausente, em partida ou ja em modo de edicao.");
         }
+        if (matchEngine != null) matchEngine.discardPrewarmed(arena.getId());
     }
 
     public void releaseEditing(String arenaId) {
         if (arenaId != null) editingArenas.remove(arenaId);
+        if (matchEngine != null && arenaId != null) matchEngine.prewarmIdle(arenaId);
     }
 
     public void setRegion(ArenaDefinition arena, ArenaRegionType type, ArenaRegion region)

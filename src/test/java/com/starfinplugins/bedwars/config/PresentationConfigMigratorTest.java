@@ -65,6 +65,8 @@ public class PresentationConfigMigratorTest {
             "special-items.defender-knockback.vertical"), 0.0D);
         assertEquals("&cVocê não pode destruir sua própria cama!",
             updated.getString("messages.own-bed"));
+        assertFalse(updated.getBoolean("messages.prefix.enabled"));
+        assertEquals("&b[BedWars] ", updated.getString("messages.prefix.text"));
         assertEquals(28, updated.getInt("shop.description-line-length"));
         assertEquals(4, updated.getInt("messages.boundary-warning-cooldown-seconds"));
         assertEquals("&cVocê atingiu o limite de altura desta arena!",

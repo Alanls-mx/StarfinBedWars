@@ -17,6 +17,12 @@ match:
 next-match:
   enabled: true # Oferece jogar novamente no mesmo modo ou escolher arena apos o resultado.
 
+# Mantem poucas copias descartaveis de mapas ja carregadas para entrada rapida.
+world-instances:
+  prewarm:
+    enabled: true
+    max-ready-worlds: 2
+
 # Itens especiais do BedWars classico (compra configurada em shop.yml).
 special-items:
   enabled: true
@@ -434,6 +440,10 @@ visuals:
 # Mensagens originais Starfin inspiradas na organizacao do BedWars1058.
 # Placeholders: {player}, {on}, {max}, {time}, {arena}, {killer}.
 messages:
+  # Prefixo opcional do chat. As mensagens continuam habilitadas quando false.
+  prefix:
+    enabled: false
+    text: '&b[BedWars] '
   # Mensagens da loja. {item} usa o nome configurado em shop.yml.
   # Reaplique a cor apos placeholders com nome colorido, se desejar.
   shop:

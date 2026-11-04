@@ -1,5 +1,7 @@
 package com.starfinplugins.bedwars.gameplay;
 
+import com.starfinplugins.bedwars.config.MessagePrefix;
+
 import com.starfinplugins.bedwars.StarfinBedWarsPlugin;
 import com.starfinplugins.bedwars.domain.match.GameMatch;
 import com.starfinplugins.bedwars.domain.match.GameParticipant;
@@ -1468,8 +1470,8 @@ public final class GameplayService implements ManagedService, Listener {
             || match.getState() == MatchState.STARTING);
     }
     private void say(Player player, String pt, String en, String es) {
-        player.sendMessage(ChatColor.AQUA + "[BedWars] " + ChatColor.RESET
-            + label(stats.getLanguage(player.getUniqueId()), pt, en, es));
+        player.sendMessage(MessagePrefix.apply(plugin,
+            label(stats.getLanguage(player.getUniqueId()), pt, en, es)));
     }
     private static String label(String language, String pt, String en, String es) {
         return "en_US".equals(language) ? en : "es_ES".equals(language) ? es : pt;

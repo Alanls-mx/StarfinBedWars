@@ -55,6 +55,7 @@ public final class PresentationConfigMigrator {
         "visuals.lobby-countdown.start-at", "visuals.lobby-countdown.title",
         "visuals.lobby-countdown.subtitle", "visuals.lobby-countdown.cancelled",
         "visuals.lobby-countdown.sound", "visuals.lobby-countdown.sound-enabled",
+        "messages.prefix.enabled", "messages.prefix.text",
         "messages.player-joined", "messages.player-left", "messages.you-joined",
         "messages.shop.unavailable", "messages.shop.special-disabled",
         "messages.shop.already-owned", "messages.shop.inventory-full",
@@ -116,7 +117,8 @@ public final class PresentationConfigMigrator {
         "visuals.victory.celebration.enabled",
         "visuals.victory.celebration.fireworks-per-burst",
         "visuals.victory.celebration.interval-ticks",
-        "visuals.victory.celebration.radius"
+        "visuals.victory.celebration.radius",
+        "world-instances.prewarm.enabled", "world-instances.prewarm.max-ready-worlds"
     };
 
     private PresentationConfigMigrator() { }

@@ -153,6 +153,8 @@ A migracao adiciona apenas chaves ausentes em `config.yml` e guarda o original e
 | `generator-holograms.*` | 4 icones, orbita de 1,05 bloco | Bloco central giratorio/flutuante, minerios em orbita, texto e limites de atualizacao/visualizacao. |
 | `purchase-sounds.*` | `NOTE_PLING`, `LEVEL_UP` | Sons de compra da loja e das melhorias. |
 | `match-chat.format` | tags, nome e mensagem | Formato dos canais de chat na partida. |
+| `world-instances.prewarm.enabled`, `world-instances.prewarm.max-ready-worlds` | `true`, `2` | Prepara ate duas copias descartaveis ociosas de arenas para reduzir a espera na primeira entrada. Descarta a copia ao editar o mapa e prepara outra apos cada rodada. |
+| `messages.prefix.enabled`, `messages.prefix.text` | `false`, `&b[BedWars] ` | O prefixo do chat vem desligado; as mensagens continuam ativas. Para exibir um prefixo personalizado, habilite a opção e altere o texto com cores `&`. Reinicie o BedWars para aplicar. |
 | `tab.header`, `tab.footer` | marca configurada | Cabecalho e rodape do TAB na partida; `{footer}` usa `scoreboard.footer`, ou pode ser substituido por texto literal. |
 | `tab.lobby.enabled`, `tab.lobby.header`, `tab.lobby.footer` | habilitado, marca configurada | Exibe o TAB do BedWars no lobby e restaura esse cabecalho ao sair da partida. Desative se outro plugin controlar o TAB do lobby. |
 | `tab.skins.enabled`, `tab.skins.aliases`, `tab.skins.fallback-player` | habilitado, sem aliases nem fallback | Usa a textura assinada do perfil conectado ou consulta o perfil oficial pelo nome. Para um nome pirata sem skin publica, associe o nick a uma conta com skin em `aliases`; o fallback e opcional. |

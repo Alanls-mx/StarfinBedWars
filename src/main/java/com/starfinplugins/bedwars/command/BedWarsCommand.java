@@ -1,6 +1,7 @@
 package com.starfinplugins.bedwars.command;
 
 import com.starfinplugins.bedwars.StarfinBedWarsPlugin;
+import com.starfinplugins.bedwars.config.MessagePrefix;
 import com.starfinplugins.bedwars.arena.ArenaService;
 import com.starfinplugins.bedwars.arena.ArenaEditingService;
 import com.starfinplugins.bedwars.arena.ArenaRegionSelectionService;
@@ -50,7 +51,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.player.PlayerQuitEvent;
 
 public final class BedWarsCommand implements CommandExecutor, TabCompleter, Listener {
-    private static final String PREFIX = ChatColor.AQUA + "[StarfinBedWars] " + ChatColor.RESET;
+    private final String PREFIX;
     private final StarfinBedWarsPlugin plugin;
     private final ArenaService arenas;
     private final MatchEngineService matches;
@@ -78,6 +79,7 @@ public final class BedWarsCommand implements CommandExecutor, TabCompleter, List
                           ArenaEditingService editing, ArenaRegionSelectionService regionSelection,
                           BedWarsMenuService menus, ArenaSetupWizardService wizard) {
         this.plugin = plugin;
+        this.PREFIX = MessagePrefix.value(plugin);
         this.arenas = arenas;
         this.matches = matches;
         this.worlds = worlds;

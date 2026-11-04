@@ -1,5 +1,7 @@
 package com.starfinplugins.bedwars.match;
 
+import com.starfinplugins.bedwars.config.MessagePrefix;
+
 import com.starfinplugins.bedwars.StarfinBedWarsPlugin;
 import com.starfinplugins.bedwars.stats.MatchStatisticsService;
 import com.starfinplugins.bedwars.stats.StatsProfile;
@@ -100,9 +102,9 @@ public final class MatchPresentationService implements ManagedService, Listener 
                     "player", name(actor),
                     "on", Integer.toString(event.getMatch().getConnectedCount()),
                     "max", Integer.toString(event.getMatch().getArena().getMaximumPlayers())));
-                if (actor != null) actor.sendMessage(message("messages.you-joined",
+                if (actor != null) actor.sendMessage(MessagePrefix.apply(plugin, message("messages.you-joined",
                     "&aVoce entrou no mapa &e{arena}&a.",
-                    "arena", event.getMatch().getArena().getDisplayName()));
+                    "arena", event.getMatch().getArena().getDisplayName())));
                 break;
             case PLAYER_LEFT:
                 notifyMatch(event.getMatch(), message("messages.player-left",
@@ -110,8 +112,8 @@ public final class MatchPresentationService implements ManagedService, Listener 
                     "player", name(actor)));
                 break;
             case PLAYER_RECONNECTED:
-                if (actor != null) actor.sendMessage(message("messages.reconnected",
-                    "&aVoce retornou a partida!"));
+                if (actor != null) actor.sendMessage(MessagePrefix.apply(plugin, message("messages.reconnected",
+                    "&aVoce retornou a partida!")));
                 break;
             case COUNTDOWN_STARTED:
                 notifyMatch(event.getMatch(), message("messages.lobby-ready",
@@ -188,7 +190,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
             if (!teammate.getTeamId().equals(participant.getTeamId())
                     || teammate.getPlayerId().equals(event.getPlayerId())) continue;
             Player player = Bukkit.getPlayer(teammate.getPlayerId());
-            if (player != null) player.sendMessage(ChatColor.AQUA + "[BedWars] " + message);
+            if (player != null) player.sendMessage(MessagePrefix.apply(plugin, message));
         }
     }
 
@@ -885,7 +887,7 @@ public final class MatchPresentationService implements ManagedService, Listener 
         for (GameParticipant participant : match.getParticipantList()) {
             if (excluded != null && excluded.equals(participant.getPlayerId())) continue;
             Player player = Bukkit.getPlayer(participant.getPlayerId());
-            if (player != null) player.sendMessage(ChatColor.AQUA + "[BedWars] " + message);
+            if (player != null) player.sendMessage(MessagePrefix.apply(plugin, message));
         }
     }
 
