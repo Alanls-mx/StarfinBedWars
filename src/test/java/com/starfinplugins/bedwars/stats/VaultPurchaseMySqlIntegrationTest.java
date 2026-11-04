@@ -9,23 +9,23 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.junit.Assume;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
 /** Two repositories represent two BedWars servers sharing one disposable MySQL schema. */
 public class VaultPurchaseMySqlIntegrationTest {
     @Test public void serializesChargesAndCommitsOnlyOnceAcrossServers() throws Exception {
-        String host = System.getenv("SBW_TEST_DB_HOST");
-        String schema = System.getenv("SBW_TEST_DB_SCHEMA");
-        Assume.assumeTrue(host != null && schema != null && schema.startsWith("sbw_phase2_test_"));
+        IntegrationMysql database = IntegrationMysql.load(
+            "SBW_VAULT_TEST_", "SBW_TEST_DB_",
+            System.getenv("SBW_VAULT_TEST_SCHEMA") == null
+                ? "sbw_phase2_test_" : "sbw_vault_test_");
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("enabled", true);
-        yaml.set("mysql.host", host);
-        yaml.set("mysql.port", Integer.parseInt(System.getenv("SBW_TEST_DB_PORT")));
-        yaml.set("mysql.database", schema);
-        yaml.set("mysql.username", System.getenv("SBW_TEST_DB_USER"));
-        yaml.set("mysql.password", System.getenv("SBW_TEST_DB_PASSWORD"));
+        yaml.set("mysql.host", database.host);
+        yaml.set("mysql.port", database.port);
+        yaml.set("mysql.database", database.schema);
+        yaml.set("mysql.username", database.user);
+        yaml.set("mysql.password", database.password);
         yaml.set("mysql.ssl-mode", "REQUIRED");
         StatsSettings settings = new StatsSettings(yaml);
         UUID player = UUID.randomUUID();

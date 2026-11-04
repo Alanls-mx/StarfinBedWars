@@ -16,32 +16,29 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.junit.Assume;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
 /** Run against an explicitly disposable MariaDB schema; never touches the live player database. */
 public class Phase2MySqlIntegrationTest {
     @Test public void migratesAndSerializesConcurrentResultsAndRewards() throws Exception {
-        String host = System.getenv("SBW_TEST_DB_HOST");
-        String database = System.getenv("SBW_TEST_DB_SCHEMA");
-        Assume.assumeTrue(host != null && database != null && database.startsWith("sbw_phase2_test_"));
-        String user = System.getenv("SBW_TEST_DB_USER");
-        String password = System.getenv("SBW_TEST_DB_PASSWORD");
-        int port = Integer.parseInt(System.getenv("SBW_TEST_DB_PORT") == null
-            ? "3306" : System.getenv("SBW_TEST_DB_PORT"));
+        IntegrationMysql database = IntegrationMysql.load(
+            "SBW_TEST_DB_", null, "sbw_phase2_test_");
+        String host = database.host, user = database.user, password = database.password;
+        int port = database.port;
         YamlConfiguration yml = new YamlConfiguration();
         yml.set("enabled", true);
         yml.set("mysql.host", host);
         yml.set("mysql.port", port);
-        yml.set("mysql.database", database);
+        yml.set("mysql.database", database.schema);
         yml.set("mysql.username", user);
         yml.set("mysql.password", password);
         yml.set("mysql.ssl-mode", "REQUIRED");
         yml.set("levels.base-xp", 100);
         yml.set("levels.increase-per-level", 0);
         StatsSettings settings = new StatsSettings(yml);
-        String url = "jdbc:mysql://" + host + ":" + port + "/" + database + "?sslMode=REQUIRED";
+        String url = "jdbc:mysql://" + host + ":" + port + "/" + database.schema
+            + "?sslMode=REQUIRED";
         UUID player = UUID.randomUUID();
         UUID legacyAbilityPlayer = UUID.randomUUID();
         UUID oldMatch = UUID.randomUUID();

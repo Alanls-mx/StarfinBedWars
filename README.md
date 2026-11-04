@@ -1,5 +1,7 @@
 # StarfinBedWars
 
+Validação automatizada da Fase 7.2: [ambiente MySQL descartável](MYSQL_INTEGRATION_TESTING.md), [relatório e limites](VALIDATION_PHASE_7_2.md) e [roteiro de homologação manual](STARFINBEDWARS_FINAL_TEST_PLAN.md). O CI exige as suítes JDBC, confere relatórios Surefire e JARs; testes de cliente Minecraft permanecem no roteiro manual.
+
 ## Temporadas ranqueadas (Fase 6.3)
 
 Temporadas, Top competitivo, snapshots finais, títulos sazonais, resgate e menus `/sbw ranked` foram adicionados sobre as Fases 6.1/6.2. O MySQL define a temporada ativa para todos os backends e para o proxy; `seasons.yml` é apenas a proposta administrativa. Os recursos sazonais e os layouts opcionais permanecem desativados por padrão. Veja [RANKED_PHASE_6_3.md](RANKED_PHASE_6_3.md) para configuração, comandos, migração, testes e homologação pendente.

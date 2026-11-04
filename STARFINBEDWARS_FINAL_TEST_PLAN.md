@@ -2,6 +2,17 @@
 
 Esta lista é para uma sessão posterior com Minecraft 1.8.8, proxy, StarfinSocial, StarfinMinigames, StarfinBedWars e MySQL de **teste**. Nenhum item abaixo foi executado nesta implementação. Registrar data, JAR/commit, arena, jogadores, evidência visual, logs e estado do banco para cada caso. Não ativar torneios em produção antes de concluir a sessão.
 
+## Registro obrigatório por cenário 01–25
+
+Para cada item numerado, abrir um registro com: ID `H7.2-01` a `H7.2-25`, data, operador, versões e SHA-256 das JARs, commits, configuração sem segredos, dependências, comandos executados, estado inicial e final da arena/torneio, resultado esperado e observado, captura ou vídeo, trecho de log e consulta SQL pertinente. Marcar `PASS`, `FAIL`, `BLOCKED` ou `NOT_RUN`. Os 25 itens abaixo permanecem `NOT_RUN` até teste com clientes reais. Repetir comandos idempotentes onde o item solicitar; preservar os IDs de partida, jogo, confronto, série e torneio nas evidências.
+
+## Separação da Fase 7.2
+
+- **Automatizados:** suítes JDBC de estatísticas, ranqueadas, reservas e torneios, com resultados e XML em `VALIDATION_PHASE_7_2.md`; elas não validam renderização, transporte BungeeCord nem menus Minecraft.
+- **Manuais:** itens 01–20 e 24–25 abaixo, em cliente Minecraft 1.8.8, proxy e backends de homologação.
+- **Falhas dirigidas:** itens 18 e 21–23, apenas em ambiente isolado, com journal e logs preservados.
+- **Desempenho:** medir latência de reserva/admissão e tempo de recuperação, com carga e hardware registrados; ainda `NOT_RUN`.
+
 ## Preparação
 
 - Conferir backup, `stats.yml`, o mesmo banco no proxy e no backend, e `tournaments.enabled: true` nos dois plugins de teste.

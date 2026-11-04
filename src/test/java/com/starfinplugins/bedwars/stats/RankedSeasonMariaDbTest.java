@@ -19,30 +19,27 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.junit.Assume;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
 /** Runs only against a disposable schema explicitly supplied by the test invocation. */
 public class RankedSeasonMariaDbTest {
     @Test public void lifecycleRankingRewardsAndIdempotentFinalize() throws Exception {
-        String host = System.getenv("SBW_RANKED_TEST_HOST");
-        Assume.assumeTrue("Disposable MariaDB required", host != null && !host.isEmpty());
-        int port = Integer.parseInt(System.getenv("SBW_RANKED_TEST_PORT"));
-        String schema = System.getenv("SBW_RANKED_TEST_SCHEMA");
-        String password = System.getenv("SBW_RANKED_TEST_PASSWORD");
-        Assume.assumeTrue("Only a dedicated disposable schema is allowed",
-            schema != null && schema.startsWith("ranked63"));
+        IntegrationMysql target = IntegrationMysql.load(
+            "SBW_RANKED_TEST_", null, "ranked63_");
+        String host = target.host, schema = target.schema;
+        int port = target.port;
+        String password = target.password;
         YamlConfiguration database = new YamlConfiguration();
         database.set("enabled", true); database.set("mysql.host", host);
         database.set("mysql.port", port); database.set("mysql.database", schema);
-        database.set("mysql.username", "root"); database.set("mysql.password", password);
+        database.set("mysql.username", target.user); database.set("mysql.password", password);
         database.set("mysql.ssl-mode", "DISABLED");
         StatsSettings stats = new StatsSettings(database);
         String url = "jdbc:mysql://" + host + ":" + port + "/" + schema + "?sslMode=DISABLED";
         try (RankedRepository ranked = new RankedRepository()) {
             ranked.open(stats);
-            try (Connection c = DriverManager.getConnection(url, "root", password);
+        try (Connection c = DriverManager.getConnection(url, target.user, password);
                  Statement sql = c.createStatement()) {
                 sql.execute("CREATE TABLE IF NOT EXISTS sm_ranked_allocations"
                     + " (allocation_id CHAR(36) PRIMARY KEY,state VARCHAR(16),expires_at BIGINT)");
@@ -76,7 +73,7 @@ public class RankedSeasonMariaDbTest {
             assertEquals(RankedSeason.State.DRAFT, draft.state);
             assertEquals(RankedSeason.State.SCHEDULED,
                 seasons.transition(id, RankedSeason.State.SCHEDULED, "junit").state);
-            try (Connection c = DriverManager.getConnection(url, "root", password);
+            try (Connection c = DriverManager.getConnection(url, target.user, password);
                  PreparedStatement policy = c.prepareStatement(
                      "INSERT INTO sbw_ranked_policy(server_id,instance_id,enabled,context,"
                      + "initial_rating,updated_at,season_version,pending_results,active_matches)"
@@ -89,7 +86,7 @@ public class RankedSeasonMariaDbTest {
             RankedSeason active = seasons.transition(id, RankedSeason.State.ACTIVE, "junit");
             assertEquals(RankedSeason.State.ACTIVE, active.state);
             UUID first = UUID.randomUUID(), second = UUID.randomUUID(), third = UUID.randomUUID();
-            try (Connection c = DriverManager.getConnection(url, "root", password);
+            try (Connection c = DriverManager.getConnection(url, target.user, password);
                  PreparedStatement profile = c.prepareStatement(
                      "INSERT INTO sbw_ranked_profiles(player_uuid,mode,context,rating,peak_rating,"
                      + "games,wins,losses,draws,placement_games,last_match_at,updated_at)"
@@ -131,14 +128,14 @@ public class RankedSeasonMariaDbTest {
             assertTrue(ranked.apply(late, rules).newResult);
             assertFalse(ranked.apply(late, rules).newResult);
             assertEquals(1, ranked.profile(lateA, "solo", id, rules.initial).games);
-            try (Connection c = DriverManager.getConnection(url, "root", password);
+            try (Connection c = DriverManager.getConnection(url, target.user, password);
                  PreparedStatement policy = c.prepareStatement(
                      "UPDATE sbw_ranked_policy SET context=?,season_version=?,enabled=0,"
                      + "pending_results=0,active_matches=0,updated_at=? WHERE server_id='test'")) {
                 policy.setString(1, id); policy.setLong(2, seasons.find(id).version);
                 policy.setLong(3, System.currentTimeMillis()); policy.executeUpdate();
             }
-            try (Connection c = DriverManager.getConnection(url, "root", password);
+            try (Connection c = DriverManager.getConnection(url, target.user, password);
                  Statement pending = c.createStatement()) {
                 pending.executeUpdate("UPDATE sbw_ranked_policy SET pending_results=1 WHERE server_id='test'");
             }
@@ -146,12 +143,12 @@ public class RankedSeasonMariaDbTest {
                 seasons.transition(id, RankedSeason.State.FINALIZING, "junit");
                 fail("Pending outbox must block finalization");
             } catch (IllegalStateException expected) { /* Fail closed. */ }
-            try (Connection c = DriverManager.getConnection(url, "root", password);
+            try (Connection c = DriverManager.getConnection(url, target.user, password);
                  Statement cleared = c.createStatement()) {
                 cleared.executeUpdate("UPDATE sbw_ranked_policy SET pending_results=0 WHERE server_id='test'");
             }
             seasons.transition(id, RankedSeason.State.FINALIZING, "junit");
-            try (Connection c = DriverManager.getConnection(url, "root", password);
+            try (Connection c = DriverManager.getConnection(url, target.user, password);
                  PreparedStatement policy = c.prepareStatement(
                      "UPDATE sbw_ranked_policy SET season_version=?,updated_at=? WHERE server_id='test'")) {
                 policy.setLong(1, seasons.find(id).version);
@@ -174,7 +171,7 @@ public class RankedSeasonMariaDbTest {
             assertTrue(seasons.claim(first, id, "solo", reward));
             assertFalse(seasons.claim(first, id, "solo", reward));
             assertEquals("CLAIMED", seasons.rewards(first, id).get(0).state);
-            try (Connection c = DriverManager.getConnection(url, "root", password);
+            try (Connection c = DriverManager.getConnection(url, target.user, password);
                  PreparedStatement changed = c.prepareStatement(
                      "UPDATE sbw_ranked_profiles SET rating=1500 WHERE player_uuid=?"
                      + " AND mode='solo' AND context=?")) {

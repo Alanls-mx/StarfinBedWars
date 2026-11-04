@@ -12,20 +12,17 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.UUID;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.junit.Assume;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
 /** Reservation-to-authorization contract against a disposable MySQL schema. */
 public class RankedAdmissionMySqlIntegrationTest {
     @Test public void onlyCompleteAuthoritativeRosterCanBeAdmitted() throws Exception {
-        String schema = System.getenv("SBW_RANKED_ADMISSION_DB_SCHEMA");
-        String host = System.getenv("SBW_RANKED_TEST_DB_HOST");
-        Assume.assumeTrue(host != null && schema != null && schema.startsWith("sbw_ranked_test_"));
-        String user = System.getenv("SBW_RANKED_TEST_DB_USER");
-        String password = System.getenv("SBW_RANKED_TEST_DB_PASSWORD");
-        String port = System.getenv("SBW_RANKED_TEST_DB_PORT");
-        if (port == null) port = "3306";
+        IntegrationMysql target = IntegrationMysql.load("SBW_RANKED_TEST_DB_", null,
+            "sbw_ranked_test_", "SBW_RANKED_ADMISSION_DB_SCHEMA");
+        String schema = target.schema, host = target.host;
+        String user = target.user, password = target.password;
+        String port = Integer.toString(target.port);
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("enabled", true); yaml.set("mysql.host", host);
         yaml.set("mysql.port", Integer.parseInt(port)); yaml.set("mysql.database", schema);
@@ -56,6 +53,15 @@ public class RankedAdmissionMySqlIntegrationTest {
                     + " ENGINE=InnoDB");
                 sql.execute("CREATE TABLE IF NOT EXISTS sm_ranked_queue_members ("
                     + "player_uuid CHAR(36) PRIMARY KEY,entry_id CHAR(36)) ENGINE=InnoDB");
+                try (PreparedStatement policy = c.prepareStatement(
+                        "INSERT INTO sbw_ranked_policy(server_id,instance_id,enabled,context,"
+                        + "initial_rating,updated_at,season_version,pending_results,active_matches)"
+                        + " VALUES('r62test',?,1,'preseason-1',1000,?,0,0,0)"
+                        + " ON DUPLICATE KEY UPDATE instance_id=VALUES(instance_id),"
+                        + "updated_at=VALUES(updated_at)")) {
+                    policy.setString(1, instance.toString()); policy.setLong(2, now);
+                    policy.executeUpdate();
+                }
                 try (PreparedStatement insert = c.prepareStatement(
                         "INSERT INTO sm_ranked_allocations VALUES(?,?,?,?,?,?,?,?,?,?)")) {
                     insert.setString(1, allocation.toString()); insert.setString(2, "r62test");

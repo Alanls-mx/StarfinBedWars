@@ -15,7 +15,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.junit.Assume;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
@@ -29,13 +28,11 @@ public class RankedMySqlIntegrationTest {
                 new RankedMatchSnapshot.Member(loser, "Loser", "BLUE", false)), 1000, 0, 24);
     }
     @Test public void concurrentIdempotentTransactionalRatingsAndPlacements() throws Exception {
-        String host = System.getenv("SBW_RANKED_TEST_DB_HOST");
-        String schema = System.getenv("SBW_RANKED_TEST_DB_SCHEMA");
-        Assume.assumeTrue(host != null && schema != null && schema.startsWith("sbw_ranked_test_"));
-        String user = System.getenv("SBW_RANKED_TEST_DB_USER");
-        String password = System.getenv("SBW_RANKED_TEST_DB_PASSWORD");
-        String port = System.getenv("SBW_RANKED_TEST_DB_PORT");
-        if (port == null) port = "3306";
+        IntegrationMysql target = IntegrationMysql.load(
+            "SBW_RANKED_TEST_DB_", null, "sbw_ranked_test_");
+        String host = target.host, schema = target.schema;
+        String user = target.user, password = target.password;
+        String port = Integer.toString(target.port);
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("enabled", true); yaml.set("mysql.host", host);
         yaml.set("mysql.port", Integer.parseInt(port)); yaml.set("mysql.database", schema);

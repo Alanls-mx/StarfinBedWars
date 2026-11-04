@@ -921,6 +921,8 @@ public final class MySqlStatsRepository implements AutoCloseable {
             claim.setString(3, uuid.toString()); claim.setString(4, uuid.toString());
             claim.setString(5, titleId);
             if (claim.executeUpdate() == 1) return true;
+        } catch (SQLException error) {
+            if (!missingOptionalRankedTable(error)) throw error;
         }
         try (Connection connection = pool.getConnection(); PreparedStatement claim = connection.prepareStatement(
                 "UPDATE sbw_player_preferences SET selected_title=?,"
@@ -946,6 +948,8 @@ public final class MySqlStatsRepository implements AutoCloseable {
             try (ResultSet row = query.executeQuery()) {
                 while (row.next()) titles.put(row.getString(1), row.getString(2));
             }
+        } catch (SQLException error) {
+            if (!missingOptionalRankedTable(error)) throw error;
         }
         try (Connection connection = pool.getConnection(); PreparedStatement query = connection.prepareStatement(
                 "SELECT reward_id,title_name FROM sbw_tournament_reward_grants"
@@ -956,6 +960,10 @@ public final class MySqlStatsRepository implements AutoCloseable {
             }
         }
         return java.util.Collections.unmodifiableMap(titles);
+    }
+
+    private static boolean missingOptionalRankedTable(SQLException error) {
+        return "42S02".equals(error.getSQLState()) && error.getErrorCode() == 1146;
     }
 
     public RankingPage ranking(RankingSpec spec, UUID viewerId) throws SQLException {

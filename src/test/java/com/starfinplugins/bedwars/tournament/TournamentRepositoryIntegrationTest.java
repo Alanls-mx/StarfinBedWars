@@ -1,30 +1,69 @@
 package com.starfinplugins.bedwars.tournament;
 
-import com.starfinplugins.bedwars.stats.StatsSettings;
+import com.starfinplugins.bedwars.stats.IntegrationMysql;
 import com.starfinplugins.minigames.api.ReservationSnapshot;
 import com.starfinplugins.minigames.api.ReservationState;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.junit.Assume;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
 /** Runs only against an explicitly supplied disposable MySQL schema. */
 public class TournamentRepositoryIntegrationTest {
+    @Test public void concurrentReopenPreservesTournamentData() throws Exception {
+        IntegrationMysql database = IntegrationMysql.load(
+            "SBW_TOURNAMENT_TEST_", null, "sbw_tournament_test_");
+        String id = "m" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        long now = System.currentTimeMillis();
+        YamlConfiguration proposal = new YamlConfiguration();
+        proposal.set("proposal.id", id); proposal.set("proposal.name", "Migration Cup");
+        proposal.set("proposal.mode", "solo"); proposal.set("proposal.team-size", 1);
+        proposal.set("proposal.minimum-teams", 2); proposal.set("proposal.maximum-teams", 2);
+        proposal.set("proposal.registration-opens", Instant.ofEpochMilli(now - 10000).toString());
+        proposal.set("proposal.registration-closes", Instant.ofEpochMilli(now + 120000).toString());
+        proposal.set("proposal.starts-at", Instant.ofEpochMilli(now + 180000).toString());
+        try (TournamentRepository first = new TournamentRepository()) {
+            first.open(database.settings("DISABLED"));
+            first.create(new TournamentSettings(proposal), "test");
+        }
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<String> a = pool.submit(() -> {
+                start.await();
+                try (TournamentRepository reopened = new TournamentRepository()) {
+                    reopened.open(database.settings("DISABLED"));
+                    return reopened.find(id).name;
+                }
+            });
+            Future<String> b = pool.submit(() -> {
+                start.await();
+                try (TournamentRepository reopened = new TournamentRepository()) {
+                    reopened.open(database.settings("DISABLED"));
+                    return reopened.find(id).name;
+                }
+            });
+            start.countDown();
+            assertEquals("Migration Cup", a.get(20, TimeUnit.SECONDS));
+            assertEquals("Migration Cup", b.get(20, TimeUnit.SECONDS));
+        } finally { pool.shutdownNow(); }
+    }
+
     @Test public void auditedWalkoverNeedsRealCheckInAndNoAllocatedGame() throws Exception {
-        String port = System.getenv("SBW_TOURNAMENT_TEST_PORT");
-        Assume.assumeTrue(port != null && !port.isEmpty());
-        YamlConfiguration database = new YamlConfiguration();
-        database.set("enabled", true); database.set("mysql.host", "127.0.0.1");
-        database.set("mysql.port", Integer.parseInt(port));
-        database.set("mysql.database", "sbw_tournament_test");
-        database.set("mysql.username", "root");
-        database.set("mysql.password", "phase71test");
-        database.set("mysql.ssl-mode", "DISABLED");
+        IntegrationMysql database = IntegrationMysql.load(
+            "SBW_TOURNAMENT_TEST_", null, "sbw_tournament_test_");
         long now = System.currentTimeMillis();
         String id = "w" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         YamlConfiguration proposal = new YamlConfiguration();
@@ -36,7 +75,7 @@ public class TournamentRepositoryIntegrationTest {
         proposal.set("proposal.registration-closes", Instant.ofEpochMilli(now + 120000).toString());
         proposal.set("proposal.starts-at", Instant.ofEpochMilli(now + 180000).toString());
         TournamentRepository repo = new TournamentRepository();
-        repo.open(new StatsSettings(database));
+        repo.open(database.settings("DISABLED"));
         try {
             repo.create(new TournamentSettings(proposal), "test");
             repo.transition(id, Tournament.State.SCHEDULED, "test");
@@ -70,15 +109,8 @@ public class TournamentRepositoryIntegrationTest {
     }
 
     @Test public void authorizedSubstitutionRequiresIncomingConfirmation() throws Exception {
-        String port = System.getenv("SBW_TOURNAMENT_TEST_PORT");
-        Assume.assumeTrue(port != null && !port.isEmpty());
-        YamlConfiguration database = new YamlConfiguration();
-        database.set("enabled", true); database.set("mysql.host", "127.0.0.1");
-        database.set("mysql.port", Integer.parseInt(port));
-        database.set("mysql.database", "sbw_tournament_test");
-        database.set("mysql.username", "root");
-        database.set("mysql.password", "phase71test");
-        database.set("mysql.ssl-mode", "DISABLED");
+        IntegrationMysql database = IntegrationMysql.load(
+            "SBW_TOURNAMENT_TEST_", null, "sbw_tournament_test_");
         long now = System.currentTimeMillis();
         String id = "s" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         YamlConfiguration proposal = new YamlConfiguration();
@@ -90,7 +122,7 @@ public class TournamentRepositoryIntegrationTest {
         proposal.set("proposal.registration-closes", Instant.ofEpochMilli(now + 120000).toString());
         proposal.set("proposal.starts-at", Instant.ofEpochMilli(now + 180000).toString());
         TournamentRepository repo = new TournamentRepository();
-        repo.open(new StatsSettings(database));
+        repo.open(database.settings("DISABLED"));
         try {
             repo.create(new TournamentSettings(proposal), "test");
             repo.transition(id, Tournament.State.SCHEDULED, "test");
@@ -115,15 +147,8 @@ public class TournamentRepositoryIntegrationTest {
     }
 
     @Test public void drawReplaySeriesFinalAndIdempotency() throws Exception {
-        String port = System.getenv("SBW_TOURNAMENT_TEST_PORT");
-        Assume.assumeTrue(port != null && !port.isEmpty());
-        YamlConfiguration database = new YamlConfiguration();
-        database.set("enabled", true); database.set("mysql.host", "127.0.0.1");
-        database.set("mysql.port", Integer.parseInt(port));
-        database.set("mysql.database", "sbw_tournament_test");
-        database.set("mysql.username", "root");
-        database.set("mysql.password", "phase71test");
-        database.set("mysql.ssl-mode", "DISABLED");
+        IntegrationMysql database = IntegrationMysql.load(
+            "SBW_TOURNAMENT_TEST_", null, "sbw_tournament_test_");
         long now = System.currentTimeMillis();
         String id = "t" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         YamlConfiguration proposal = new YamlConfiguration();
@@ -138,7 +163,7 @@ public class TournamentRepositoryIntegrationTest {
         proposal.set("proposal.runner-up-title", "Finalist");
         proposal.set("proposal.participant-title", "Participant");
         TournamentRepository repo = new TournamentRepository();
-        repo.open(new StatsSettings(database));
+        repo.open(database.settings("DISABLED"));
         try {
             repo.create(new TournamentSettings(proposal), "test");
             repo.transition(id, Tournament.State.SCHEDULED, "test");
@@ -183,7 +208,22 @@ public class TournamentRepositoryIntegrationTest {
             assertEquals(2, repo.admit(game.id, allocation, second, UUID.randomUUID(), mc,
                 "bedwars-01", instance.toString(), "cup_arena"));
             repo.startGame(game.id, mc);
-            assertTrue(repo.recordResult(game.id, mc, "DRAW", null));
+            Path journalDirectory = Files.createTempDirectory("sbw-tournament-journal-");
+            TournamentOutbox outbox = new TournamentOutbox(journalDirectory);
+            Path journal = outbox.write(new TournamentOutbox.Result(game.id, mc, "DRAW", null));
+            repo.close();
+            try {
+                repo.recordResult(game.id, mc, "DRAW", null);
+                fail("A closed database must leave the result pending");
+            } catch (SQLException expected) { /* replay after reopening */ }
+            assertEquals(1, outbox.pending().size());
+            repo.open(database.settings("DISABLED"));
+            TournamentOutbox.Result recovered = outbox.read(journal);
+            assertTrue(repo.recordResult(recovered.gameId, recovered.minecraftMatch,
+                recovered.reason, recovered.winningArenaTeam));
+            outbox.acknowledge(journal);
+            assertTrue(outbox.pending().isEmpty());
+            Files.delete(journalDirectory);
             assertFalse(repo.recordResult(game.id, mc, "DRAW", null));
             assertEquals("REPLAY", repo.game(game.id).state);
             for (int n = 0; n < 2; n++) {
@@ -197,7 +237,26 @@ public class TournamentRepositoryIntegrationTest {
                 repo.admit(next.id, nextAllocation, second, UUID.randomUUID(), nextMc,
                     "bedwars-01", instance.toString(), "cup_arena");
                 repo.startGame(next.id, nextMc);
-                assertTrue(repo.recordResult(next.id, nextMc, "VICTORY", "red"));
+                if (n == 1) {
+                    try (TournamentRepository rival = new TournamentRepository()) {
+                        rival.open(database.settings("DISABLED"));
+                        ExecutorService pool = Executors.newFixedThreadPool(2);
+                        CountDownLatch start = new CountDownLatch(1);
+                        final UUID gameId = next.id, matchId = nextMc;
+                        try {
+                            Future<Boolean> firstResult = pool.submit(() -> {
+                                start.await(); return repo.recordResult(gameId, matchId, "VICTORY", "red");
+                            });
+                            Future<Boolean> secondResult = pool.submit(() -> {
+                                start.await(); return rival.recordResult(gameId, matchId, "VICTORY", "red");
+                            });
+                            start.countDown();
+                            assertTrue("only one backend may commit the result",
+                                firstResult.get(20, TimeUnit.SECONDS)
+                                    ^ secondResult.get(20, TimeUnit.SECONDS));
+                        } finally { pool.shutdownNow(); }
+                    }
+                } else assertTrue(repo.recordResult(next.id, nextMc, "VICTORY", "red"));
                 assertFalse(repo.recordResult(next.id, nextMc, "VICTORY", "red"));
             }
             assertEquals(Tournament.State.FINALIZING, repo.find(id).state);
